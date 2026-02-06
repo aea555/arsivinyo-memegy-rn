@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { VideoPlayer } from './VideoPlayer';
@@ -14,19 +14,16 @@ import { VideoFeedItem } from '@/src/shared/types/api';
 type VideoCardProps = {
   video: VideoFeedItem;
   isActive: boolean;
-  onPress: () => void;
 };
 
-export function VideoCard({ video, isActive, onPress }: VideoCardProps) {
+export function VideoCard({ video, isActive }: VideoCardProps) {
   const { t } = useTranslation();
   const toggleLike = useToggleLike(video.id);
   const showLike = video.is_liked !== undefined;
 
   return (
     <Card style={styles.card}>
-      <Pressable onPress={onPress}>
-        <VideoPlayer uri={video.url} isActive={isActive} />
-      </Pressable>
+      <VideoPlayer uri={video.url} isActive={isActive} />
       <View style={styles.meta}>
         <View style={styles.metaText}>
           <AppText variant="bodyBold">{video.title ?? t('video.untitled')}</AppText>

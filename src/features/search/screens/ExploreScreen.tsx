@@ -1,7 +1,6 @@
-import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FlatList, KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Platform, StyleSheet, View, ViewToken } from 'react-native';
 
 import { VideoCard } from '@/src/features/feed/components/VideoCard';
 import { useFeed } from '@/src/features/feed/hooks/useFeed';
@@ -15,11 +14,15 @@ import { useDebounce } from '@/src/shared/hooks/useDebounce';
 import { spacing } from '@/src/shared/theme/spacing';
 import { VideoFeedItem } from '@/src/shared/types/api';
 
+const viewabilityConfig = {
+  itemVisiblePercentThreshold: 70,
+};
+
 export function ExploreScreen() {
   const { t } = useTranslation();
-  const router = useRouter();
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<'relevance' | 'recent' | 'popular'>('relevance');
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const handleQueryChange = useCallback((text: string) => {
     setQuery(text);
@@ -58,11 +61,16 @@ export function ExploreScreen() {
   const fetchNextPage = isSearching ? fetchNextSearch : fetchNextPopular;
 
   const renderItem = useCallback(
-    ({ item }: { item: VideoFeedItem }) => (
-      <VideoCard video={item} isActive={false} onPress={() => router.push(`/video/${item.id}`)} />
-    ),
-    [router]
+    ({ item }: { item: VideoFeedItem }) => <VideoCard video={item} isActive={activeId === item.id} />,
+    [activeId]
   );
+
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const first = viewableItems[0]?.item as VideoFeedItem | undefined;
+      setActiveId(first?.id ?? null);
+    }
+  ).current;
 
   const handleEndReached = () => {
     if (hasNextPage && !isFetchingNextPage) {
@@ -104,6 +112,8 @@ export function ExploreScreen() {
           keyExtractor={(item) => item.id}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
+          viewabilityConfig={viewabilityConfig}
+          onViewableItemsChanged={onViewableItemsChanged}
           keyboardShouldPersistTaps="handled"
           removeClippedSubviews={false}
           ListEmptyComponent={

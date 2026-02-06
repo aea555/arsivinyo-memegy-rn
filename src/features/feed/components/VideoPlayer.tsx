@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
+import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 
 type VideoPlayerProps = {
   uri: string;
@@ -11,18 +12,19 @@ type VideoPlayerProps = {
 
 export function VideoPlayer({ uri, isActive }: VideoPlayerProps) {
   const { palette } = useTheme();
+  const autoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
   const player = useVideoPlayer(uri, (playerInstance) => {
     playerInstance.loop = true;
     playerInstance.muted = false;
   });
 
   useEffect(() => {
-    if (isActive) {
+    if (isActive && autoPlayVideos) {
       player.play();
     } else {
       player.pause();
     }
-  }, [isActive, player]);
+  }, [isActive, autoPlayVideos, player]);
 
   return (
     <View style={[styles.container, { backgroundColor: palette.surface }]}>

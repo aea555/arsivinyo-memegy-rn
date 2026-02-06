@@ -27,7 +27,7 @@ import { Input } from '@/src/shared/components/ui/Input';
 import { queryClient } from '@/src/shared/services/api/queryClient';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
-import { isValidFile, showEditor } from 'react-native-video-trim';
+import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 
 type PreviewProps = {
   player: ReturnType<typeof useVideoPlayer>;
@@ -106,6 +106,7 @@ export function UploadScreen() {
   const { t } = useTranslation();
   const { palette } = useTheme();
   const router = useRouter();
+  const autoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
 
   const [assetUri, setAssetUri] = useState<string | null>(null);
   const [filename, setFilename] = useState<string>('');
@@ -138,7 +139,7 @@ export function UploadScreen() {
       if (!asset) return;
       setAssetUri(asset.uri);
       setFilename(asset.fileName ?? 'upload.mp4');
-      setIsPreviewPlaying(false);
+      setIsPreviewPlaying(autoPlayVideos);
     } catch {
       Alert.alert(t('common.error'), t('upload.pickError'));
     }
@@ -238,30 +239,6 @@ export function UploadScreen() {
       subscriptions.forEach(sub => sub?.remove?.());
     };
   }, [t, handleTrimComplete]);
-
-  const handleTrim = async () => {
-    if (!assetUri) return;
-
-    try {
-      const valid = await isValidFile(assetUri);
-      if (!valid.isValid) {
-        Alert.alert(t('common.error'), t('upload.invalidVideo'));
-        return;
-      }
-
-      showEditor(assetUri, {
-        maxDuration: 60,
-        minDuration: 1,
-        cancelButtonText: t('common.cancel'),
-        saveButtonText: t('common.save'),
-        enableCancelDialog: false,
-        enableSaveDialog: false,
-        saveToPhoto: false,
-      });
-    } catch (error) {
-      console.error('Start trim error:', error);
-    }
-  };
 
   const handleRemove = () => {
     setAssetUri(null);

@@ -34,8 +34,8 @@ export function LoginScreen() {
         }
         if (codeParam) {
           router.replace({ pathname: '/(auth)/callback', params: { code: codeParam } });
-        } else {
-          setError(t('auth.authFailed'));
+        } else if (__DEV__) {
+          console.debug('[auth] login success without inline code, waiting for deep link callback');
         }
       } else {
         if (__DEV__) {

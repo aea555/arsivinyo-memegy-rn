@@ -15,6 +15,7 @@ import { queryClient } from '@/src/shared/services/api/queryClient';
 import { LocalStorage } from '@/src/shared/services/storage/LocalStorage';
 import { ThemeProvider, useTheme } from '@/src/shared/theme/ThemeProvider';
 import { useAuthStore } from '@/src/store/authStore';
+import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -42,6 +43,7 @@ export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
   const { status, hydrate } = useAuthStore();
+  const hydrateAppSettings = useAppSettingsStore((state) => state.hydrate);
 
   const [fontsLoaded] = useFonts({
     Comfortaa_300Light,
@@ -54,6 +56,10 @@ export default function RootLayout() {
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    void hydrateAppSettings();
+  }, [hydrateAppSettings]);
 
   useEffect(() => {
     const loadLanguage = async () => {

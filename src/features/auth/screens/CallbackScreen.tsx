@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 
@@ -18,23 +18,28 @@ export function CallbackScreen() {
   const setAuthenticated = useAuthStore((state) => state.setAuthenticated);
 
   const [error, setError] = useState<string | null>(null);
+  const [exchanging, setExchanging] = useState(false);
+  const exchangeStartedRef = useRef(false);
+
+  const code = useMemo(() => {
+    const codeParam = Array.isArray(params.code) ? params.code[0] : params.code;
+    const otcParam = Array.isArray(params.otc) ? params.otc[0] : params.otc;
+    return (codeParam ?? otcParam) as string | undefined;
+  }, [params.code, params.otc]);
 
   useEffect(() => {
+    if (!code) return;
+    if (exchanging || exchangeStartedRef.current) return;
+
     const run = async () => {
-      const codeParam = Array.isArray(params.code) ? params.code[0] : params.code;
-      const otcParam = Array.isArray(params.otc) ? params.otc[0] : params.otc;
-      const code = (codeParam ?? otcParam) as string | undefined;
+      exchangeStartedRef.current = true;
+      setExchanging(true);
 
       if (__DEV__) {
         console.debug('[auth] callback params', {
-          codeParam,
-          otcParam,
+          codeParam: Array.isArray(params.code) ? params.code[0] : params.code,
+          otcParam: Array.isArray(params.otc) ? params.otc[0] : params.otc,
         });
-      }
-
-      if (!code) {
-        setError(t('auth.authFailed'));
-        return;
       }
 
       try {
@@ -44,11 +49,22 @@ export function CallbackScreen() {
         router.replace('/(tabs)/feed');
       } catch {
         setError(t('auth.authFailed'));
+      } finally {
+        setExchanging(false);
       }
     };
 
     void run();
-  }, [params.code, params.otc, router, setAuthenticated, t]);
+  }, [code, exchanging, params.code, params.otc, router, setAuthenticated, t]);
+
+  useEffect(() => {
+    if (code || exchanging || error) return;
+    const timeoutId = setTimeout(() => {
+      setError(t('auth.authFailed'));
+    }, 3500);
+
+    return () => clearTimeout(timeoutId);
+  }, [code, exchanging, error, t]);
 
   return (
     <Screen contentStyle={styles.container}>

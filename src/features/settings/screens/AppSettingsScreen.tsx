@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Switch, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import i18n from '@/src/shared/locales/i18n';
@@ -10,10 +10,13 @@ import { ThemeMode, useTheme } from '@/src/shared/theme/ThemeProvider';
 import { Card } from '@/src/shared/components/ui/Card';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
+import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 
 export function AppSettingsScreen() {
   const { t } = useTranslation();
-  const { mode, setMode } = useTheme();
+  const { mode, setMode, palette } = useTheme();
+  const autoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
+  const setAutoPlayVideos = useAppSettingsStore((state) => state.setAutoPlayVideos);
 
   const updateTheme = async (nextMode: ThemeMode) => {
     await setMode(nextMode);
@@ -61,6 +64,23 @@ export function AppSettingsScreen() {
           />
         </View>
       </Card>
+      <Card style={styles.sectionCard}>
+        <View style={styles.switchRow}>
+          <View style={styles.switchText}>
+            <AppText variant="bodyBold">{t('settings.autoPlayVideos')}</AppText>
+            <AppText variant="caption" style={{ color: palette.text.secondary }}>
+              {t('settings.autoPlayVideosHint')}
+            </AppText>
+          </View>
+          <Switch
+            value={autoPlayVideos}
+            onValueChange={(value) => {
+              void setAutoPlayVideos(value);
+            }}
+            trackColor={{ true: palette.accent, false: palette.border }}
+          />
+        </View>
+      </Card>
     </Screen>
   );
 }
@@ -75,5 +95,15 @@ const styles = StyleSheet.create({
   },
   sectionCard: {
     gap: spacing.md,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  switchText: {
+    flex: 1,
+    gap: spacing.xs,
   },
 });

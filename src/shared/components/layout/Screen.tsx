@@ -43,5 +43,6 @@ const styles = StyleSheet.create({
   },
   noHeader: {
     paddingTop: spacing.xl,
+    paddingBottom: spacing.xl,
   },
 });

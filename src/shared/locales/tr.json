@@ -79,6 +79,8 @@
     "language": "Dil",
     "languageEn": "\u0130ngilizce",
     "languageTr": "T\u00fcrk\u00e7e",
+    "autoPlayVideos": "Videolar\u0131 otomatik oynat",
+    "autoPlayVideosHint": "Ak\u0131\u015f, ke\u015ffet ve videolar\u0131m ekranlar\u0131nda videolar\u0131 otomatik ba\u015flat\u0131r.",
     "dangerZone": "Tehlike B\u00f6lgesi",
     "logout": "\u00c7\u0131k\u0131\u015f yap",
     "deleteAccount": "Hesab\u0131 sil",

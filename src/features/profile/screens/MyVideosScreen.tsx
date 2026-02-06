@@ -1,6 +1,5 @@
-import React, { useCallback, useMemo } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { FlatList, StyleSheet, View, ViewToken } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { VideoCard } from '@/src/features/feed/components/VideoCard';
@@ -10,18 +9,27 @@ import { AppText } from '@/src/shared/components/ui/AppText';
 import { spacing } from '@/src/shared/theme/spacing';
 import { VideoFeedItem } from '@/src/shared/types/api';
 
+const viewabilityConfig = {
+  itemVisiblePercentThreshold: 70,
+};
+
 export function MyVideosScreen() {
   const { t } = useTranslation();
-  const router = useRouter();
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useMyVideos();
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const videos = useMemo(() => data?.pages.flatMap((page) => page) ?? [], [data]);
 
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const first = viewableItems[0]?.item as VideoFeedItem | undefined;
+      setActiveId(first?.id ?? null);
+    }
+  ).current;
+
   const renderItem = useCallback(
-    ({ item }: { item: VideoFeedItem }) => (
-      <VideoCard video={item} isActive={false} onPress={() => router.push(`/video/${item.id}`)} />
-    ),
-    [router]
+    ({ item }: { item: VideoFeedItem }) => <VideoCard video={item} isActive={activeId === item.id} />,
+    [activeId]
   );
 
   const handleEndReached = () => {
@@ -36,6 +44,8 @@ export function MyVideosScreen() {
         data={videos}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
+        viewabilityConfig={viewabilityConfig}
+        onViewableItemsChanged={onViewableItemsChanged}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         ListEmptyComponent={

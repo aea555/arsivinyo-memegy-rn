@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, View, ViewToken } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useRouter } from 'expo-router';
 
 import { VideoCard } from '@/src/features/feed/components/VideoCard';
 import { useFeed } from '@/src/features/feed/hooks/useFeed';
@@ -20,7 +19,6 @@ const viewabilityConfig = {
 
 export function FeedScreen() {
   const { t } = useTranslation();
-  const router = useRouter();
   const { isConnected } = useNetworkStatus();
   const [sort, setSort] = useState<'random' | 'latest' | 'popular'>('random');
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -37,14 +35,8 @@ export function FeedScreen() {
   ).current;
 
   const renderItem = useCallback(
-    ({ item }: { item: VideoFeedItem }) => (
-      <VideoCard
-        video={item}
-        isActive={activeId === item.id}
-        onPress={() => router.push(`/video/${item.id}`)}
-      />
-    ),
-    [activeId, router]
+    ({ item }: { item: VideoFeedItem }) => <VideoCard video={item} isActive={activeId === item.id} />,
+    [activeId]
   );
 
   const keyExtractor = useCallback((item: VideoFeedItem) => item.id, []);
