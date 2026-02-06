@@ -1,0 +1,78 @@
+{
+  "common": {
+    "welcome": "Memegy\u2019ye ho\u015f geldin",
+    "loading": "Y\u00fckleniyor...",
+    "error": "Bir \u015feyler ters gitti",
+    "retry": "Tekrar dene",
+    "cancel": "Vazge\u00e7",
+    "save": "Kaydet",
+    "offline": "Internet ba\u011flant\u0131s\u0131 yok.",
+    "delete": "Sil"
+  },
+  "auth": {
+    "loginTitle": "Giri\u015f yap",
+    "loginSubtitle": "Meme videolar\u0131n\u0131 y\u00fckle ve ke\u015ffet",
+    "loginWithGoogle": "Google ile devam et",
+    "loggingIn": "Giri\u015f yap\u0131l\u0131yor...",
+    "authFailed": "Kimlik do\u011frulama ba\u015far\u0131s\u0131z."
+  },
+  "tabs": {
+    "feed": "Ak\u0131\u015f",
+    "explore": "Ke\u015ffet",
+    "upload": "Y\u00fckle",
+    "profile": "Profil"
+  },
+  "feed": {
+    "sort": "S\u0131rala",
+    "sortRandom": "Rastgele",
+    "sortLatest": "En yeni",
+    "sortPopular": "Pop\u00fcler",
+    "empty": "Hen\u00fcz video yok."
+  },
+  "search": {
+    "placeholder": "Meme ara",
+    "empty": "Sonu\u00e7 bulunamad\u0131",
+    "hint": "Farkl\u0131 bir anahtar kelime dene",
+    "sortRelevance": "Alaka",
+    "sortRecent": "Yeni",
+    "sortPopular": "Pop\u00fcler"
+  },
+  "upload": {
+    "title": "Y\u00fckle",
+    "selectVideo": "Video se\u00e7",
+    "videoTitle": "Video ba\u015fl\u0131\u011f\u0131",
+    "description": "A\u00e7\u0131klama (iste\u011fe ba\u011fl\u0131)",
+    "anonymous": "Anonim y\u00fckle",
+    "uploading": "Y\u00fckleniyor...",
+    "confirming": "Y\u00fckleme onaylan\u0131yor...",
+    "success": "Y\u00fckleme tamamland\u0131!",
+    "tooLarge": "Video 32 MB alt\u0131nda olmal\u0131",
+    "rateLimited": "Y\u00fckleme limiti a\u015f\u0131ld\u0131. L\u00fctfen bekleyin.",
+    "pickError": "Medya k\u00fct\u00fcphanesine eri\u015femedik."
+  },
+  "profile": {
+    "title": "Profil",
+    "myVideos": "Videolar\u0131m",
+    "settings": "Ayarlar",
+    "logout": "\u00c7\u0131k\u0131\u015f yap",
+    "deleteAccount": "Hesab\u0131 sil",
+    "confirmDelete": "Hesab\u0131n silinmek \u00fczere planlanacak. Devam edilsin mi?"
+  },
+  "settings": {
+    "title": "Ayarlar",
+    "theme": "Tema",
+    "themeAuto": "Otomatik",
+    "themeLight": "A\u00e7\u0131k",
+    "themeDark": "Koyu",
+    "language": "Dil",
+    "languageEn": "\u0130ngilizce",
+    "languageTr": "T\u00fcrk\u00e7e"
+  },
+  "video": {
+    "likes": "Be\u011feniler",
+    "like": "Be\u011fen",
+    "unlike": "Be\u011fenme",
+    "untitled": "Ba\u015fl\u0131ks\u0131z Meme",
+    "noDetails": "Video ayr\u0131nt\u0131lar\u0131na ula\u015f\u0131lamad\u0131."
+  }
+}

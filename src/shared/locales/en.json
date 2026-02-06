@@ -1,0 +1,78 @@
+{
+  "common": {
+    "welcome": "Welcome to Memegy",
+    "loading": "Loading...",
+    "error": "Something went wrong",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "save": "Save",
+    "offline": "No internet connection.",
+    "delete": "Delete"
+  },
+  "auth": {
+    "loginTitle": "Sign in",
+    "loginSubtitle": "Upload and discover meme videos",
+    "loginWithGoogle": "Continue with Google",
+    "loggingIn": "Signing in...",
+    "authFailed": "Authentication failed. Please try again."
+  },
+  "tabs": {
+    "feed": "Feed",
+    "explore": "Explore",
+    "upload": "Upload",
+    "profile": "Profile"
+  },
+  "feed": {
+    "sort": "Sort",
+    "sortRandom": "Random",
+    "sortLatest": "Latest",
+    "sortPopular": "Popular",
+    "empty": "No videos yet."
+  },
+  "search": {
+    "placeholder": "Search memes",
+    "empty": "No results",
+    "hint": "Try a different keyword",
+    "sortRelevance": "Relevance",
+    "sortRecent": "Recent",
+    "sortPopular": "Popular"
+  },
+  "upload": {
+    "title": "Upload",
+    "selectVideo": "Select Video",
+    "videoTitle": "Video Title",
+    "description": "Description (optional)",
+    "anonymous": "Upload anonymously",
+    "uploading": "Uploading...",
+    "confirming": "Confirming upload...",
+    "success": "Upload complete!",
+    "tooLarge": "Video must be under 32 MB",
+    "rateLimited": "Upload limit exceeded. Please wait.",
+    "pickError": "We couldn\u2019t access your library."
+  },
+  "profile": {
+    "title": "Profile",
+    "myVideos": "My Videos",
+    "settings": "Settings",
+    "logout": "Log out",
+    "deleteAccount": "Delete account",
+    "confirmDelete": "This will schedule your account for deletion. Continue?"
+  },
+  "settings": {
+    "title": "Settings",
+    "theme": "Theme",
+    "themeAuto": "Auto",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "language": "Language",
+    "languageEn": "English",
+    "languageTr": "Turkish"
+  },
+  "video": {
+    "likes": "Likes",
+    "like": "Like",
+    "unlike": "Unlike",
+    "untitled": "Untitled Meme",
+    "noDetails": "Video details unavailable."
+  }
+}

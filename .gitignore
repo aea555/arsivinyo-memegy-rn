@@ -5,6 +5,7 @@ node_modules/
 
 # Expo
 .expo/
+.expo-shared/
 dist/
 web-build/
 expo-env.d.ts
@@ -25,6 +26,9 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+pnpm-debug.*
+bun-debug.*
+*.log
 
 # macOS
 .DS_Store
@@ -38,6 +42,33 @@ yarn-error.*
 
 app-example
 
+# IDE/editor
+.vscode/
+.idea/
+
+# coverage
+coverage/
+
 # generated native folders
 /ios
 /android
+
+# iOS
+Pods/
+*.xcworkspace
+*.xcuserstate
+*.xcuserdata
+
+# Android
+android/local.properties
+
+docs/
+
+*.md 
+!README.md
+
+local.properties.*
+
+.env
+.env.*
+!.env.example
