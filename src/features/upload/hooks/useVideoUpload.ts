@@ -9,15 +9,15 @@ export type UploadResult = {
   videoId: string;
 };
 
-export async function pickVideo() {
+export async function pickVideo({ allowsEditing = true }: { allowsEditing?: boolean } = {}) {
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (permission.status !== 'granted') {
     throw new Error('permissions');
   }
 
   const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-    allowsEditing: true,
+    mediaTypes: ['videos'],
+    allowsEditing,
     quality: 1,
     videoMaxDuration: 60,
   });

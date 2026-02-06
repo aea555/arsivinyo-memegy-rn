@@ -20,7 +20,9 @@
     "feed": "Ak\u0131\u015f",
     "explore": "Ke\u015ffet",
     "upload": "Y\u00fckle",
-    "profile": "Profil"
+    "myVideos": "Videolar\u0131m",
+    "profile": "Profil",
+    "settings": "Ayarlar"
   },
   "feed": {
     "sort": "S\u0131rala",
@@ -43,6 +45,9 @@
     "videoTitle": "Video ba\u015fl\u0131\u011f\u0131",
     "description": "A\u00e7\u0131klama (iste\u011fe ba\u011fl\u0131)",
     "anonymous": "Anonim y\u00fckle",
+    "mutePreview": "\u00d6n izlemeyi sustur",
+    "unmutePreview": "\u00d6n izleme sesi",
+    "trim": "Klipi k\u0131rp",
     "uploading": "Y\u00fckleniyor...",
     "confirming": "Y\u00fckleme onaylan\u0131yor...",
     "success": "Y\u00fckleme tamamland\u0131!",
@@ -53,6 +58,7 @@
   "profile": {
     "title": "Profil",
     "myVideos": "Videolar\u0131m",
+    "noVideos": "Hen\u00fcz video y\u00fcklemedin.",
     "settings": "Ayarlar",
     "logout": "\u00c7\u0131k\u0131\u015f yap",
     "deleteAccount": "Hesab\u0131 sil",
@@ -60,15 +66,29 @@
   },
   "settings": {
     "title": "Ayarlar",
+    "profile": "Profil",
+    "profileSubtitle": "Hesap detaylar\u0131n\u0131 y\u00f6net",
+    "appSettings": "Uygulama ayarlar\u0131",
+    "appSettingsSubtitle": "Tema ve dil",
+    "advancedSettings": "Geli\u015fmi\u015f",
+    "advancedSettingsSubtitle": "G\u00fcvenlik ve hesap i\u015flemleri",
     "theme": "Tema",
     "themeAuto": "Otomatik",
     "themeLight": "A\u00e7\u0131k",
     "themeDark": "Koyu",
     "language": "Dil",
     "languageEn": "\u0130ngilizce",
-    "languageTr": "T\u00fcrk\u00e7e"
+    "languageTr": "T\u00fcrk\u00e7e",
+    "dangerZone": "Tehlike B\u00f6lgesi",
+    "logout": "\u00c7\u0131k\u0131\u015f yap",
+    "deleteAccount": "Hesab\u0131 sil",
+    "logoutConfirmTitle": "\u00c7\u0131k\u0131\u015f yap\u0131ls\u0131n m\u0131?",
+    "logoutConfirmBody": "Tekrar eri\u015fim i\u00e7in yeniden giri\u015f yapman gerekecek.",
+    "deleteConfirmTitle": "Hesap silinsin mi?",
+    "deleteConfirmBody": "Hesab\u0131n silinmek \u00fczere planlanacak. 30 g\u00fcn i\u00e7inde tekrar giri\u015f yaparsan iptal edebilirsin."
   },
   "video": {
+    "title": "Video",
     "likes": "Be\u011feniler",
     "like": "Be\u011fen",
     "unlike": "Be\u011fenme",

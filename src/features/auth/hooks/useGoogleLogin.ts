@@ -1,29 +1,11 @@
-import { makeRedirectUri, type AuthSessionResult } from 'expo-auth-session';
+import { type AuthSessionResult } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import * as Crypto from 'expo-crypto';
 import * as Linking from 'expo-linking';
 
-import { SecureStorage } from '@/src/shared/services/storage/SecureStorage';
-import { API_BASE_URL } from '@/src/shared/utils/env';
+import { API_BASE_URL, MOBILE_SCHEME } from '@/src/shared/utils/env';
 
 WebBrowser.maybeCompleteAuthSession();
-
-const REDIRECT_SCHEME = 'memegy';
-
-let inMemoryPkce: { state: string; verifier: string } | null = null;
-
-export function getInMemoryPkceState() {
-  return inMemoryPkce?.state ?? null;
-}
-
-export function getInMemoryPkceVerifier(state?: string | null) {
-  if (!state || !inMemoryPkce) return null;
-  return inMemoryPkce.state === state ? inMemoryPkce.verifier : null;
-}
-
-export function clearInMemoryPkce() {
-  inMemoryPkce = null;
-}
 
 function toHex(bytes: Uint8Array) {
   return Array.from(bytes)
@@ -40,13 +22,6 @@ export function useGoogleLogin() {
   const start = async () => {
     const randomBytes = await Crypto.getRandomBytesAsync(32);
     const codeVerifier = toHex(randomBytes);
-    await SecureStorage.setPkceVerifier(codeVerifier);
-
-    const stateBytes = await Crypto.getRandomBytesAsync(16);
-    const oauthState = toHex(stateBytes);
-    await SecureStorage.setOauthState(oauthState);
-    await SecureStorage.setPkceState(oauthState, codeVerifier);
-    inMemoryPkce = { state: oauthState, verifier: codeVerifier };
 
     const digest = await Crypto.digestStringAsync(
       Crypto.CryptoDigestAlgorithm.SHA256,
@@ -55,23 +30,20 @@ export function useGoogleLogin() {
     );
     const codeChallenge = base64UrlFromBase64(digest);
 
-    const redirectUri = makeRedirectUri({
-      scheme: REDIRECT_SCHEME,
-      path: 'auth/callback',
-    });
+    const redirectUri = `${MOBILE_SCHEME}://auth/callback`;
 
-    const authUrl =
-      `${API_BASE_URL}/auth/google/login?source=mobile` +
-      `&code_challenge=${codeChallenge}` +
-      `&code_challenge_method=S256` +
-      `&state=${oauthState}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    const query = new URLSearchParams({
+      source: 'mobile',
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      code_verifier: codeVerifier,
+    });
+    const authUrl = `${API_BASE_URL}/auth/google/login?${query.toString()}`;
 
     if (__DEV__) {
       console.debug('[auth] start login', {
         redirectUri,
         authUrl,
-        state: oauthState,
         codeVerifier,
         codeChallenge,
       });

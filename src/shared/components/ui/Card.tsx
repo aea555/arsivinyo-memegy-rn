@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, View, ViewProps } from 'react-native';
 
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
+import { shadows } from '@/src/shared/theme/shadows';
 
 export function Card({ style, ...rest }: ViewProps) {
   const { palette } = useTheme();
@@ -14,6 +15,7 @@ export function Card({ style, ...rest }: ViewProps) {
           backgroundColor: palette.surface,
           borderColor: palette.border,
         },
+        shadows.subtle,
         style,
       ]}
       {...rest}

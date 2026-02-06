@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { ResizeMode, Video } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 
@@ -11,28 +11,22 @@ type VideoPlayerProps = {
 
 export function VideoPlayer({ uri, isActive }: VideoPlayerProps) {
   const { palette } = useTheme();
-  const ref = useRef<Video>(null);
+  const player = useVideoPlayer(uri, (playerInstance) => {
+    playerInstance.loop = true;
+    playerInstance.muted = false;
+  });
 
   useEffect(() => {
-    if (!ref.current) return;
     if (isActive) {
-      void ref.current.playAsync();
+      player.play();
     } else {
-      void ref.current.pauseAsync();
+      player.pause();
     }
-  }, [isActive]);
+  }, [isActive, player]);
 
   return (
-    <View style={[styles.container, { backgroundColor: palette.surface }]}> 
-      <Video
-        ref={ref}
-        source={{ uri }}
-        style={styles.video}
-        resizeMode={ResizeMode.COVER}
-        isLooping
-        shouldPlay={false}
-        isMuted={false}
-      />
+    <View style={[styles.container, { backgroundColor: palette.surface }]}>
+      <VideoView style={styles.video} player={player} contentFit="cover" />
     </View>
   );
 }

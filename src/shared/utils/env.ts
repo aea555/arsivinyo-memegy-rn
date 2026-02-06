@@ -13,3 +13,7 @@ export const CDN_BASE_URL = requireEnv(
   'EXPO_PUBLIC_CDN_BASE_URL',
   process.env.EXPO_PUBLIC_CDN_BASE_URL
 );
+export const MOBILE_SCHEME = requireEnv(
+  'EXPO_PUBLIC_MOBILE_SCHEME',
+  process.env.EXPO_PUBLIC_MOBILE_SCHEME
+);

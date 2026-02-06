@@ -7,6 +7,8 @@ import { VideoCard } from '@/src/features/feed/components/VideoCard';
 import { useFeed } from '@/src/features/feed/hooks/useFeed';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
+import { Card } from '@/src/shared/components/ui/Card';
+import { SegmentedControl } from '@/src/shared/components/ui/SegmentedControl';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { useNetworkStatus } from '@/src/shared/hooks/useNetworkStatus';
 import { spacing } from '@/src/shared/theme/spacing';
@@ -53,20 +55,28 @@ export function FeedScreen() {
     }
   };
 
+  const isEmpty = !isLoading && videos.length === 0;
+
   return (
-    <Screen style={styles.container}>
+    <Screen title={t('tabs.feed')} contentStyle={styles.container}>
       {!isConnected ? (
         <View style={styles.offline}>
           <AppText variant="caption">{t('common.offline')}</AppText>
         </View>
       ) : null}
       <View style={styles.header}>
-        <AppText variant="heading2">{t('tabs.feed')}</AppText>
-        <View style={styles.sortRow}>
-          <Button label={t('feed.sortRandom')} onPress={() => setSort('random')} variant={sort === 'random' ? 'primary' : 'secondary'} />
-          <Button label={t('feed.sortLatest')} onPress={() => setSort('latest')} variant={sort === 'latest' ? 'primary' : 'secondary'} />
-          <Button label={t('feed.sortPopular')} onPress={() => setSort('popular')} variant={sort === 'popular' ? 'primary' : 'secondary'} />
-        </View>
+        <Card style={styles.headerCard}>
+          <AppText variant="bodyBold">{t('feed.sort')}</AppText>
+          <SegmentedControl
+            value={sort}
+            onChange={(value) => setSort(value as 'random' | 'latest' | 'popular')}
+            options={[
+              { label: t('feed.sortRandom'), value: 'random' },
+              { label: t('feed.sortLatest'), value: 'latest' },
+              { label: t('feed.sortPopular'), value: 'popular' },
+            ]}
+          />
+        </Card>
       </View>
       <FlatList
         data={videos}
@@ -91,7 +101,7 @@ export function FeedScreen() {
             </View>
           ) : null
         }
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, isEmpty ? styles.listEmptyContainer : null]}
       />
     </Screen>
   );
@@ -99,25 +109,26 @@ export function FeedScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
   },
   header: {
-    marginTop: spacing.lg,
     marginBottom: spacing.md,
     gap: spacing.md,
   },
-  sortRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
+  headerCard: {
+    gap: spacing.md,
   },
   listContent: {
     paddingBottom: spacing.xxxl,
+    flexGrow: 1,
+  },
+  listEmptyContainer: {
+    justifyContent: 'center',
   },
   footer: {
     paddingVertical: spacing.md,
   },
   empty: {
-    marginTop: spacing.xl,
     gap: spacing.md,
     alignItems: 'center',
   },

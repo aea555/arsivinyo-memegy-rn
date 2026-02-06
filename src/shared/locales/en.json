@@ -20,7 +20,9 @@
     "feed": "Feed",
     "explore": "Explore",
     "upload": "Upload",
-    "profile": "Profile"
+    "myVideos": "My Videos",
+    "profile": "Profile",
+    "settings": "Settings"
   },
   "feed": {
     "sort": "Sort",
@@ -43,6 +45,9 @@
     "videoTitle": "Video Title",
     "description": "Description (optional)",
     "anonymous": "Upload anonymously",
+    "mutePreview": "Mute preview",
+    "unmutePreview": "Unmute preview",
+    "trim": "Trim clip",
     "uploading": "Uploading...",
     "confirming": "Confirming upload...",
     "success": "Upload complete!",
@@ -53,6 +58,7 @@
   "profile": {
     "title": "Profile",
     "myVideos": "My Videos",
+    "noVideos": "You haven't uploaded any videos yet.",
     "settings": "Settings",
     "logout": "Log out",
     "deleteAccount": "Delete account",
@@ -60,15 +66,29 @@
   },
   "settings": {
     "title": "Settings",
+    "profile": "Profile",
+    "profileSubtitle": "Manage your account details",
+    "appSettings": "App settings",
+    "appSettingsSubtitle": "Theme and language",
+    "advancedSettings": "Advanced",
+    "advancedSettingsSubtitle": "Security and account actions",
     "theme": "Theme",
     "themeAuto": "Auto",
     "themeLight": "Light",
     "themeDark": "Dark",
     "language": "Language",
     "languageEn": "English",
-    "languageTr": "Turkish"
+    "languageTr": "Turkish",
+    "dangerZone": "Danger Zone",
+    "logout": "Log out",
+    "deleteAccount": "Delete account",
+    "logoutConfirmTitle": "Log out?",
+    "logoutConfirmBody": "You will need to sign in again to access your account.",
+    "deleteConfirmTitle": "Delete account?",
+    "deleteConfirmBody": "This will schedule your account for deletion. You can cancel by logging back in within 30 days."
   },
   "video": {
+    "title": "Video",
     "likes": "Likes",
     "like": "Like",
     "unlike": "Unlike",

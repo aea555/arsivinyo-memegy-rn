@@ -1,5 +1,3 @@
-import { Redirect } from 'expo-router';
-
-export default function UploadTab() {
-  return <Redirect href="/upload" />;
+export default function UploadPlaceholder() {
+  return null;
 }

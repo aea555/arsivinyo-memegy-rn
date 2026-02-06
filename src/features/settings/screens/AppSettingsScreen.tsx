@@ -3,14 +3,15 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import i18n from '@/src/shared/locales/i18n';
-import { AppText } from '@/src/shared/components/ui/AppText';
-import { Button } from '@/src/shared/components/ui/Button';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { LocalStorage } from '@/src/shared/services/storage/LocalStorage';
 import { spacing } from '@/src/shared/theme/spacing';
 import { ThemeMode, useTheme } from '@/src/shared/theme/ThemeProvider';
+import { Card } from '@/src/shared/components/ui/Card';
+import { AppText } from '@/src/shared/components/ui/AppText';
+import { Button } from '@/src/shared/components/ui/Button';
 
-export function SettingsScreen() {
+export function AppSettingsScreen() {
   const { t } = useTranslation();
   const { mode, setMode } = useTheme();
 
@@ -24,9 +25,8 @@ export function SettingsScreen() {
   };
 
   return (
-    <Screen style={styles.container}>
-      <AppText variant="heading2">{t('settings.title')}</AppText>
-      <View style={styles.section}>
+    <Screen title={t('settings.appSettings')} showBack contentStyle={styles.container}>
+      <Card style={styles.sectionCard}>
         <AppText variant="bodyBold">{t('settings.theme')}</AppText>
         <View style={styles.row}>
           <Button
@@ -45,8 +45,8 @@ export function SettingsScreen() {
             variant={mode === 'dark' ? 'primary' : 'secondary'}
           />
         </View>
-      </View>
-      <View style={styles.section}>
+      </Card>
+      <Card style={styles.sectionCard}>
         <AppText variant="bodyBold">{t('settings.language')}</AppText>
         <View style={styles.row}>
           <Button
@@ -60,22 +60,20 @@ export function SettingsScreen() {
             variant={i18n.language === 'tr' ? 'primary' : 'secondary'}
           />
         </View>
-      </View>
+      </Card>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
     gap: spacing.lg,
-  },
-  section: {
-    gap: spacing.sm,
   },
   row: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  sectionCard: {
+    gap: spacing.md,
   },
 });

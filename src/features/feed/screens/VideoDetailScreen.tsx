@@ -22,14 +22,14 @@ export function VideoDetailScreen() {
 
   if (!video || !videoId) {
     return (
-      <Screen style={styles.container}>
+      <Screen title={t('video.title')} showBack contentStyle={styles.container}>
         <AppText variant="heading2">{t('video.noDetails')}</AppText>
       </Screen>
     );
   }
 
   return (
-    <Screen style={styles.container}>
+    <Screen title={video.title ?? t('video.title')} showBack contentStyle={styles.container}>
       <VideoPlayer uri={video.url} isActive={true} />
       <View style={styles.meta}>
         <AppText variant="heading2">{video.title ?? t('video.untitled')}</AppText>
@@ -55,8 +55,6 @@ export function VideoDetailScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
     gap: spacing.md,
   },
   meta: {

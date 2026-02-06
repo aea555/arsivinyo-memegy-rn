@@ -26,16 +26,14 @@ export function LoginScreen() {
       if (result.type === 'success') {
         const params = result.params as Record<string, string>;
         const codeParam = params.code ?? params.otc;
-        const stateParam = params.state;
         if (__DEV__) {
           console.debug('[auth] login redirect params', {
             code: codeParam,
-            state: stateParam,
             params,
           });
         }
         if (codeParam) {
-          router.replace({ pathname: '/(auth)/callback', params: { code: codeParam, state: stateParam } });
+          router.replace({ pathname: '/(auth)/callback', params: { code: codeParam } });
         } else {
           setError(t('auth.authFailed'));
         }
@@ -55,15 +53,15 @@ export function LoginScreen() {
   };
 
   return (
-    <Screen style={styles.container}>
+    <Screen contentStyle={styles.container}>
       <View style={styles.content}>
         <AppText variant="heading1" style={styles.title}>
           {t('auth.loginTitle')}
         </AppText>
-        <AppText style={{ color: palette.text.secondary }}>{t('auth.loginSubtitle')}</AppText>
+        <AppText style={[styles.subtitle, { color: palette.text.secondary }]}>
+          {t('auth.loginSubtitle')}
+        </AppText>
         {error ? <AppText style={styles.error}>{error}</AppText> : null}
-      </View>
-      <View style={styles.footer}>
         <Button label={loading ? t('auth.loggingIn') : t('auth.loginWithGoogle')} onPress={handleLogin} />
       </View>
     </Screen>
@@ -72,20 +70,20 @@ export function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: spacing.lg,
-    justifyContent: 'space-between',
+    justifyContent: 'center',
   },
   content: {
-    marginTop: spacing.xxxl,
-    gap: spacing.sm,
+    alignItems: 'center',
+    gap: spacing.lg,
   },
   title: {
-    marginBottom: spacing.xs,
+    textAlign: 'center',
   },
-  footer: {
-    marginBottom: spacing.xl,
+  subtitle: {
+    textAlign: 'center',
   },
   error: {
+    textAlign: 'center',
     marginTop: spacing.sm,
   },
 });

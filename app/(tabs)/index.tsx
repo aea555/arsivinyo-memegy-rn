@@ -1,5 +1,1 @@
-import { Redirect } from 'expo-router';
-
-export default function TabsIndex() {
-  return <Redirect href="/(tabs)/feed" />;
-}
+export { MyVideosScreen as default } from '@/src/features/profile/screens/MyVideosScreen';
