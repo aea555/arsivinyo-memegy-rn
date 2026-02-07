@@ -31,6 +31,12 @@ export function MainSettingsScreen() {
           onPress={() => router.push('/settings/app')}
         />
         <SettingsRow
+          title={t('settings.feedSettings')}
+          subtitle={t('settings.feedSettingsSubtitle')}
+          icon={<Ionicons name="play-circle-outline" size={18} color={palette.text.primary} />}
+          onPress={() => router.push('/settings/feed')}
+        />
+        <SettingsRow
           title={t('settings.themeStudio')}
           subtitle={t('settings.themeStudioSubtitle')}
           icon={<Ionicons name="sparkles" size={18} color={palette.accent} />}

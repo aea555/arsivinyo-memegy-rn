@@ -1,5 +1,4 @@
 import { useCallback, useMemo } from 'react';
-import { Alert } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { downloadVideo, VideoDownloadStage } from '@/src/features/download/services/videoDownloadService';
@@ -50,7 +49,7 @@ export function useVideoDownload(videoId: string, suggestedName?: string | null)
     }
     if (startResult === 'concurrency_limited') {
       finishError(videoId, 'concurrency_limited');
-      Alert.alert(t('common.error'), getErrorMessage('concurrency_limited', t));
+      showToast(getErrorMessage('concurrency_limited', t), 'error');
       return;
     }
 
@@ -74,7 +73,7 @@ export function useVideoDownload(videoId: string, suggestedName?: string | null)
     } catch (error) {
       const mapped = toDownloadError(error);
       finishError(videoId, mapped.code);
-      Alert.alert(t('common.error'), getErrorMessage(mapped.code, t));
+      showToast(getErrorMessage(mapped.code, t), 'error');
     }
   }, [
     finishError,

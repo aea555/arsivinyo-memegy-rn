@@ -19,6 +19,7 @@ type ImmersiveFeedItemProps = {
   isScreenActive: boolean;
   height: number;
   autoPlayEnabled: boolean;
+  preserveAspectRatio: boolean;
 };
 
 const INFO_AUTO_DISMISS_MS = 2800;
@@ -29,6 +30,7 @@ function ImmersiveFeedItemBase({
   isScreenActive,
   height,
   autoPlayEnabled,
+  preserveAspectRatio,
 }: ImmersiveFeedItemProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
@@ -66,7 +68,7 @@ function ImmersiveFeedItemBase({
           isScreenActive={isScreenActive}
           variant="immersive"
           height={height}
-          contentFit="cover"
+          contentFit={preserveAspectRatio ? 'contain' : 'cover'}
           showNativeControls={false}
           autoPlayEnabled={autoPlayEnabled}
           allowTapToToggle

@@ -63,7 +63,7 @@ export function VideoPlayer({
   const postFullscreenStateRef = React.useRef<boolean | null>(null);
   const resumeAfterForcedPauseUntilRef = React.useRef(0);
 
-  const player = useVideoPlayer(uri, (playerInstance) => {
+  const videoPlayer = useVideoPlayer(uri, (playerInstance) => {
     playerInstance.loop = true;
     playerInstance.muted = false;
   });
@@ -81,7 +81,7 @@ export function VideoPlayer({
   }, []);
 
   useEffect(() => {
-    const subscription = player.addListener('playingChange', ({ isPlaying }) => {
+    const subscription = videoPlayer.addListener('playingChange', ({ isPlaying }) => {
       lastKnownPlayingRef.current = isPlaying;
       // Once fullscreen state has been restored, do not keep forcing it.
       if (!isFullscreenRef.current && postFullscreenStateRef.current !== null) {
@@ -92,7 +92,7 @@ export function VideoPlayer({
     return () => {
       subscription.remove();
     };
-  }, [player]);
+  }, [videoPlayer]);
 
   useEffect(() => {
     if (pauseTimerRef.current) {
@@ -106,14 +106,16 @@ export function VideoPlayer({
   useEffect(() => {
     const pauseNow = () => {
       try {
-        const wasPlaying = player.playing || lastKnownPlayingRef.current;
+        const wasPlaying = videoPlayer.playing || lastKnownPlayingRef.current;
         if (wasPlaying) {
           resumeAfterForcedPauseUntilRef.current = Date.now() + FULLSCREEN_RESUME_WINDOW_MS;
         } else {
           resumeAfterForcedPauseUntilRef.current = 0;
         }
-        player.pause();
+        videoPlayer.pause();
       } catch (error) {
+        // Passive pauses frequently race with native teardown during list virtualization.
+        // Do not remount the player for this path; just ignore released-player errors.
         if (isReleasedPlayerError(error)) return;
         if (__DEV__) {
           console.debug('[video] pause skipped for released player', {
@@ -182,16 +184,16 @@ export function VideoPlayer({
     try {
       if (postFullscreenStateRef.current !== null) {
         if (postFullscreenStateRef.current) {
-          player.play();
+          videoPlayer.play();
         } else {
-          player.pause();
+          videoPlayer.pause();
         }
       } else if (manualPaused === true) {
-        player.pause();
+        videoPlayer.pause();
       } else if (manualPaused === false) {
-        player.play();
+        videoPlayer.play();
       } else if (autoPlayVideos) {
-        player.play();
+        videoPlayer.play();
       }
     } catch (error) {
       if (isReleasedPlayerError(error)) return;
@@ -220,11 +222,11 @@ export function VideoPlayer({
     isActive,
     isScreenActive,
     isFullscreen,
-    player,
+    videoPlayer,
     uri,
   ]);
 
-  const runTapFeedback = (icon: 'pause' | 'play') => {
+  const runTapFeedback = React.useCallback((icon: 'pause' | 'play') => {
     setTapFeedbackIcon(icon);
     tapFeedbackOpacity.stopAnimation();
     tapFeedbackScale.stopAnimation();
@@ -262,21 +264,21 @@ export function VideoPlayer({
         setTapFeedbackIcon(null);
       }
     });
-  };
+  }, [tapFeedbackOpacity, tapFeedbackScale]);
 
-  const handleTogglePlayback = () => {
+  const handleTogglePlayback = React.useCallback(() => {
     if (!allowTapToToggle) return;
     if (!isActive || !isScreenActive) return;
 
-    const isPlaying = player.playing || lastKnownPlayingRef.current;
+    const isPlaying = videoPlayer.playing || lastKnownPlayingRef.current;
     const nextPaused = isPlaying;
     setManualPaused(nextPaused);
     runTapFeedback(nextPaused ? 'pause' : 'play');
     try {
       if (nextPaused) {
-        player.pause();
+        videoPlayer.pause();
       } else {
-        player.play();
+        videoPlayer.play();
       }
     } catch (error) {
       if (isReleasedPlayerError(error)) return;
@@ -287,7 +289,7 @@ export function VideoPlayer({
         });
       }
     }
-  };
+  }, [allowTapToToggle, isActive, isScreenActive, videoPlayer, runTapFeedback, uri]);
 
   return (
     <View
@@ -299,7 +301,7 @@ export function VideoPlayer({
     >
       <VideoView
         style={isImmersive ? styles.videoImmersive : styles.videoCard}
-        player={player}
+        player={videoPlayer}
         contentFit={contentFit ?? (isImmersive ? 'cover' : 'cover')}
         nativeControls={showNativeControls ?? !isImmersive}
         onFullscreenEnter={() => {
@@ -312,11 +314,11 @@ export function VideoPlayer({
           const shouldResumeAfterTransition =
             resumeAfterForcedPauseUntilRef.current > Date.now() ||
             lastKnownPlayingRef.current ||
-            player.playing;
+            videoPlayer.playing;
           resumeAfterForcedPauseUntilRef.current = 0;
           if (shouldResumeAfterTransition) {
             try {
-              player.play();
+              videoPlayer.play();
             } catch {
               // no-op: transient native fullscreen transition
             }

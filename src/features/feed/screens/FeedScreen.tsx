@@ -19,8 +19,9 @@ import { VideoFeedItem } from '@/src/shared/types/api';
 import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 
 const viewabilityConfig = {
-  itemVisiblePercentThreshold: 65,
+  itemVisiblePercentThreshold: 45,
 };
+const SWIPE_LOCK_MS = 500;
 
 export function FeedScreen() {
   const { t } = useTranslation();
@@ -28,11 +29,15 @@ export function FeedScreen() {
   const insets = useSafeAreaInsets();
   const { palette } = useTheme();
   const autoPlayFeedVideos = useAppSettingsStore((state) => state.autoPlayFeedVideos);
+  const feedPreserveAspectRatio = useAppSettingsStore((state) => state.feedPreserveAspectRatio);
   const { isConnected } = useNetworkStatus();
   const [sort, setSort] = useState<'random' | 'latest' | 'popular'>('random');
   const [activeIndex, setActiveIndex] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
+  const [isSwipeLocked, setIsSwipeLocked] = useState(false);
   const listRef = useRef<FlatList<VideoFeedItem>>(null);
+  const activeIndexRef = useRef(0);
+  const swipeUnlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data, isFetchingNextPage, fetchNextPage, hasNextPage, isLoading, refetch } = useFeed(sort);
 
@@ -51,24 +56,46 @@ export function FeedScreen() {
 
   const activeId = videos[activeIndex]?.id ?? null;
 
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
+
+  const clearSwipeUnlockTimer = useCallback(() => {
+    if (swipeUnlockTimerRef.current) {
+      clearTimeout(swipeUnlockTimerRef.current);
+      swipeUnlockTimerRef.current = null;
+    }
+  }, []);
+
+  const lockSwipeTemporarily = useCallback(() => {
+    clearSwipeUnlockTimer();
+    setIsSwipeLocked(true);
+    swipeUnlockTimerRef.current = setTimeout(() => {
+      setIsSwipeLocked(false);
+      swipeUnlockTimerRef.current = null;
+    }, SWIPE_LOCK_MS);
+  }, [clearSwipeUnlockTimer]);
+
   const applyActiveIndex = useCallback(
     (nextIndex: number) => {
       if (videos.length === 0) {
-        setActiveIndex(0);
+        setActiveIndex((prev) => (prev === 0 ? prev : 0));
         return;
       }
-      setActiveIndex(Math.max(0, Math.min(nextIndex, videos.length - 1)));
+      const clamped = Math.max(0, Math.min(nextIndex, videos.length - 1));
+      setActiveIndex((prev) => (prev === clamped ? prev : clamped));
     },
     [videos.length]
   );
 
-  const onViewableItemsChanged = useRef(
+  const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      const first = viewableItems[0];
-      if (!first || typeof first.index !== 'number') return;
-      applyActiveIndex(first.index);
-    }
-  ).current;
+      const firstVisible = viewableItems.find((item) => item.isViewable && typeof item.index === 'number');
+      if (!firstVisible || typeof firstVisible.index !== 'number') return;
+      applyActiveIndex(firstVisible.index);
+    },
+    [applyActiveIndex]
+  );
 
   const renderItem = useCallback(
     ({ item }: { item: VideoFeedItem }) => (
@@ -78,13 +105,16 @@ export function FeedScreen() {
         isScreenActive={isFocused}
         height={viewportHeight}
         autoPlayEnabled={autoPlayFeedVideos}
+        preserveAspectRatio={feedPreserveAspectRatio}
       />
     ),
-    [activeId, autoPlayFeedVideos, isFocused, viewportHeight]
+    [activeId, autoPlayFeedVideos, feedPreserveAspectRatio, isFocused, viewportHeight]
   );
 
   useEffect(() => {
     if (!isFocused) {
+      clearSwipeUnlockTimer();
+      setIsSwipeLocked(false);
       setActiveIndex(-1);
       return;
     }
@@ -95,14 +125,22 @@ export function FeedScreen() {
     if (videos.length > 0 && activeIndex >= videos.length) {
       applyActiveIndex(videos.length - 1);
     }
-  }, [activeIndex, applyActiveIndex, isFocused, videos.length]);
+  }, [activeIndex, applyActiveIndex, clearSwipeUnlockTimer, isFocused, videos.length]);
 
   useEffect(() => {
+    clearSwipeUnlockTimer();
+    setIsSwipeLocked(false);
     setActiveIndex(0);
     requestAnimationFrame(() => {
       listRef.current?.scrollToOffset({ offset: 0, animated: false });
     });
-  }, [sort]);
+  }, [clearSwipeUnlockTimer, sort]);
+
+  useEffect(() => {
+    return () => {
+      clearSwipeUnlockTimer();
+    };
+  }, [clearSwipeUnlockTimer]);
 
   useEffect(() => {
     if (videos.length === 0) return;
@@ -115,20 +153,13 @@ export function FeedScreen() {
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       if (viewportHeight <= 0) return;
       const nextIndex = Math.round(event.nativeEvent.contentOffset.y / viewportHeight);
+      const previousIndex = activeIndexRef.current;
       applyActiveIndex(nextIndex);
-    },
-    [applyActiveIndex, viewportHeight]
-  );
-
-  const onScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (viewportHeight <= 0) return;
-      const nextIndex = Math.round(event.nativeEvent.contentOffset.y / viewportHeight);
-      if (nextIndex !== activeIndex) {
-        applyActiveIndex(nextIndex);
+      if (nextIndex !== previousIndex) {
+        lockSwipeTemporarily();
       }
     },
-    [activeIndex, applyActiveIndex, viewportHeight]
+    [applyActiveIndex, lockSwipeTemporarily, viewportHeight]
   );
 
   const getItemLayout = useCallback(
@@ -184,6 +215,7 @@ export function FeedScreen() {
         }}
       >
         <FlatList
+          key={`feed-${sort}`}
           ref={listRef}
           data={videos}
           renderItem={renderItem}
@@ -192,9 +224,8 @@ export function FeedScreen() {
           onEndReachedThreshold={0.55}
           viewabilityConfig={viewabilityConfig}
           onViewableItemsChanged={onViewableItemsChanged}
-          onScroll={onScroll}
-          scrollEventThrottle={16}
           onMomentumScrollEnd={onMomentumScrollEnd}
+          scrollEnabled={!isSwipeLocked}
           pagingEnabled
           disableIntervalMomentum
           decelerationRate="normal"

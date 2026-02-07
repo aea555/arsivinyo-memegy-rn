@@ -153,14 +153,13 @@ export function useToggleLike(videoId: string) {
     },
     onSettled: () => {
       if (__DEV__) {
-        console.debug('[like] mutate:onSettled invalidate', {
+        console.debug('[like] mutate:onSettled skipImmediateInvalidate', {
           videoId,
-          queryKeys: ['feed', 'search', 'myVideos'],
+          reason: 'authoritative mutation response already reconciled in cache',
         });
       }
-      queryClient.invalidateQueries({ queryKey: ['feed'] });
-      queryClient.invalidateQueries({ queryKey: ['search'] });
-      queryClient.invalidateQueries({ queryKey: ['myVideos'] });
+      // Immediate invalidation causes active immersive feed to refetch/reorder and jump.
+      // We keep caches in sync from mutation response and avoid disruptive list resets.
     },
   });
 }
