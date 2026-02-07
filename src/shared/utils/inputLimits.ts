@@ -55,3 +55,8 @@ export function clampSearchQuery(value: string) {
     .map((token) => clampCodePoints(token, SEARCH_MAX_TOKEN_LENGTH));
   return tokenLimited.join(' ');
 }
+
+export function clampSearchQueryDraft(value: string) {
+  const sanitized = value.replace(CONTROL_CHARS_REGEX, '');
+  return clampCodePoints(sanitized, SEARCH_MAX_QUERY_CHARS);
+}

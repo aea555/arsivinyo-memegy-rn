@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, ViewProps } from 'react-native';
 
+import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { useShadows } from '@/src/shared/theme/shadows';
 
@@ -28,6 +29,6 @@ const styles = StyleSheet.create({
   base: {
     borderRadius: 16,
     borderWidth: 1,
-    padding: 16,
+    padding: layoutConfig.card.padding,
   },
 });

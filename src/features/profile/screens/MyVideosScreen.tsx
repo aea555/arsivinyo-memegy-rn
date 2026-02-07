@@ -2,6 +2,8 @@ import { useIsFocused } from '@react-navigation/native';
 import { InfiniteData, useMutation, useQueryClient } from '@tanstack/react-query';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
+  Easing,
   FlatList,
   KeyboardAvoidingView,
   NativeScrollEvent,
@@ -19,6 +21,7 @@ import { VideoCard } from '@/src/features/feed/components/VideoCard';
 import { retryVideoProcessing } from '@/src/features/profile/api/profileApi';
 import { useDeleteVideo } from '@/src/features/profile/hooks/useDeleteVideo';
 import { useMyVideos } from '@/src/features/profile/hooks/useMyVideos';
+import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
@@ -26,6 +29,7 @@ import { Card } from '@/src/shared/components/ui/Card';
 import { ConfirmModal } from '@/src/shared/components/ui/ConfirmModal';
 import { Input } from '@/src/shared/components/ui/Input';
 import { SegmentedControl } from '@/src/shared/components/ui/SegmentedControl';
+import { useAutoHideControlsOnScroll } from '@/src/shared/hooks/useAutoHideControlsOnScroll';
 import { useDebounce } from '@/src/shared/hooks/useDebounce';
 import { withAlpha } from '@/src/shared/theme/colorUtils';
 import { spacing } from '@/src/shared/theme/spacing';
@@ -34,7 +38,7 @@ import { MyVideoItem, VideoFeedItem } from '@/src/shared/types/api';
 import { extractApiErrorMessage } from '@/src/shared/utils/errorParser';
 import { formatDate } from '@/src/shared/utils/formatters';
 import {
-  clampSearchQuery,
+  clampSearchQueryDraft,
   normalizeSearchQuery,
   SEARCH_MAX_QUERY_CHARS,
 } from '@/src/shared/utils/inputLimits';
@@ -43,6 +47,10 @@ import { useToastStore } from '@/src/store/toastStore';
 const viewabilityConfig = {
   itemVisiblePercentThreshold: 70,
 };
+const LIST_INITIAL_RENDER_COUNT = 3;
+const LIST_BATCH_RENDER_COUNT = 3;
+const LIST_WINDOW_SIZE = 4;
+const LIST_BATCH_UPDATE_MS = 32;
 
 export function MyVideosScreen() {
   const { t } = useTranslation();
@@ -56,13 +64,61 @@ export function MyVideosScreen() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<'date_desc' | 'title_asc'>('date_desc');
+  const [controlsHeight, setControlsHeight] = useState(0);
+  const controlsAnim = useRef(new Animated.Value(1)).current;
+  const {
+    isVisible: areControlsVisible,
+    onScrollBeginDrag: onControlsScrollBeginDrag,
+    onScrollEndDrag: onControlsScrollEndDrag,
+    onMomentumScrollBegin: onControlsMomentumBegin,
+    onMomentumScrollEnd: onControlsMomentumEnd,
+    setInputFocused: setControlsInputFocused,
+    showControlsOnFocus,
+  } = useAutoHideControlsOnScroll({ graceMs: 3000 });
   const listRef = useRef<FlatList<MyVideoItem>>(null);
   const browseOffsetRef = useRef(0);
   const wasSearchingRef = useRef(false);
   const debouncedQuery = useDebounce(query, 200);
   const handleQueryChange = useCallback((text: string) => {
-    setQuery(clampSearchQuery(text));
+    setQuery(clampSearchQueryDraft(text));
   }, []);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    showControlsOnFocus();
+  }, [isFocused, showControlsOnFocus]);
+
+  useEffect(() => {
+    Animated.timing(controlsAnim, {
+      toValue: areControlsVisible ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [areControlsVisible, controlsAnim]);
+
+  const controlsAnimatedStyle = useMemo(
+    () => ({
+      opacity: controlsAnim,
+      height: controlsAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, Math.max(controlsHeight, 1)],
+      }),
+      marginBottom: controlsAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, layoutConfig.list.headerBottomMargin],
+      }),
+      transform: [
+        {
+          translateY: controlsAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [-12, 0],
+          }),
+        },
+      ],
+    }),
+    [controlsAnim, controlsHeight]
+  );
   const normalizedQuery = useMemo(
     () => normalizeSearchQuery(debouncedQuery).toLocaleLowerCase(),
     [debouncedQuery]
@@ -233,7 +289,7 @@ export function MyVideosScreen() {
             isScreenActive={isFocused}
             showUploader={false}
             showAnonymousBadge={item.is_anonymous}
-            extraAction={renderDeleteAction(item.id)}
+            renderExtraAction={renderDeleteAction}
           />
         );
       }
@@ -354,6 +410,12 @@ export function MyVideosScreen() {
     },
     [isSearching]
   );
+  const handleListScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      handleScroll(event);
+    },
+    [handleScroll]
+  );
 
   const handleEndReached = () => {
     if (isSearching) return;
@@ -361,41 +423,54 @@ export function MyVideosScreen() {
       fetchNextPage();
     }
   };
-
-  return (
-    <Screen title={t('tabs.myVideos')} contentStyle={styles.container}>
-      <KeyboardAvoidingView
-        style={styles.keyboardContainer}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+  const listHeader = useMemo(
+    () => (
+      <Animated.View
+        style={[
+          styles.controlsWrapAnimated,
+          controlsAnimatedStyle,
+        ]}
+        pointerEvents={areControlsVisible ? 'auto' : 'none'}
       >
-        <Card style={styles.controlsCard}>
-          <Input
-            placeholder={t('profile.searchPlaceholder')}
-            value={query}
-            onChangeText={handleQueryChange}
-            autoCapitalize="none"
-            returnKeyType="search"
-            maxLength={SEARCH_MAX_QUERY_CHARS}
-          />
-          <SegmentedControl
-            value={sortMode}
-            onChange={(value) => setSortMode(value as 'date_desc' | 'title_asc')}
-            options={[
-              { label: t('profile.sortDate'), value: 'date_desc' },
-              { label: t('profile.sortAlphabetical'), value: 'title_asc' },
-            ]}
-          />
-          <View style={styles.metaRow}>
-            <View style={styles.metaLabelWrap}>
-              <AppText variant="caption" style={styles.metaLabel}>
-                {isSearching
-                  ? t('profile.searchResultsFor', { query: debouncedQuery.trim() })
-                  : t('profile.allUploads')}
-              </AppText>
-              <AppText variant="caption" style={styles.metaCount}>
-                {t('profile.resultCount', { count: displayVideos.length })}
-              </AppText>
-            </View>
+        <View
+          style={styles.controlsWrap}
+          onLayout={(event) => {
+            const nextHeight = Math.round(event.nativeEvent.layout.height);
+            if (nextHeight > 0 && nextHeight !== controlsHeight) {
+              setControlsHeight(nextHeight);
+            }
+          }}
+        >
+          <Card style={styles.controlsCard}>
+            <Input
+              placeholder={t('profile.searchPlaceholder')}
+              value={query}
+              onChangeText={handleQueryChange}
+              autoCapitalize="none"
+              returnKeyType="search"
+              maxLength={SEARCH_MAX_QUERY_CHARS}
+              onFocus={() => setControlsInputFocused(true)}
+              onBlur={() => setControlsInputFocused(false)}
+            />
+            <SegmentedControl
+              value={sortMode}
+              onChange={(value) => setSortMode(value as 'date_desc' | 'title_asc')}
+              options={[
+                { label: t('profile.sortDate'), value: 'date_desc' },
+                { label: t('profile.sortAlphabetical'), value: 'title_asc' },
+              ]}
+            />
+            <View style={styles.metaRow}>
+              <View style={styles.metaLabelWrap}>
+                <AppText variant="caption" style={styles.metaLabel}>
+                  {isSearching
+                    ? t('profile.searchResultsFor', { query: debouncedQuery.trim() })
+                    : t('profile.allUploads')}
+                </AppText>
+                <AppText variant="caption" style={styles.metaCount}>
+                  {t('profile.resultCount', { count: displayVideos.length })}
+                </AppText>
+              </View>
             {isSearching ? (
               <Pressable onPress={() => setQuery('')} hitSlop={8}>
                 <AppText variant="caption" style={[styles.clearSearch, { color: palette.accent }]}>
@@ -404,23 +479,55 @@ export function MyVideosScreen() {
               </Pressable>
             ) : null}
           </View>
-        </Card>
+          </Card>
+        </View>
+      </Animated.View>
+    ),
+    [
+      controlsAnimatedStyle,
+      controlsHeight,
+      debouncedQuery,
+      displayVideos.length,
+      handleQueryChange,
+      isSearching,
+      areControlsVisible,
+      palette.accent,
+      query,
+      setControlsInputFocused,
+      sortMode,
+      t,
+    ]
+  );
+
+  return (
+    <Screen title={t('tabs.myVideos')} contentStyle={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.keyboardContainer}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <FlatList
           ref={listRef}
           data={displayVideos}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
+          ListHeaderComponent={listHeader}
+          stickyHeaderIndices={[0]}
           viewabilityConfig={viewabilityConfig}
           onViewableItemsChanged={onViewableItemsChanged}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
+          onScroll={handleListScroll}
+          onScrollBeginDrag={onControlsScrollBeginDrag}
+          onScrollEndDrag={onControlsScrollEndDrag}
+          onMomentumScrollBegin={onControlsMomentumBegin}
+          onMomentumScrollEnd={onControlsMomentumEnd}
+          scrollEventThrottle={32}
           keyboardShouldPersistTaps="handled"
-          removeClippedSubviews={false}
-          initialNumToRender={4}
-          maxToRenderPerBatch={4}
-          windowSize={5}
+          removeClippedSubviews
+          initialNumToRender={LIST_INITIAL_RENDER_COUNT}
+          maxToRenderPerBatch={LIST_BATCH_RENDER_COUNT}
+          windowSize={LIST_WINDOW_SIZE}
+          updateCellsBatchingPeriod={LIST_BATCH_UPDATE_MS}
           ListEmptyComponent={
             isLoading ? null : (
               <View style={styles.empty}>
@@ -455,11 +562,17 @@ export function MyVideosScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    gap: spacing.md,
+    gap: layoutConfig.list.headerGap,
   },
   keyboardContainer: {
     flex: 1,
-    gap: spacing.md,
+    gap: layoutConfig.list.headerGap,
+  },
+  controlsWrap: {
+    gap: layoutConfig.list.headerGap,
+  },
+  controlsWrapAnimated: {
+    overflow: 'hidden',
   },
   controlsCard: {
     gap: spacing.sm,

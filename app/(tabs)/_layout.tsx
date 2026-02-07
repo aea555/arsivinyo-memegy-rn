@@ -13,6 +13,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { withAlpha } from '@/src/shared/theme/colorUtils';
 import { useShadows } from '@/src/shared/theme/shadows';
@@ -58,7 +59,12 @@ function UploadTabButton({
     <Pressable
       onPress={() => router.push('/upload-modal')}
       onLongPress={onLongPress}
-      style={({ pressed }) => [style, styles.uploadButton, pressed ? styles.uploadPressed : null]}
+      style={({ pressed }) => [
+        style,
+        styles.uploadButton,
+        { top: layoutConfig.tabBar.uploadTopOffset },
+        pressed ? styles.uploadPressed : null,
+      ]}
       accessibilityRole={accessibilityRole ?? 'button'}
       accessibilityLabel={accessibilityLabel ?? 'Upload video'}
       accessibilityState={accessibilityState}
@@ -69,6 +75,9 @@ function UploadTabButton({
           styles.uploadShell,
           shadows.strong,
           {
+            width: layoutConfig.tabBar.uploadShellSize,
+            height: layoutConfig.tabBar.uploadShellSize,
+            borderRadius: Math.round(layoutConfig.tabBar.uploadShellSize * 0.29),
             backgroundColor: palette.surface,
             borderColor: withAlpha(palette.border, 0.95),
           },
@@ -78,6 +87,9 @@ function UploadTabButton({
           style={[
             styles.uploadInner,
             {
+              width: layoutConfig.tabBar.uploadInnerSize,
+              height: layoutConfig.tabBar.uploadInnerSize,
+              borderRadius: Math.round(layoutConfig.tabBar.uploadInnerSize * 0.26),
               backgroundColor: palette.accent,
               borderColor: withAlpha(palette.onAccent, 0.22),
             },
@@ -184,10 +196,10 @@ export default function TabLayout() {
           backgroundColor: palette.surface,
           borderTopColor: withAlpha(palette.border, 0.9),
           borderTopWidth: 1,
-          height: 97,
-          paddingBottom: 17,
-          paddingTop: 14,
-          paddingHorizontal: 8,
+          height: layoutConfig.tabBar.height,
+          paddingBottom: layoutConfig.tabBar.paddingBottom,
+          paddingTop: layoutConfig.tabBar.paddingTop,
+          paddingHorizontal: layoutConfig.tabBar.paddingHorizontal,
           ...shadows.medium,
         },
         tabBarItemStyle: {
@@ -317,7 +329,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   uploadButton: {
-    top: -5,
     justifyContent: 'center',
     alignItems: 'center',
     alignSelf: 'center',
@@ -326,18 +337,12 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.96 }],
   },
   uploadShell: {
-    width: 62,
-    height: 62,
-    borderRadius: 18,
     borderWidth: 1,
     padding: 4,
     justifyContent: 'center',
     alignItems: 'center',
   },
   uploadInner: {
-    width: 54,
-    height: 54,
-    borderRadius: 14,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',

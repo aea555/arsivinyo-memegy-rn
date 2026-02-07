@@ -22,15 +22,17 @@ type VideoCardProps = {
   showUploader?: boolean;
   showAnonymousBadge?: boolean;
   extraAction?: React.ReactNode;
+  renderExtraAction?: (videoId: string) => React.ReactNode;
 };
 
-export function VideoCard({
+function VideoCardBase({
   video,
   isActive,
   isScreenActive = true,
   showUploader = true,
   showAnonymousBadge = false,
   extraAction,
+  renderExtraAction,
 }: VideoCardProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
@@ -39,6 +41,9 @@ export function VideoCard({
   const metaLine = showUploader
     ? `${video.uploader ? `@${video.uploader.username}` : t('video.anonymous')} - ${formatDate(video.created_at)}`
     : formatDate(video.created_at);
+  const resolvedExtraAction = renderExtraAction
+    ? renderExtraAction(video.id)
+    : extraAction;
 
   return (
     <Card style={styles.card}>
@@ -55,7 +60,7 @@ export function VideoCard({
             <DownloadButton videoId={video.id} suggestedName={video.title} iconOnly />
             <QuickShareButton videoId={video.id} suggestedName={video.title} iconOnly />
             <ShareButton url={video.url} title={video.title} iconOnly />
-            {extraAction}
+            {resolvedExtraAction}
           </View>
           {showAnonymousBadge ? (
             <View
@@ -88,6 +93,32 @@ export function VideoCard({
       </View>
     </Card>
   );
+}
+
+function areVideoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps) {
+  return (
+    prev.isActive === next.isActive &&
+    prev.isScreenActive === next.isScreenActive &&
+    prev.showUploader === next.showUploader &&
+    prev.showAnonymousBadge === next.showAnonymousBadge &&
+    prev.extraAction === next.extraAction &&
+    prev.renderExtraAction === next.renderExtraAction &&
+    prev.video.id === next.video.id &&
+    prev.video.url === next.video.url &&
+    prev.video.title === next.video.title &&
+    prev.video.description === next.video.description &&
+    prev.video.created_at === next.video.created_at &&
+    prev.video.is_liked === next.video.is_liked &&
+    prev.video.like_count === next.video.like_count &&
+    prev.video.uploader?.id === next.video.uploader?.id &&
+    prev.video.uploader?.username === next.video.uploader?.username
+  );
+}
+
+const MemoizedVideoCard = React.memo(VideoCardBase, areVideoCardPropsEqual);
+
+export function VideoCard(props: VideoCardProps) {
+  return <MemoizedVideoCard {...props} />;
 }
 
 const styles = StyleSheet.create({

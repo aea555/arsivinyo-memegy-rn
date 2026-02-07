@@ -1,4 +1,6 @@
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+const RGB_RE =
+  /^rgba?\(\s*([0-9]{1,3}(?:\.[0-9]+)?)\s*,\s*([0-9]{1,3}(?:\.[0-9]+)?)\s*,\s*([0-9]{1,3}(?:\.[0-9]+)?)(?:\s*,\s*([01]?(?:\.\d+)?))?\s*\)$/i;
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -29,7 +31,16 @@ export function rgbToHex(r: number, g: number, b: number): string {
 }
 
 export function withAlpha(hex: string, alpha: number): string {
-  const { r, g, b } = hexToRgb(hex);
+  const input = hex.trim();
+  const rgbMatch = input.match(RGB_RE);
+  const rgb = rgbMatch
+    ? {
+        r: clamp(Number.parseFloat(rgbMatch[1]), 0, 255),
+        g: clamp(Number.parseFloat(rgbMatch[2]), 0, 255),
+        b: clamp(Number.parseFloat(rgbMatch[3]), 0, 255),
+      }
+    : hexToRgb(input);
+  const { r, g, b } = rgb;
   return `rgba(${r}, ${g}, ${b}, ${clamp(alpha, 0, 1).toFixed(3)})`;
 }
 

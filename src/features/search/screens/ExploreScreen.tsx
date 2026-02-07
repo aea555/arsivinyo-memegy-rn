@@ -1,27 +1,32 @@
 import { useIsFocused } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FlatList, KeyboardAvoidingView, Platform, StyleSheet, View, ViewToken } from 'react-native';
+import { Animated, Easing, FlatList, KeyboardAvoidingView, Platform, StyleSheet, View, ViewToken } from 'react-native';
 
 import { VideoCard } from '@/src/features/feed/components/VideoCard';
-import { useFeed } from '@/src/features/feed/hooks/useFeed';
 import { useSearch } from '@/src/features/search/hooks/useSearch';
+import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Card } from '@/src/shared/components/ui/Card';
 import { Input } from '@/src/shared/components/ui/Input';
 import { SegmentedControl } from '@/src/shared/components/ui/SegmentedControl';
+import { useAutoHideControlsOnScroll } from '@/src/shared/hooks/useAutoHideControlsOnScroll';
 import { useDebounce } from '@/src/shared/hooks/useDebounce';
 import { spacing } from '@/src/shared/theme/spacing';
 import { VideoFeedItem } from '@/src/shared/types/api';
 import {
-  clampSearchQuery,
+  clampSearchQueryDraft,
   SEARCH_MAX_QUERY_CHARS,
 } from '@/src/shared/utils/inputLimits';
 
 const viewabilityConfig = {
   itemVisiblePercentThreshold: 70,
 };
+const LIST_INITIAL_RENDER_COUNT = 3;
+const LIST_BATCH_RENDER_COUNT = 3;
+const LIST_WINDOW_SIZE = 4;
+const LIST_BATCH_UPDATE_MS = 32;
 
 export function ExploreScreen() {
   const { t } = useTranslation();
@@ -29,12 +34,60 @@ export function ExploreScreen() {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<'relevance' | 'recent' | 'popular'>('relevance');
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [controlsHeight, setControlsHeight] = useState(0);
+  const controlsAnim = useRef(new Animated.Value(1)).current;
+  const {
+    isVisible: areControlsVisible,
+    onScrollBeginDrag: onControlsScrollBeginDrag,
+    onScrollEndDrag: onControlsScrollEndDrag,
+    onMomentumScrollBegin: onControlsMomentumBegin,
+    onMomentumScrollEnd: onControlsMomentumEnd,
+    setInputFocused: setControlsInputFocused,
+    showControlsOnFocus,
+  } = useAutoHideControlsOnScroll({ graceMs: 3000 });
 
   const handleQueryChange = useCallback((text: string) => {
-    setQuery(clampSearchQuery(text));
+    setQuery(clampSearchQueryDraft(text));
   }, []);
 
-  const debouncedQuery = useDebounce(query, 400);
+  useEffect(() => {
+    if (!isFocused) return;
+    showControlsOnFocus();
+  }, [isFocused, showControlsOnFocus]);
+
+  useEffect(() => {
+    Animated.timing(controlsAnim, {
+      toValue: areControlsVisible ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [areControlsVisible, controlsAnim]);
+
+  const controlsAnimatedStyle = useMemo(
+    () => ({
+      opacity: controlsAnim,
+      height: controlsAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, Math.max(controlsHeight, 1)],
+      }),
+      marginBottom: controlsAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, layoutConfig.list.headerBottomMargin],
+      }),
+      transform: [
+        {
+          translateY: controlsAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [-12, 0],
+          }),
+        },
+      ],
+    }),
+    [controlsAnim, controlsHeight]
+  );
+
+  const debouncedQuery = useDebounce(query, 550);
   const isSearching = debouncedQuery.trim().length > 0;
 
   const {
@@ -48,23 +101,71 @@ export function ExploreScreen() {
     sort
   );
 
-  const {
-    data: popularData,
-    fetchNextPage: fetchNextPopular,
-    hasNextPage: hasNextPopular,
-    isFetchingNextPage: isFetchingPopular,
-    isLoading: isLoadingPopular,
-  } = useFeed('popular', { enabled: !isSearching });
+  const videos = useMemo(() => searchData?.pages.flatMap((page) => page) ?? [], [searchData]);
 
-  const videos = useMemo(() => {
-    const pages = isSearching ? searchData?.pages : popularData?.pages;
-    return pages?.flatMap((page) => page) ?? [];
-  }, [isSearching, popularData, searchData]);
-
-  const isLoading = isSearching ? isLoadingSearch : isLoadingPopular;
-  const isFetchingNextPage = isSearching ? isFetchingSearch : isFetchingPopular;
-  const hasNextPage = isSearching ? hasNextSearch : hasNextPopular;
-  const fetchNextPage = isSearching ? fetchNextSearch : fetchNextPopular;
+  const isLoading = isSearching ? isLoadingSearch : false;
+  const isFetchingNextPage = isSearching ? isFetchingSearch : false;
+  const hasNextPage = isSearching ? hasNextSearch : false;
+  const fetchNextPage = isSearching ? fetchNextSearch : undefined;
+  const listHeader = useMemo(
+    () => (
+      <Animated.View
+        style={[
+          styles.controlsAnimated,
+          controlsAnimatedStyle,
+        ]}
+        pointerEvents={areControlsVisible ? 'auto' : 'none'}
+      >
+        <View
+          style={styles.controls}
+          onLayout={(event) => {
+            const nextHeight = Math.round(event.nativeEvent.layout.height);
+            if (nextHeight > 0 && nextHeight !== controlsHeight) {
+              setControlsHeight(nextHeight);
+            }
+          }}
+        >
+          <Card style={styles.controlsCard}>
+            <Input
+              placeholder={t('search.placeholder')}
+              value={query}
+              onChangeText={handleQueryChange}
+              autoCapitalize="none"
+              maxLength={SEARCH_MAX_QUERY_CHARS}
+              onFocus={() => setControlsInputFocused(true)}
+              onBlur={() => setControlsInputFocused(false)}
+            />
+            <SegmentedControl
+              value={sort}
+              onChange={(value) => setSort(value as 'relevance' | 'recent' | 'popular')}
+              options={[
+                { label: t('search.sortRelevance'), value: 'relevance' },
+                { label: t('search.sortRecent'), value: 'recent' },
+                { label: t('search.sortPopular'), value: 'popular' },
+              ]}
+            />
+            {isSearching ? (
+              <AppText variant="caption" style={styles.resultsForText}>
+                {t('search.resultsFor', { query: debouncedQuery.trim() })}
+              </AppText>
+            ) : null}
+          </Card>
+        </View>
+      </Animated.View>
+    ),
+    [
+      areControlsVisible,
+      controlsAnimatedStyle,
+      controlsHeight,
+      debouncedQuery,
+      handleQueryChange,
+      isSearching,
+      query,
+      setControlsInputFocused,
+      sort,
+      t,
+    ]
+  );
 
   const renderItem = useCallback(
     ({ item }: { item: VideoFeedItem }) => (
@@ -88,7 +189,8 @@ export function ExploreScreen() {
   ).current;
 
   const handleEndReached = () => {
-    if (hasNextPage && !isFetchingNextPage) {
+    if (!isSearching) return;
+    if (hasNextPage && !isFetchingNextPage && fetchNextPage) {
       fetchNextPage();
     }
   };
@@ -102,41 +204,31 @@ export function ExploreScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 100}
       >
-        <View style={styles.controls}>
-          <Card style={styles.controlsCard}>
-            <Input
-              placeholder={t('search.placeholder')}
-              value={query}
-              onChangeText={handleQueryChange}
-              autoCapitalize="none"
-              maxLength={SEARCH_MAX_QUERY_CHARS}
-            />
-            <SegmentedControl
-              value={sort}
-              onChange={(value) => setSort(value as 'relevance' | 'recent' | 'popular')}
-              options={[
-                { label: t('search.sortRelevance'), value: 'relevance' },
-                { label: t('search.sortRecent'), value: 'recent' },
-                { label: t('search.sortPopular'), value: 'popular' },
-              ]}
-            />
-          </Card>
-        </View>
         <FlatList
           data={videos}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
+          ListHeaderComponent={listHeader}
+          stickyHeaderIndices={[0]}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
+          onScrollBeginDrag={onControlsScrollBeginDrag}
+          onScrollEndDrag={onControlsScrollEndDrag}
+          onMomentumScrollBegin={onControlsMomentumBegin}
+          onMomentumScrollEnd={onControlsMomentumEnd}
+          scrollEventThrottle={16}
           viewabilityConfig={viewabilityConfig}
           onViewableItemsChanged={onViewableItemsChanged}
           keyboardShouldPersistTaps="handled"
-          removeClippedSubviews={false}
+          removeClippedSubviews
+          initialNumToRender={LIST_INITIAL_RENDER_COUNT}
+          maxToRenderPerBatch={LIST_BATCH_RENDER_COUNT}
+          windowSize={LIST_WINDOW_SIZE}
+          updateCellsBatchingPeriod={LIST_BATCH_UPDATE_MS}
           ListEmptyComponent={
             isLoading ? null : (
               <View style={styles.empty}>
-                <AppText>{isSearching ? t('search.empty') : t('feed.empty')}</AppText>
-                {isSearching ? <AppText variant="caption">{t('search.hint')}</AppText> : null}
+                <AppText>{isSearching ? t('search.empty') : t('search.hint')}</AppText>
               </View>
             )
           }
@@ -149,14 +241,19 @@ export function ExploreScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    gap: spacing.md,
+    gap: layoutConfig.list.headerGap,
   },
   controls: {
-    gap: spacing.md,
-    marginBottom: spacing.md,
+    gap: layoutConfig.list.headerGap,
+  },
+  controlsAnimated: {
+    overflow: 'hidden',
   },
   controlsCard: {
-    gap: spacing.md,
+    gap: spacing.sm,
+  },
+  resultsForText: {
+    paddingHorizontal: spacing.xs,
   },
   listContent: {
     paddingBottom: spacing.xxxl,

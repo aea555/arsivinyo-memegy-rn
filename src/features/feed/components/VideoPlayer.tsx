@@ -44,6 +44,70 @@ export function VideoPlayer({
   autoPlayEnabled,
   allowTapToToggle = false,
 }: VideoPlayerProps) {
+  const [appState, setAppState] = React.useState<AppStateStatus>(AppState.currentState);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', setAppState);
+    return () => subscription.remove();
+  }, []);
+
+  const canMountNativePlayer =
+    appState === 'active' && isScreenActive && typeof uri === 'string' && uri.length > 0;
+
+  if (!canMountNativePlayer) {
+    return (
+      <InactiveVideoPlayerShell
+        variant={variant}
+        height={height}
+      />
+    );
+  }
+
+  return (
+    <VideoPlayerNative
+      uri={uri}
+      isActive={isActive}
+      isScreenActive={isScreenActive}
+      variant={variant}
+      height={height}
+      contentFit={contentFit}
+      showNativeControls={showNativeControls}
+      autoPlayEnabled={autoPlayEnabled}
+      allowTapToToggle={allowTapToToggle}
+    />
+  );
+}
+
+type InactiveVideoPlayerShellProps = Pick<VideoPlayerProps, 'variant' | 'height'>;
+
+function InactiveVideoPlayerShell({ variant = 'card', height }: InactiveVideoPlayerShellProps) {
+  const { palette } = useTheme();
+  const isImmersive = variant === 'immersive';
+
+  return (
+    <View
+      style={[
+        isImmersive ? styles.immersiveContainer : styles.container,
+        { backgroundColor: palette.surface },
+        typeof height === 'number' ? { height } : null,
+      ]}
+    >
+      <View style={isImmersive ? styles.videoImmersive : styles.videoCard} />
+    </View>
+  );
+}
+
+function VideoPlayerNative({
+  uri,
+  isActive,
+  isScreenActive = true,
+  variant = 'card',
+  height,
+  contentFit,
+  showNativeControls,
+  autoPlayEnabled,
+  allowTapToToggle = false,
+}: VideoPlayerProps) {
   const { palette } = useTheme();
   const defaultAutoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
   const autoPlayVideos = autoPlayEnabled ?? defaultAutoPlayVideos;

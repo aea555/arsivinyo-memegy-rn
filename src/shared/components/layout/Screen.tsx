@@ -3,9 +3,9 @@ import { StyleSheet, View, ViewProps } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { AppHeader } from '@/src/shared/components/layout/AppHeader';
-import { spacing } from '@/src/shared/theme/spacing';
 
 type ScreenProps = ViewProps & {
   title?: string;
@@ -47,13 +47,13 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layoutConfig.screen.horizontalPadding,
   },
   withHeader: {
-    paddingTop: spacing.lg,
+    paddingTop: layoutConfig.screen.withHeaderTopPadding,
   },
   noHeader: {
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.xl,
+    paddingTop: layoutConfig.screen.noHeaderTopPadding,
+    paddingBottom: layoutConfig.screen.noHeaderBottomPadding,
   },
 });

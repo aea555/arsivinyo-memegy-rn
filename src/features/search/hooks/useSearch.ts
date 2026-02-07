@@ -2,10 +2,10 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 
 import { searchVideos } from '@/src/features/search/api/searchApi';
 import { SEARCH_PAGE_SIZE } from '@/src/shared/utils/constants';
-import { normalizeSearchQuery } from '@/src/shared/utils/inputLimits';
+import { clampSearchQuery } from '@/src/shared/utils/inputLimits';
 
 export function useSearch(query: string, sort: 'relevance' | 'recent' | 'popular') {
-  const normalizedQuery = normalizeSearchQuery(query);
+  const normalizedQuery = clampSearchQuery(query);
 
   return useInfiniteQuery({
     queryKey: ['search', normalizedQuery, sort],
