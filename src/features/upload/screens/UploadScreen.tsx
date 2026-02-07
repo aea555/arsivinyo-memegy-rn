@@ -15,7 +15,9 @@ import {
   View,
 } from 'react-native';
 
-import { getVideoSize, pickVideo, uploadVideo } from '@/src/features/upload/hooks/useVideoUpload';
+import { pickVideo, uploadVideo } from '@/src/features/upload/hooks/useVideoUpload';
+import { cleanupNormalizedVideoAsset, normalizePickedVideoAsset } from '@/src/features/upload/services/videoAssetNormalizer';
+import { NormalizedVideoAsset, UploadValidationError } from '@/src/features/upload/types/uploadTypes';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
@@ -114,8 +116,7 @@ export function UploadScreen() {
   const router = useRouter();
   const autoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
 
-  const [assetUri, setAssetUri] = useState<string | null>(null);
-  const [filename, setFilename] = useState<string>('');
+  const [selectedVideo, setSelectedVideo] = useState<NormalizedVideoAsset | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(false);
@@ -126,10 +127,33 @@ export function UploadScreen() {
   const [showFullscreen, setShowFullscreen] = useState(false);
 
   // Create a single video player instance shared between preview and fullscreen
-  const videoPlayer = useVideoPlayer(assetUri || '', (playerInstance) => {
+  const videoPlayer = useVideoPlayer(selectedVideo?.normalizedUri || '', (playerInstance) => {
     playerInstance.loop = isPreviewLooping;
     playerInstance.muted = isPreviewMuted;
   });
+
+  React.useEffect(() => {
+    return () => {
+      void cleanupNormalizedVideoAsset(selectedVideo);
+    };
+  }, [selectedVideo]);
+
+  const getNormalizationErrorMessage = React.useCallback(
+    (code: UploadValidationError['code']) => {
+      switch (code) {
+        case 'too_large':
+          return t('upload.tooLarge');
+        case 'empty_file':
+          return t('upload.emptyFile');
+        case 'unsupported_source':
+          return t('upload.unsupportedSource');
+        case 'file_unreadable':
+        default:
+          return t('upload.fileUnreadable');
+      }
+    },
+    [t]
+  );
 
   const handleTitleChange = React.useCallback((text: string) => {
     setTitle(clampUtf8Bytes(text, VIDEO_TITLE_MAX_BYTES));
@@ -143,25 +167,35 @@ export function UploadScreen() {
     try {
       const asset = await pickVideo();
       if (!asset) return;
-      setAssetUri(asset.uri);
-      setFilename(asset.fileName ?? 'upload.mp4');
+
+      if (__DEV__) {
+        console.debug('[upload.pick] selected', {
+          sourceScheme: typeof asset.uri === 'string' ? asset.uri.split(':')[0] : null,
+          mimeType: asset.mimeType ?? null,
+          fileName: asset.fileName ?? null,
+          fileSize: typeof asset.fileSize === 'number' ? asset.fileSize : null,
+        });
+      }
+
+      const normalized = await normalizePickedVideoAsset(asset);
+      setSelectedVideo(normalized);
       setIsPreviewPlaying(autoPlayVideos);
-    } catch {
+    } catch (error) {
+      if (error instanceof UploadValidationError) {
+        showToast(getNormalizationErrorMessage(error.code), 'error');
+        return;
+      }
       showToast(t('upload.pickError'), 'error');
     }
   };
 
   const handleUpload = async () => {
-    if (!assetUri) return;
+    if (!selectedVideo) return;
     setLoading(true);
 
     try {
-      const sizeBytes = await getVideoSize(assetUri);
-
       await uploadVideo({
-        assetUri,
-        filename: filename || 'upload.mp4',
-        sizeBytes,
+        asset: selectedVideo,
         isAnonymous,
         metadata: {
           title: clampUtf8Bytes(title.trim(), VIDEO_TITLE_MAX_BYTES) || null,
@@ -177,7 +211,9 @@ export function UploadScreen() {
       showToast(t('upload.success'), 'success');
       router.back();
     } catch (error: any) {
-      if (error?.message === 'too_large') {
+      if (error instanceof UploadValidationError) {
+        showToast(getNormalizationErrorMessage(error.code), 'error');
+      } else if (error?.message === 'too_large') {
         showToast(t('upload.tooLarge'), 'error');
       } else if (error?.response?.status === 400) {
         const backendMessage = extractApiErrorMessage(error);
@@ -193,9 +229,9 @@ export function UploadScreen() {
   };
 
   const handleRemove = () => {
-    setAssetUri(null);
-    setFilename('');
+    setSelectedVideo(null);
     setIsPreviewPlaying(false);
+    setShowFullscreen(false);
     setTitle('');
     setDescription('');
   };
@@ -217,11 +253,11 @@ export function UploadScreen() {
     >
       <View style={styles.content}>
         <Button label={t('upload.selectVideo')} onPress={handlePick} />
-        {assetUri ? (
+        {selectedVideo ? (
           <View>
             {!showFullscreen && (
               <UploadVideoPreview
-                key={assetUri}
+                key={selectedVideo.normalizedUri}
                 player={videoPlayer}
                 isMuted={isPreviewMuted}
                 isPlaying={isPreviewPlaying}
@@ -242,11 +278,11 @@ export function UploadScreen() {
             </Pressable>
           </View>
         ) : null}
-        {assetUri ? (
+        {selectedVideo ? (
           <View>
-            <AppText variant="caption" style={{ marginBottom: 4 }}>{filename}</AppText>
+            <AppText variant="caption" style={{ marginBottom: 4 }}>{selectedVideo.filename}</AppText>
             {/* <AppText variant="caption" style={{ fontSize: 10, opacity: 0.6 }}>
-              Path: {assetUri.substring(assetUri.lastIndexOf('/') + 1)}
+              Path: {selectedVideo.normalizedUri.substring(selectedVideo.normalizedUri.lastIndexOf('/') + 1)}
             </AppText> */}
           </View>
         ) : null}
@@ -264,7 +300,7 @@ export function UploadScreen() {
           multiline
           style={styles.textArea}
         />
-        {assetUri ? (
+        {selectedVideo ? (
           <View style={styles.previewActions}>
             {/* Trim button hidden for now */}
             {/* <Pressable
@@ -295,7 +331,7 @@ export function UploadScreen() {
         </View>
         <View style={styles.footer}>
           {loading ? <ActivityIndicator color={palette.accent} /> : null}
-          <Button label={t('upload.title')} onPress={handleUpload} disabled={!assetUri || loading} />
+          <Button label={t('upload.title')} onPress={handleUpload} disabled={!selectedVideo || loading} />
         </View>
       </View>
     </ScrollView>
@@ -312,7 +348,7 @@ export function UploadScreen() {
           {content}
         </KeyboardAvoidingView>
       </Screen>
-      {showFullscreen && assetUri && (
+      {showFullscreen && selectedVideo && (
         <Modal
           visible={showFullscreen}
           transparent={false}

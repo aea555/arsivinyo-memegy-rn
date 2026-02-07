@@ -2,14 +2,103 @@ import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 
 import { confirmUpload, initAnonymousUpload, initUpload, updateVideoMetadata } from '@/src/features/upload/api/uploadApi';
-import { MAX_UPLOAD_SIZE_BYTES } from '@/src/shared/utils/constants';
+import { NormalizedVideoAsset } from '@/src/features/upload/types/uploadTypes';
+import { validateNormalizedVideoAsset } from '@/src/features/upload/utils/uploadValidation';
 import { UpdateVideoRequest } from '@/src/shared/types/api';
 
 export type UploadResult = {
   videoId: string;
 };
 
-export async function pickVideo({ allowsEditing = true }: { allowsEditing?: boolean } = {}) {
+const MAX_UPLOAD_ATTEMPTS = 3;
+
+export const UPLOAD_COMPAT_TRANSCODE_ENABLED =
+  process.env.EXPO_PUBLIC_UPLOAD_COMPAT_TRANSCODE === 'true';
+
+type UploadPutError = Error & { status?: number };
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getRetryDelayMs(attempt: number) {
+  const base = 350 * 2 ** (attempt - 1);
+  const jitter = Math.floor(Math.random() * 220);
+  return base + jitter;
+}
+
+function isRetryableUploadError(error: unknown, status?: number) {
+  if (typeof status === 'number') {
+    return status >= 500;
+  }
+
+  const maybe = error as { message?: string } | undefined;
+  const message = maybe?.message?.toLowerCase() ?? '';
+  return (
+    message.includes('network') ||
+    message.includes('timeout') ||
+    message.includes('timed out') ||
+    message.includes('econn') ||
+    message.includes('connection')
+  );
+}
+
+async function uploadBinaryWithRetry(uploadUrl: string, asset: NormalizedVideoAsset) {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      if (__DEV__) {
+        console.debug('[upload.put] attempt', {
+          attempt,
+          mimeType: asset.mimeType,
+          sizeBytes: asset.sizeBytes,
+          sourceScheme: asset.sourceScheme,
+        });
+      }
+
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, asset.normalizedUri, {
+        httpMethod: 'PUT',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        headers: {
+          'Content-Type': asset.mimeType || 'video/mp4',
+        },
+      });
+
+      if (uploadResult.status >= 200 && uploadResult.status < 300) {
+        return;
+      }
+
+      const uploadStatusError: UploadPutError = new Error('upload_failed');
+      uploadStatusError.status = uploadResult.status;
+      lastError = uploadStatusError;
+
+      if (!isRetryableUploadError(uploadStatusError, uploadResult.status) || attempt >= MAX_UPLOAD_ATTEMPTS) {
+        throw uploadStatusError;
+      }
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableUploadError(error) || attempt >= MAX_UPLOAD_ATTEMPTS) {
+        throw error;
+      }
+    }
+
+    const retryDelayMs = getRetryDelayMs(attempt);
+    if (__DEV__) {
+      const status = (lastError as UploadPutError | undefined)?.status;
+      console.debug('[upload.put] retry_scheduled', {
+        attempt,
+        retryDelayMs,
+        status: typeof status === 'number' ? status : null,
+      });
+    }
+    await wait(retryDelayMs);
+  }
+
+  throw lastError ?? new Error('upload_failed');
+}
+
+export async function pickVideo({ allowsEditing = false }: { allowsEditing?: boolean } = {}) {
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (permission.status !== 'granted') {
     throw new Error('permissions');
@@ -30,38 +119,34 @@ export async function pickVideo({ allowsEditing = true }: { allowsEditing?: bool
 }
 
 export async function uploadVideo({
-  assetUri,
-  filename,
-  sizeBytes,
+  asset,
   isAnonymous,
   metadata,
 }: {
-  assetUri: string;
-  filename: string;
-  sizeBytes: number;
+  asset: NormalizedVideoAsset;
   isAnonymous: boolean;
   metadata: UpdateVideoRequest;
 }): Promise<UploadResult> {
-  if (sizeBytes > MAX_UPLOAD_SIZE_BYTES) {
-    const error = new Error('too_large');
-    throw error;
+  validateNormalizedVideoAsset(asset);
+
+  if (__DEV__) {
+    console.debug('[upload.normalize] using_asset', {
+      mimeType: asset.mimeType,
+      sizeBytes: asset.sizeBytes,
+      sourceScheme: asset.sourceScheme,
+      hasDuration: asset.durationMs !== null,
+      compatTranscodeEnabled: UPLOAD_COMPAT_TRANSCODE_ENABLED,
+    });
   }
 
-  const initPayload = { filename, size_bytes: sizeBytes };
+  const initPayload = { filename: asset.filename, size_bytes: asset.sizeBytes };
   const initResponse = isAnonymous ? await initAnonymousUpload(initPayload) : await initUpload(initPayload);
 
-  const uploadResult = await FileSystem.uploadAsync(initResponse.upload_url, assetUri, {
-    httpMethod: 'PUT',
-    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-    headers: {
-      'Content-Type': 'video/mp4',
-    },
-  });
+  await uploadBinaryWithRetry(initResponse.upload_url, asset);
 
-  if (uploadResult.status !== 200) {
-    throw new Error('upload_failed');
+  if (__DEV__) {
+    console.debug('[upload.confirm] request', { videoId: initResponse.video_id });
   }
-
   await confirmUpload(initResponse.video_id);
 
   if (metadata.title || metadata.description || metadata.is_anonymous !== undefined) {
@@ -69,13 +154,4 @@ export async function uploadVideo({
   }
 
   return { videoId: initResponse.video_id };
-}
-
-export async function getVideoSize(uri: string) {
-  const info = await FileSystem.getInfoAsync(uri);
-  if (!info.exists) return 0;
-  if ('size' in info && typeof info.size === 'number') {
-    return info.size;
-  }
-  return 0;
 }

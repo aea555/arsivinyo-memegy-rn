@@ -76,9 +76,15 @@
     "uploading": "Y\u00fckleniyor...",
     "confirming": "Y\u00fckleme onaylan\u0131yor...",
     "success": "Y\u00fckleme s\u00fcreci ba\u015flat\u0131ld\u0131",
+    "successProcessing": "Y\u00fckleme tamamland\u0131. Video h\u00e2l\u00e2 i\u015fleniyor.",
+    "processingFailed": "Y\u00fckleme tamamland\u0131 ancak i\u015fleme ba\u015far\u0131s\u0131z oldu: {{reason}}",
+    "processingFailedNoReason": "Bilinmeyen i\u015fleme hatas\u0131",
     "tooLarge": "Video 32 MB alt\u0131nda olmal\u0131",
     "rateLimited": "Y\u00fckleme limiti a\u015f\u0131ld\u0131. L\u00fctfen bekleyin.",
-    "pickError": "Medya k\u00fct\u00fcphanesine eri\u015femedik."
+    "pickError": "Medya k\u00fct\u00fcphanesine eri\u015femedik.",
+    "emptyFile": "Se\u00e7ilen dosya bo\u015f g\u00f6r\u00fcn\u00fcyor. Ba\u015fka bir video deneyin.",
+    "unsupportedSource": "Bu dosya kayna\u011f\u0131 desteklenmiyor. Videoyu tekrar se\u00e7in.",
+    "fileUnreadable": "Bu video dosyas\u0131 okunamad\u0131. L\u00fctfen tekrar se\u00e7in."
   },
   "profile": {
     "title": "Profil",

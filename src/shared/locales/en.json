@@ -76,9 +76,15 @@
     "uploading": "Uploading...",
     "confirming": "Confirming upload...",
     "success": "Upload process started!",
+    "successProcessing": "Upload complete. Video is still processing.",
+    "processingFailed": "Upload complete but processing failed: {{reason}}",
+    "processingFailedNoReason": "Unknown processing error",
     "tooLarge": "Video must be under 32 MB",
     "rateLimited": "Upload limit exceeded. Please wait.",
-    "pickError": "We couldn\u2019t access your library."
+    "pickError": "We couldn\u2019t access your library.",
+    "emptyFile": "Selected file looks empty. Try another video.",
+    "unsupportedSource": "This file source is not supported. Please reselect the video.",
+    "fileUnreadable": "We couldn't read this video file. Please select it again."
   },
   "profile": {
     "title": "Profile",
