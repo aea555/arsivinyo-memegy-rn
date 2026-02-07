@@ -4,12 +4,13 @@
     "slug": "arsivinyo-memegy-rn",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/arsivinyo_memegy_1024.png",
     "scheme": "memegy",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "icon": "./assets/images/arsivinyo_memegy_1024.png",
       "bundleIdentifier": "com.anonymous.arsivinyomemegyrn",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Allow Memegy to access your photo library for downloaded videos.",
@@ -24,9 +25,7 @@
       ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/arsivinyo_memegy_1024.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -34,14 +33,14 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/arsivinyo_memegy_512.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/arsivinyo_memegy_2048_transparent.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",

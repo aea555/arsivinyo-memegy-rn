@@ -5,7 +5,7 @@ import * as Linking from 'expo-linking';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -20,6 +20,7 @@ import { useAuthStore } from '@/src/store/authStore';
 import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 
 SplashScreen.preventAutoHideAsync();
+const MIN_ANIMATED_SPLASH_MS = 1200;
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -56,6 +57,9 @@ export default function RootLayout() {
     Comfortaa_600SemiBold,
     Comfortaa_700Bold,
   });
+  const splashStartedAtRef = useRef(Date.now());
+  const [isNativeSplashHidden, setIsNativeSplashHidden] = useState(false);
+  const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
 
   useEffect(() => {
     void hydrate();
@@ -101,10 +105,29 @@ export default function RootLayout() {
   }, [router]);
 
   useEffect(() => {
-    if (fontsLoaded && status !== 'loading') {
-      void SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, status]);
+    if (!fontsLoaded || isNativeSplashHidden) return;
+    SplashScreen.hideAsync()
+      .catch(() => {
+        // no-op
+      })
+      .finally(() => {
+        setIsNativeSplashHidden(true);
+      });
+  }, [fontsLoaded, isNativeSplashHidden]);
+
+  useEffect(() => {
+    if (!isNativeSplashHidden || !fontsLoaded || status === 'loading') return;
+
+    const elapsed = Date.now() - splashStartedAtRef.current;
+    const remaining = Math.max(0, MIN_ANIMATED_SPLASH_MS - elapsed);
+    const timer = setTimeout(() => {
+      setShowAnimatedSplash(false);
+    }, remaining);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [fontsLoaded, isNativeSplashHidden, status]);
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -118,7 +141,7 @@ export default function RootLayout() {
     }
   }, [status, segments, router]);
 
-  if (!fontsLoaded || status === 'loading') {
+  if (showAnimatedSplash || !fontsLoaded || status === 'loading') {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <ThemeProvider>

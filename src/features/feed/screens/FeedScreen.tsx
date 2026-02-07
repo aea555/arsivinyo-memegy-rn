@@ -39,6 +39,7 @@ export function FeedScreen() {
   const listRef = useRef<FlatList<VideoFeedItem>>(null);
   const renderCountRef = useRef(0);
   const activeIndexRef = useRef(activeIndex);
+  const pausedIndexRef = useRef(0);
 
   const { data, isFetchingNextPage, fetchNextPage, hasNextPage, isLoading, refetch } = useFeed(sort);
 
@@ -69,6 +70,9 @@ export function FeedScreen() {
 
   useEffect(() => {
     activeIndexRef.current = activeIndex;
+    if (activeIndex >= 0) {
+      pausedIndexRef.current = activeIndex;
+    }
   }, [activeIndex]);
 
   const applyActiveIndex = useCallback(
@@ -121,11 +125,14 @@ export function FeedScreen() {
 
   useEffect(() => {
     if (!isFocused) {
+      if (activeIndexRef.current >= 0) {
+        pausedIndexRef.current = activeIndexRef.current;
+      }
       setActiveIndex(-1);
       return;
     }
     if (activeIndex < 0) {
-      applyActiveIndex(0, 'focus');
+      applyActiveIndex(pausedIndexRef.current, 'focus');
       return;
     }
     if (videos.length > 0 && activeIndex >= videos.length) {
