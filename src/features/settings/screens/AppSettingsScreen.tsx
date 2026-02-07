@@ -17,6 +17,8 @@ export function AppSettingsScreen() {
   const { palette } = useTheme();
   const autoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
   const setAutoPlayVideos = useAppSettingsStore((state) => state.setAutoPlayVideos);
+  const authDebugAggressiveRefresh = useAppSettingsStore((state) => state.authDebugAggressiveRefresh);
+  const setAuthDebugAggressiveRefresh = useAppSettingsStore((state) => state.setAuthDebugAggressiveRefresh);
 
   const updateLanguage = async (language: 'en' | 'tr') => {
     await i18n.changeLanguage(language);
@@ -56,6 +58,24 @@ export function AppSettingsScreen() {
             trackColor={{ true: palette.accent, false: palette.border }}
           />
         </View>
+
+        {__DEV__ ? (
+          <View style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <AppText variant="bodyBold">{t('settings.authDebugAggressiveRefresh')}</AppText>
+              <AppText variant="caption" style={{ color: palette.text.secondary }}>
+                {t('settings.authDebugAggressiveRefreshHint')}
+              </AppText>
+            </View>
+            <Switch
+              value={authDebugAggressiveRefresh}
+              onValueChange={(value) => {
+                void setAuthDebugAggressiveRefresh(value);
+              }}
+              trackColor={{ true: palette.accent, false: palette.border }}
+            />
+          </View>
+        ) : null}
       </Card>
     </Screen>
   );

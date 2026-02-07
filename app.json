@@ -16,6 +16,7 @@
         "NSPhotoLibraryUsageDescription": "Allow Memegy to access your photo library for downloaded videos.",
         "NSPhotoLibraryAddUsageDescription": "Allow Memegy to save downloaded videos to your photo library.",
         "LSApplicationQueriesSchemes": [
+          "whatsapp",
           "whatsapp"
         ]
       }
@@ -24,7 +25,21 @@
       "softwareKeyboardLayoutMode": "pan",
       "permissions": [
         "READ_MEDIA_IMAGES",
-        "READ_MEDIA_VIDEO"
+        "READ_MEDIA_VIDEO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -80,12 +95,34 @@
                       "NSExtensionPointIdentifier": "com.apple.share-services"
                     }
                   }
+                },
+                {
+                  "targetName": "MemegyShareExtension",
+                  "bundleIdentifier": "com.anonymous.arsivinyomemegyrn.share",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.anonymous.arsivinyomemegyrn"
+                    ]
+                  },
+                  "infoPlist": {
+                    "NSExtension": {
+                      "NSExtensionPointIdentifier": "com.apple.share-services"
+                    }
+                  }
                 }
               ]
             }
           }
-        }
-      }
+        },
+        "projectId": "92ab2c0e-7da0-44f6-a261-3a27857fe0e1"
+      },
+      "router": {}
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/92ab2c0e-7da0-44f6-a261-3a27857fe0e1"
     }
   }
 }

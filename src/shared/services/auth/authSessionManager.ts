@@ -12,7 +12,7 @@ type SessionTokens = {
 type EnsureFreshTokenOptions = {
   force?: boolean;
   minValidityMs?: number;
-  reason?: 'proactive' | 'reactive_401' | 'app_resume' | 'download' | 'websocket' | 'manual';
+  reason?: 'proactive' | 'reactive_401' | 'app_resume' | 'download' | 'websocket' | 'manual' | 'debug_interval';
 };
 
 type RefreshDeferred = {
@@ -123,10 +123,35 @@ function setInMemorySession(tokens: SessionTokens | null) {
   accessExpMs = accessToken ? decodeJwtExpMs(accessToken) : null;
 }
 
+function getMsUntilExpiry() {
+  if (!accessExpMs) return null;
+  return accessExpMs - Date.now();
+}
+
 function isNearExpiry(minValidityMs: number) {
   if (!accessToken) return true;
   if (!accessExpMs) return true;
   return Date.now() >= accessExpMs - minValidityMs;
+}
+
+function getAuthDebugSnapshot() {
+  const blockState = getRefreshBlockStateInternal();
+  return {
+    hasAccessToken: Boolean(accessToken),
+    hasRefreshToken: Boolean(refreshToken),
+    hasBootstrapped,
+    accessExpMs,
+    msUntilExpiry: getMsUntilExpiry(),
+    sessionVersion,
+    refreshInFlight: Boolean(refreshDeferred),
+    failureCount: refreshConsecutiveFailures,
+    lastFailureAt: refreshLastFailureAt,
+    lastFailureStatus: refreshLastFailureStatus,
+    lastFailureRetryable: refreshLastFailureRetryable,
+    blocked: blockState.blocked,
+    blockedUntilMs: blockState.blockedUntilMs,
+    blockReason: blockState.reason,
+  };
 }
 
 function enqueueWrite(task: () => Promise<void>) {
@@ -156,6 +181,50 @@ function getRetryDelay(attempt: number) {
 function getAxiosStatus(error: unknown) {
   if (!isAxiosError(error)) return undefined;
   return error.response?.status;
+}
+
+function getErrorSummary(error: unknown) {
+  if (error instanceof AuthSessionError) {
+    return {
+      name: error.name,
+      code: error.code,
+      message: error.message,
+    };
+  }
+
+  if (error instanceof AuthTemporaryUnavailableError) {
+    return {
+      name: error.name,
+      code: error.code,
+      status: error.status,
+      blockedUntilMs: error.blockedUntilMs,
+      message: error.message,
+    };
+  }
+
+  if (isAxiosError(error)) {
+    return {
+      name: error.name,
+      code: error.code,
+      status: error.response?.status,
+      message: error.message,
+      hasResponse: Boolean(error.response),
+      isTimeout:
+        error.code === 'ECONNABORTED' ||
+        (typeof error.message === 'string' && error.message.toLowerCase().includes('timeout')),
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+    };
+  }
+
+  return {
+    message: String(error),
+  };
 }
 
 function getAxiosRetryAfter(error: unknown) {
@@ -308,10 +377,21 @@ async function refreshRequestWithRetry(currentAccessToken: string | null, curren
     } catch (error) {
       lastError = error;
       const retryable = isRetryableRefreshError(error);
+      const retryDelayMs = retryable && attempt < maxAttempts ? getRetryDelay(attempt) : null;
+      if (__DEV__) {
+        console.debug('[auth.refresh] attempt failed', {
+          reason,
+          attempt,
+          retryable,
+          status: getAxiosStatus(error) ?? null,
+          retryDelayMs,
+          error: getErrorSummary(error),
+        });
+      }
       if (!retryable || attempt >= maxAttempts) {
         break;
       }
-      await wait(getRetryDelay(attempt));
+      await wait(retryDelayMs ?? 0);
     }
   }
 
@@ -331,6 +411,12 @@ async function ensureBootstrapped() {
       setInMemorySession(null);
     }
     hasBootstrapped = true;
+    if (__DEV__) {
+      console.debug('[auth.session] bootstrap', {
+        hasSession: Boolean(session),
+        snapshot: getAuthDebugSnapshot(),
+      });
+    }
   })().finally(() => {
     bootstrapPromise = null;
   });
@@ -364,6 +450,12 @@ export const authSessionManager = {
       clearRefreshHealthState();
       hasBootstrapped = true;
     });
+
+    if (__DEV__) {
+      console.debug('[auth.session] setSession', {
+        snapshot: getAuthDebugSnapshot(),
+      });
+    }
   },
 
   async clearSession() {
@@ -383,6 +475,12 @@ export const authSessionManager = {
       clearRefreshHealthState();
       hasBootstrapped = true;
     });
+
+    if (__DEV__) {
+      console.debug('[auth.session] clearSession', {
+        snapshot: getAuthDebugSnapshot(),
+      });
+    }
   },
 
   getAccessToken() {
@@ -434,12 +532,25 @@ export const authSessionManager = {
     };
   },
 
+  getDebugSnapshot() {
+    return getAuthDebugSnapshot();
+  },
+
   async ensureFreshToken(options: EnsureFreshTokenOptions = {}) {
     await ensureBootstrapped();
 
     const force = Boolean(options.force);
     const bypassTransientBackoff = force && options.reason === 'reactive_401';
     const minValidityMs = options.minValidityMs ?? DEFAULT_MIN_VALIDITY_MS;
+
+    if (__DEV__) {
+      console.debug('[auth.refresh] ensure:start', {
+        reason: options.reason ?? 'manual',
+        force,
+        minValidityMs,
+        snapshot: getAuthDebugSnapshot(),
+      });
+    }
 
     if (!force && accessToken && !isNearExpiry(minValidityMs)) {
       if (__DEV__) {
@@ -495,10 +606,24 @@ export const authSessionManager = {
     }
 
     if (!refreshToken) {
+      if (__DEV__) {
+        console.debug('[auth.refresh] ensure:missing_refresh_token', {
+          reason: options.reason ?? 'manual',
+          force,
+          snapshot: getAuthDebugSnapshot(),
+        });
+      }
       throw new AuthSessionError('missing_refresh_token', 'Refresh token is missing.');
     }
 
     if (refreshDeferred) {
+      if (__DEV__) {
+        console.debug('[auth.refresh] ensure:join_inflight', {
+          reason: options.reason ?? 'manual',
+          force,
+          snapshot: getAuthDebugSnapshot(),
+        });
+      }
       return refreshDeferred.promise;
     }
 
@@ -523,6 +648,8 @@ export const authSessionManager = {
         if (__DEV__) {
           console.debug('[auth.refresh] success', {
             reason: options.reason ?? 'manual',
+            force,
+            snapshot: getAuthDebugSnapshot(),
           });
         }
 
@@ -557,7 +684,12 @@ export const authSessionManager = {
         }
 
         const hasUsableAccessToken = Boolean(accessToken) && !isNearExpiry(0);
-        const shouldEscalateToUnrecoverable = force && options.reason === 'reactive_401';
+        const shouldEscalateToUnrecoverable =
+          force &&
+          options.reason === 'reactive_401' &&
+          !retryable &&
+          !rateLimited &&
+          !terminal;
         const exceededUnrecoverableThreshold =
           shouldEscalateToUnrecoverable &&
           !hasUsableAccessToken &&
@@ -595,6 +727,11 @@ export const authSessionManager = {
             blockedUntilMs: blockState.blockedUntilMs,
             failureCount: refreshConsecutiveFailures,
             clearSession: shouldClearSessionAfterRefreshFailure(rejectError),
+            hasUsableAccessToken,
+            shouldEscalateToUnrecoverable,
+            snapshot: getAuthDebugSnapshot(),
+            error: getErrorSummary(error),
+            rejectedAs: getErrorSummary(rejectError),
           });
         }
         deferred.reject(rejectError);

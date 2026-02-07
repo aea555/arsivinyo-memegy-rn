@@ -179,6 +179,8 @@
     "preserveFeedAspectRatioHint": "Gerekirse kenarl\u0131k b\u0131rakarak t\u00fcm kareyi g\u00f6sterir. Kapat\u0131rsan k\u0131rp\u0131p ekran\u0131 doldurur.",
     "autoPlayVideos": "Videolar\u0131 otomatik oynat (di\u011fer sayfalar)",
     "autoPlayVideosHint": "Ke\u015ffet, videolar\u0131m ve y\u00fckleme \u00f6nizlemesinde videolar\u0131 otomatik ba\u015flat\u0131r.",
+    "authDebugAggressiveRefresh": "Auth hata ay\u0131klama: 15 sn'de zorla yenile",
+    "authDebugAggressiveRefreshHint": "Hata ay\u0131klama modu. Uygulama aktifken token'\u0131 her 15 saniyede zorla yeniler. Durdurmak i\u00e7in kapat.",
     "dangerZone": "Tehlike B\u00f6lgesi",
     "logout": "\u00c7\u0131k\u0131\u015f yap",
     "deleteAccount": "Hesab\u0131 sil",

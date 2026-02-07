@@ -14,11 +14,37 @@ export const apiClient = axios.create({
 
 const REQUEST_TOKEN_SKEW_MS = 90_000;
 
+function getAxiosErrorSummary(error: unknown) {
+  const axiosError = error as AxiosError | undefined;
+  if (!axiosError) {
+    return { message: String(error) };
+  }
+  return {
+    code: axiosError.code,
+    status: axiosError.response?.status,
+    message: axiosError.message,
+    hasResponse: Boolean(axiosError.response),
+    isTimeout:
+      axiosError.code === 'ECONNABORTED' ||
+      (typeof axiosError.message === 'string' && axiosError.message.toLowerCase().includes('timeout')),
+  };
+}
+
 async function clearSessionAndLogout() {
+  if (__DEV__) {
+    console.debug('[api] clearSessionAndLogout:start', {
+      snapshot: authSessionManager.getDebugSnapshot(),
+    });
+  }
   try {
     await authSessionManager.clearSession();
   } finally {
     await notifyLogout();
+    if (__DEV__) {
+      console.debug('[api] clearSessionAndLogout:done', {
+        snapshot: authSessionManager.getDebugSnapshot(),
+      });
+    }
   }
 }
 
@@ -66,6 +92,8 @@ apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) =>
               decision: 'terminal_logout',
               retryable: authSessionManager.isRetryableRefreshFailure(error),
               clearSession: true,
+              snapshot: authSessionManager.getDebugSnapshot(),
+              error: getAxiosErrorSummary(error),
             });
           }
           await clearSessionAndLogout();
@@ -79,6 +107,8 @@ apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) =>
               retryable: authSessionManager.isRetryableRefreshFailure(error),
               clearSession: false,
               blockedUntilMs: authSessionManager.getRefreshBlockState().blockedUntilMs,
+              snapshot: authSessionManager.getDebugSnapshot(),
+              error: getAxiosErrorSummary(error),
             });
           }
           return Promise.reject(toTemporaryAuthError(error));
@@ -96,6 +126,9 @@ apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) =>
       console.debug('[api] auth decision', {
         url: `${config.baseURL ?? ''}${config.url ?? ''}`,
         decision: proactiveDecision,
+        skipAuthRefresh: Boolean(config.skipAuthRefresh),
+        skipProactiveRefreshOnce,
+        snapshot: authSessionManager.getDebugSnapshot(),
       });
     }
   }
@@ -125,6 +158,15 @@ apiClient.interceptors.response.use(
     }
 
     if (error.response?.status === 401 && !originalRequest.skipAuthRefresh) {
+      if (__DEV__) {
+        console.debug('[api] response 401', {
+          url: `${originalRequest.baseURL ?? ''}${originalRequest.url ?? ''}`,
+          hasRetried: Boolean(originalRequest._retry),
+          snapshot: authSessionManager.getDebugSnapshot(),
+          error: getAxiosErrorSummary(error),
+        });
+      }
+
       if (!originalRequest._retry) {
         originalRequest._retry = true;
 
@@ -146,23 +188,31 @@ apiClient.interceptors.response.use(
               retryable: authSessionManager.isRetryableRefreshFailure(refreshError),
               clearSession: false,
               blockedUntilMs: authSessionManager.getRefreshBlockState().blockedUntilMs,
+              snapshot: authSessionManager.getDebugSnapshot(),
+              error: getAxiosErrorSummary(refreshError),
             });
           }
           return Promise.reject(toTemporaryAuthError(refreshError));
         }
       }
 
+      if (__DEV__) {
+        console.debug('[api] response 401 after retry -> logout', {
+          url: `${originalRequest.baseURL ?? ''}${originalRequest.url ?? ''}`,
+          snapshot: authSessionManager.getDebugSnapshot(),
+        });
+      }
       await clearSessionAndLogout();
     }
 
     if (__DEV__) {
       const url = `${error.config?.baseURL ?? ''}${error.config?.url ?? ''}`;
-      if (url.includes('/auth/')) {
-        console.debug('[api] error', {
-          url,
-          status: error.response?.status,
-        });
-      }
+      console.debug('[api] error', {
+        url,
+        status: error.response?.status,
+        snapshot: authSessionManager.getDebugSnapshot(),
+        error: getAxiosErrorSummary(error),
+      });
     }
 
     return Promise.reject(error);

@@ -62,10 +62,11 @@ Pods/
 # Android
 android/local.properties
 
-docs/
+docs/*
 
 *.md 
 !README.md
+!docs/EAS_OTA_UPDATES.md
 
 
 local.properties.*

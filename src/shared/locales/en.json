@@ -179,6 +179,8 @@
     "preserveFeedAspectRatioHint": "Shows the full frame with bars when needed. Disable to crop and fill.",
     "autoPlayVideos": "Auto-play videos (other pages)",
     "autoPlayVideosHint": "Automatically play videos in Explore, My Videos, and upload preview.",
+    "authDebugAggressiveRefresh": "Auth debug: force refresh every 15s",
+    "authDebugAggressiveRefreshHint": "Debug mode. Forces token refresh every 15 seconds while app is active. Disable to stop this behavior.",
     "dangerZone": "Danger Zone",
     "logout": "Log out",
     "deleteAccount": "Delete account",

@@ -8,7 +8,14 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "eas:init": "npx eas init",
+    "eas:update:configure": "npx eas update:configure",
+    "build:development": "npx eas build --profile development",
+    "build:preview": "npx eas build --profile preview",
+    "build:production": "npx eas build --profile production",
+    "update:preview": "npx eas update --channel preview",
+    "update:production": "npx eas update --channel production"
   },
   "dependencies": {
     "@expo-google-fonts/comfortaa": "^0.2.3",
@@ -42,6 +49,7 @@
     "expo-status-bar": "~3.0.9",
     "expo-symbols": "~1.0.8",
     "expo-system-ui": "~6.0.9",
+    "expo-updates": "~29.0.16",
     "expo-video": "~3.0.15",
     "expo-web-browser": "~15.0.10",
     "i18next": "^23.16.8",

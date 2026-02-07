@@ -17,8 +17,11 @@ import { AppToastHost } from '@/src/shared/components/ui/AppToastHost';
 import { queryClient } from '@/src/shared/services/api/queryClient';
 import { LocalStorage } from '@/src/shared/services/storage/LocalStorage';
 import { ThemeProvider, useTheme } from '@/src/shared/theme/ThemeProvider';
+import { configureConsoleForEnvironment } from '@/src/shared/utils/logging';
 import { useAuthStore } from '@/src/store/authStore';
 import { useAppSettingsStore } from '@/src/store/appSettingsStore';
+
+configureConsoleForEnvironment();
 
 SplashScreen.preventAutoHideAsync();
 const MIN_ANIMATED_SPLASH_MS = 1200;

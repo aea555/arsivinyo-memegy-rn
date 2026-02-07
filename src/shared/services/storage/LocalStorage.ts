@@ -15,6 +15,7 @@ const KEYS = {
   AUTO_PLAY_VIDEOS: 'auto_play_videos',
   AUTO_PLAY_FEED_VIDEOS: 'auto_play_feed_videos',
   FEED_PRESERVE_ASPECT_RATIO: 'feed_preserve_aspect_ratio',
+  AUTH_DEBUG_AGGRESSIVE_REFRESH: 'auth_debug_aggressive_refresh',
 } as const;
 
 function isThemeSettingsShape(value: unknown): value is ThemeSettingsState {
@@ -100,6 +101,14 @@ export const LocalStorage = {
   },
   async getFeedPreserveAspectRatio() {
     const value = await AsyncStorage.getItem(KEYS.FEED_PRESERVE_ASPECT_RATIO);
+    if (value === null) return null;
+    return value === '1';
+  },
+  async setAuthDebugAggressiveRefresh(enabled: boolean) {
+    await AsyncStorage.setItem(KEYS.AUTH_DEBUG_AGGRESSIVE_REFRESH, enabled ? '1' : '0');
+  },
+  async getAuthDebugAggressiveRefresh() {
+    const value = await AsyncStorage.getItem(KEYS.AUTH_DEBUG_AGGRESSIVE_REFRESH);
     if (value === null) return null;
     return value === '1';
   },

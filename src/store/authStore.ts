@@ -1,5 +1,5 @@
 import { create } from 'zustand/react';
-import axios from 'axios';
+import axios, { isAxiosError } from 'axios';
 
 import { apiClient } from '@/src/shared/services/api/apiClient';
 import { setLogoutHandler } from '@/src/shared/services/api/authEvents';
@@ -44,9 +44,32 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const response = await apiClient.get<UserDto>('/users/me');
       set({ status: 'authenticated', user: response.data, pendingSignup: null });
-    } catch {
-      await authSessionManager.clearSession();
-      set({ status: 'unauthenticated', user: null, pendingSignup: null });
+    } catch (error) {
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      const shouldForceLogout =
+        authSessionManager.shouldClearSessionAfterRefreshFailure(error) ||
+        status === 401 ||
+        status === 403;
+
+      if (__DEV__) {
+        console.debug('[auth.hydrate] /users/me failed', {
+          status: status ?? null,
+          shouldForceLogout,
+          retryable: authSessionManager.isRetryableRefreshFailure(error),
+          terminal: authSessionManager.isTerminalRefreshFailure(error),
+          snapshot: authSessionManager.getDebugSnapshot(),
+        });
+      }
+
+      if (shouldForceLogout) {
+        await authSessionManager.clearSession();
+        set({ status: 'unauthenticated', user: null, pendingSignup: null });
+        return;
+      }
+
+      // Preserve session on transient backend/auth-refresh outages.
+      // This avoids random logout loops when refresh endpoint is flaky.
+      set({ status: 'authenticated', user: null, pendingSignup: null });
     }
   },
   setAuthenticated: (user) => set({ status: 'authenticated', user, pendingSignup: null }),
