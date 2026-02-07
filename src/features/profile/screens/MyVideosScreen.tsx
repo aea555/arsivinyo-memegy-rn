@@ -1,4 +1,5 @@
 import { useIsFocused } from '@react-navigation/native';
+import { InfiniteData, useMutation, useQueryClient } from '@tanstack/react-query';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
@@ -15,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 
 import { VideoCard } from '@/src/features/feed/components/VideoCard';
+import { retryVideoProcessing } from '@/src/features/profile/api/profileApi';
 import { useMyVideos } from '@/src/features/profile/hooks/useMyVideos';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { AppText } from '@/src/shared/components/ui/AppText';
@@ -26,7 +28,9 @@ import { useDebounce } from '@/src/shared/hooks/useDebounce';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { MyVideoItem, VideoFeedItem } from '@/src/shared/types/api';
+import { extractApiErrorMessage } from '@/src/shared/utils/errorParser';
 import { formatDate } from '@/src/shared/utils/formatters';
+import { useToastStore } from '@/src/store/toastStore';
 
 const viewabilityConfig = {
   itemVisiblePercentThreshold: 70,
@@ -36,7 +40,9 @@ export function MyVideosScreen() {
   const { t } = useTranslation();
   const isFocused = useIsFocused();
   const { palette } = useTheme();
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, refetch } = useMyVideos();
+  const showToast = useToastStore((state) => state.showToast);
+  const queryClient = useQueryClient();
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useMyVideos();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<'date_desc' | 'title_asc'>('date_desc');
@@ -46,6 +52,49 @@ export function MyVideosScreen() {
   const debouncedQuery = useDebounce(query, 200);
   const normalizedQuery = useMemo(() => debouncedQuery.trim().toLocaleLowerCase(), [debouncedQuery]);
   const isSearching = normalizedQuery.length > 0;
+
+  const retryMutation = useMutation({
+    mutationFn: async (videoId: string) => retryVideoProcessing(videoId),
+    onMutate: async (videoId: string) => {
+      await queryClient.cancelQueries({ queryKey: ['myVideos'] });
+      const previous = queryClient.getQueryData<InfiniteData<MyVideoItem[]>>(['myVideos']);
+
+      queryClient.setQueryData<InfiniteData<MyVideoItem[]>>(['myVideos'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page) =>
+            page.map((item) =>
+              item.id === videoId
+                ? {
+                    ...item,
+                    status: 'PROCESSING',
+                    updated_at: new Date().toISOString(),
+                    processing_error_code: null,
+                    processing_error_message: null,
+                  }
+                : item
+            )
+          ),
+        };
+      });
+
+      return { previous };
+    },
+    onSuccess: () => {
+      showToast(t('profile.retryStarted'), 'success');
+    },
+    onError: (_error, _videoId, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['myVideos'], context.previous);
+      }
+      const backendMessage = extractApiErrorMessage(_error);
+      showToast(backendMessage ?? t('profile.retryFailed'), 'error');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['myVideos'] });
+    },
+  });
 
   const videos = useMemo(() => data?.pages.flatMap((page) => page) ?? [], [data]);
   const indexedVideos = useMemo(
@@ -141,6 +190,7 @@ export function MyVideosScreen() {
             : item.status === 'FAILED'
               ? t('profile.videoStatusFailed')
               : t('profile.videoStatusUnavailable');
+      const failureDetail = item.processing_error_message ?? item.processing_error_code;
 
       return (
         <Card style={styles.statusCard}>
@@ -171,8 +221,23 @@ export function MyVideosScreen() {
           <AppText variant="caption" style={styles.statusText}>
             {statusText}
           </AppText>
+          {item.status === 'FAILED' && failureDetail ? (
+            <AppText variant="caption" style={[styles.statusText, { color: palette.error }]}>
+              {failureDetail}
+            </AppText>
+          ) : null}
           {item.status === 'FAILED' ? (
-            <Button label={t('common.retry')} variant="outline" onPress={() => refetch()} style={styles.retryButton} />
+            <Button
+              label={
+                retryMutation.isPending && retryMutation.variables === item.id
+                  ? t('profile.retrying')
+                  : t('common.retry')
+              }
+              variant="outline"
+              onPress={() => retryMutation.mutate(item.id)}
+              disabled={retryMutation.isPending && retryMutation.variables === item.id}
+              style={styles.retryButton}
+            />
           ) : null}
         </Card>
       );
@@ -185,7 +250,7 @@ export function MyVideosScreen() {
       palette.border,
       palette.error,
       palette.text.secondary,
-      refetch,
+      retryMutation,
       t,
       toFeedItem,
     ]

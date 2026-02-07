@@ -10,10 +10,18 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.arsivinyomemegyrn"
+      "bundleIdentifier": "com.anonymous.arsivinyomemegyrn",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Allow Memegy to access your photo library for downloaded videos.",
+        "NSPhotoLibraryAddUsageDescription": "Allow Memegy to save downloaded videos to your photo library."
+      }
     },
     "android": {
       "softwareKeyboardLayoutMode": "pan",
+      "permissions": [
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -42,7 +50,8 @@
           }
         }
       ],
-      "expo-video"
+      "expo-video",
+      "expo-media-library"
     ],
     "experiments": {
       "typedRoutes": true,

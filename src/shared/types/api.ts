@@ -51,6 +51,8 @@ export type UserVideoDto = {
   is_liked?: boolean;
   url: string | null;
   uploader?: UploaderInfo | null;
+  processing_error_code?: string | null;
+  processing_error_message?: string | null;
 };
 
 export type MyVideoItem = {
@@ -65,6 +67,8 @@ export type MyVideoItem = {
   is_liked: boolean;
   uploader: UploaderInfo | null;
   url: string | null;
+  processing_error_code?: string | null;
+  processing_error_message?: string | null;
 };
 
 export type InitUploadRequest = {
@@ -81,4 +85,25 @@ export type UpdateVideoRequest = {
   title?: string | null;
   description?: string | null;
   is_anonymous?: boolean | null;
+};
+
+export type RefreshDownloadResponse = {
+  download_url: string;
+  expires_in_seconds: number;
+};
+
+export type BulkDownloadCreateRequest = {
+  video_ids: string[];
+};
+
+export type BulkDownloadCreateResponse = {
+  job_id: string;
+  status: string;
+};
+
+export type BulkDownloadStatusResponse = {
+  job_id: string;
+  status: string;
+  download_url?: string | null;
+  expires_in_seconds?: number | null;
 };

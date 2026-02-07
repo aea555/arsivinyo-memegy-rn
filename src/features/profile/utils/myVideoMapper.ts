@@ -24,6 +24,18 @@ function resolveUpdatedAt(raw: UserVideoDto): string {
   return raw.created_at;
 }
 
+function resolveProcessingErrorCode(raw: UserVideoDto) {
+  const snake = (raw as { processing_error_code?: unknown }).processing_error_code;
+  if (typeof snake === 'string') return snake;
+  return null;
+}
+
+function resolveProcessingErrorMessage(raw: UserVideoDto) {
+  const snake = (raw as { processing_error_message?: unknown }).processing_error_message;
+  if (typeof snake === 'string') return snake;
+  return null;
+}
+
 export function mapUserVideoDtoToMyVideoItem(
   raw: UserVideoDto,
   currentUser: UserDto | null,
@@ -42,6 +54,8 @@ export function mapUserVideoDtoToMyVideoItem(
     like_count: raw.like_count ?? 0,
     is_liked: resolvedIsLiked ?? options?.fallbackIsLiked ?? false,
     url: raw.url ?? null,
+    processing_error_code: resolveProcessingErrorCode(raw),
+    processing_error_message: resolveProcessingErrorMessage(raw),
     uploader:
       raw.uploader ??
       (raw.is_anonymous

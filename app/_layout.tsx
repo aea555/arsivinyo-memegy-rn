@@ -12,6 +12,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SplashScreen as AppSplashScreen } from '@/src/features/auth/screens/SplashScreen';
 import { useMyVideosRealtimeSync } from '@/src/features/profile/hooks/useMyVideosRealtimeSync';
 import i18n from '@/src/shared/locales/i18n';
+import { AppToastHost } from '@/src/shared/components/ui/AppToastHost';
 import { queryClient } from '@/src/shared/services/api/queryClient';
 import { LocalStorage } from '@/src/shared/services/storage/LocalStorage';
 import { ThemeProvider, useTheme } from '@/src/shared/theme/ThemeProvider';
@@ -132,7 +133,10 @@ export default function RootLayout() {
       <ThemeProvider>
         <QueryClientProvider client={queryClient}>
           <I18nextProvider i18n={i18n}>
-            <RootNavigator />
+            <>
+              <RootNavigator />
+              <AppToastHost />
+            </>
           </I18nextProvider>
         </QueryClientProvider>
       </ThemeProvider>

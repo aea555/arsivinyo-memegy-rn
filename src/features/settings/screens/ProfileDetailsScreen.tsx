@@ -59,8 +59,11 @@ export function ProfileDetailsScreen() {
         variant="danger"
         onConfirm={async () => {
           setDeleteVisible(false);
-          await deleteAccount();
-          await logout();
+          try {
+            await deleteAccount();
+          } finally {
+            await logout();
+          }
         }}
         onCancel={() => setDeleteVisible(false)}
       />

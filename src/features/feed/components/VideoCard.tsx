@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { DownloadButton } from '@/src/features/download/components/DownloadButton';
 import { VideoPlayer } from './VideoPlayer';
 import { useToggleLike } from '@/src/features/feed/hooks/useToggleLike';
 import { AppText } from '@/src/shared/components/ui/AppText';
@@ -46,6 +47,7 @@ export function VideoCard({
             </AppText>
           </View>
           <AppText variant="caption">{metaLine}</AppText>
+          <DownloadButton videoId={video.id} suggestedName={video.title} />
           {showAnonymousBadge ? (
             <View
               style={[
@@ -87,7 +89,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: spacing.md,
+    gap: spacing.lg,
   },
   metaText: {
     flex: 1,
@@ -113,8 +115,9 @@ const styles = StyleSheet.create({
   },
   likes: {
     width: 110,
+    marginTop: spacing.sm,
     gap: spacing.xs,
     alignItems: 'flex-end',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
   },
 });

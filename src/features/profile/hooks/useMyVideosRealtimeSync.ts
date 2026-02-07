@@ -23,6 +23,9 @@ const BASE_RECONNECT_DELAY_MS = 1_000;
 const RECONNECT_JITTER_MS = 500;
 const MAX_SEEN_EVENT_IDS = 250;
 const BACKGROUND_CLOSE_GRACE_MS = 3_000;
+const STABLE_CONNECTION_MS = 12_000;
+const SNAPSHOT_CLOSE_MIN_DELAY_MS = 8_000;
+const SNAPSHOT_CLOSE_ATTEMPT_FLOOR = 3;
 
 type RNWebSocketConstructor = new (
   url: string,
@@ -124,6 +127,9 @@ export function useMyVideosRealtimeSync() {
   const isNetworkConnectedRef = useRef(true);
   const seenEventIdsRef = useRef<Set<string>>(new Set());
   const seenEventIdOrderRef = useRef<string[]>([]);
+  const openedAtRef = useRef<number>(0);
+  const sawSnapshotRef = useRef(false);
+  const sawLiveEventRef = useRef(false);
 
   useEffect(() => {
     authStatusRef.current = status;
@@ -211,6 +217,9 @@ export function useMyVideosRealtimeSync() {
   const closeSocket = useCallback((reason: string, skipReconnect: boolean) => {
     clearReconnectTimer();
     clearBackgroundCloseTimer();
+    openedAtRef.current = 0;
+    sawSnapshotRef.current = false;
+    sawLiveEventRef.current = false;
 
     if (skipReconnect) {
       shouldSkipReconnectOnNextCloseRef.current = true;
@@ -229,12 +238,21 @@ export function useMyVideosRealtimeSync() {
     }
   }, [clearBackgroundCloseTimer, clearReconnectTimer]);
 
-  const scheduleReconnect = useCallback((trigger: string, connectFn: (reason: string) => Promise<void>) => {
+  const scheduleReconnect = useCallback((
+    trigger: string,
+    connectFn: (reason: string) => Promise<void>,
+    options?: { attemptFloor?: number; minDelayMs?: number }
+  ) => {
     if (!shouldConnect()) return;
+
+    if (typeof options?.attemptFloor === 'number') {
+      reconnectAttemptsRef.current = Math.max(reconnectAttemptsRef.current, options.attemptFloor);
+    }
 
     reconnectAttemptsRef.current += 1;
     const exponential = BASE_RECONNECT_DELAY_MS * 2 ** (reconnectAttemptsRef.current - 1);
-    const delay = Math.min(MAX_RECONNECT_DELAY_MS, exponential) + Math.floor(Math.random() * RECONNECT_JITTER_MS);
+    const withJitter = Math.min(MAX_RECONNECT_DELAY_MS, exponential) + Math.floor(Math.random() * RECONNECT_JITTER_MS);
+    const delay = Math.max(options?.minDelayMs ?? 0, withJitter);
 
     if (__DEV__) {
       console.debug('[myVideos.ws] reconnect scheduled', {
@@ -274,7 +292,9 @@ export function useMyVideosRealtimeSync() {
     wsRef.current = socket;
 
     socket.onopen = () => {
-      reconnectAttemptsRef.current = 0;
+      openedAtRef.current = Date.now();
+      sawSnapshotRef.current = false;
+      sawLiveEventRef.current = false;
       if (__DEV__) {
         console.debug('[myVideos.ws] open');
       }
@@ -299,6 +319,7 @@ export function useMyVideosRealtimeSync() {
       if (typed.type === 'video.status.snapshot') {
         const snapshot = parsed as SnapshotEvent;
         if (!Array.isArray(snapshot.videos)) return;
+        sawSnapshotRef.current = true;
 
         replaceFromSnapshot(snapshot.videos);
         if (__DEV__) {
@@ -326,6 +347,7 @@ export function useMyVideosRealtimeSync() {
         return;
       }
 
+      sawLiveEventRef.current = true;
       upsertFromLiveEvent(liveEvent.video);
       if (__DEV__) {
         console.debug('[myVideos.ws] live', {
@@ -361,12 +383,34 @@ export function useMyVideosRealtimeSync() {
         return;
       }
 
+      const lifetimeMs = openedAtRef.current ? Date.now() - openedAtRef.current : 0;
+      const isStable = lifetimeMs >= STABLE_CONNECTION_MS;
+
+      if (isStable || sawLiveEventRef.current) {
+        reconnectAttemptsRef.current = 0;
+      }
+
+      const snapshotOnlyShortClose =
+        event.code === 1006 &&
+        sawSnapshotRef.current &&
+        !sawLiveEventRef.current &&
+        !isStable;
+
+      if (snapshotOnlyShortClose) {
+        scheduleReconnect('socket_close_snapshot_only', connect, {
+          attemptFloor: SNAPSHOT_CLOSE_ATTEMPT_FLOOR,
+          minDelayMs: SNAPSHOT_CLOSE_MIN_DELAY_MS,
+        });
+        return;
+      }
+
       scheduleReconnect('socket_close', connect);
     };
   }, [rememberEventId, replaceFromSnapshot, scheduleReconnect, shouldConnect, upsertFromLiveEvent, wsUrl]);
 
   useEffect(() => {
     if (status === 'authenticated') {
+      reconnectAttemptsRef.current = 0;
       void connect('auth_success');
       return;
     }

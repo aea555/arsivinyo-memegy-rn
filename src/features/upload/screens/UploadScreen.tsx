@@ -5,7 +5,6 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -26,6 +25,8 @@ import { spacing } from '@/src/shared/theme/spacing';
 import { useShadows } from '@/src/shared/theme/shadows';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { useAppSettingsStore } from '@/src/store/appSettingsStore';
+import { useToastStore } from '@/src/store/toastStore';
+import { extractApiErrorMessage } from '@/src/shared/utils/errorParser';
 
 type PreviewProps = {
   player: ReturnType<typeof useVideoPlayer>;
@@ -103,6 +104,7 @@ const UploadVideoPreview = React.memo(function UploadVideoPreview({
 export function UploadScreen() {
   const { t } = useTranslation();
   const { palette } = useTheme();
+  const showToast = useToastStore((state) => state.showToast);
   const shadows = useShadows();
   const router = useRouter();
   const autoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
@@ -140,7 +142,7 @@ export function UploadScreen() {
       setFilename(asset.fileName ?? 'upload.mp4');
       setIsPreviewPlaying(autoPlayVideos);
     } catch {
-      Alert.alert(t('common.error'), t('upload.pickError'));
+      showToast(t('upload.pickError'), 'error');
     }
   };
 
@@ -166,15 +168,18 @@ export function UploadScreen() {
       await queryClient.invalidateQueries({ queryKey: ['feed'] });
       await queryClient.invalidateQueries({ queryKey: ['myVideos'] });
 
-      Alert.alert(t('upload.success'));
+      showToast(t('upload.success'), 'success');
       router.back();
     } catch (error: any) {
       if (error?.message === 'too_large') {
-        Alert.alert(t('common.error'), t('upload.tooLarge'));
+        showToast(t('upload.tooLarge'), 'error');
+      } else if (error?.response?.status === 400) {
+        const backendMessage = extractApiErrorMessage(error);
+        showToast(backendMessage ?? t('common.error'), 'error');
       } else if (error?.response?.status === 429) {
-        Alert.alert(t('common.error'), t('upload.rateLimited'));
+        showToast(t('upload.rateLimited'), 'error');
       } else {
-        Alert.alert(t('common.error'), t('common.error'));
+        showToast(t('common.error'), 'error');
       }
     } finally {
       setLoading(false);

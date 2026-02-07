@@ -54,3 +54,36 @@ export async function getMyVideos(page: number, limit: number) {
 export async function deleteAccount() {
   await apiClient.delete('/users/me');
 }
+
+export async function retryVideoProcessing(videoId: string) {
+  const endpoint = `/videos/${videoId}/confirm`;
+  if (__DEV__) {
+    console.debug('[myVideos] retry request', {
+      method: 'POST',
+      endpoint,
+      videoId,
+    });
+  }
+
+  try {
+    const response = await apiClient.post(endpoint);
+    if (__DEV__) {
+      console.debug('[myVideos] retry response', {
+        endpoint,
+        status: response.status,
+        videoId,
+      });
+    }
+  } catch (error: any) {
+    if (__DEV__) {
+      console.debug('[myVideos] retry error', {
+        endpoint,
+        status: error?.response?.status,
+        data: error?.response?.data,
+        message: error?.message,
+        videoId,
+      });
+    }
+    throw error;
+  }
+}
