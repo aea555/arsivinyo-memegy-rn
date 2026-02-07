@@ -18,18 +18,22 @@ type FeedOverlayActionsProps = {
   infoVisible: boolean;
 };
 
-export function FeedOverlayActions({ video, onToggleInfo, infoVisible }: FeedOverlayActionsProps) {
+function FeedOverlayActionsBase({ video, onToggleInfo, infoVisible }: FeedOverlayActionsProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
   const toggleLike = useToggleLike(video.id);
+  const currentLiked = video.is_liked ?? false;
+  const handleLikePress = React.useCallback(() => {
+    toggleLike.mutate({ currentLiked });
+  }, [currentLiked, toggleLike]);
 
   return (
     <View style={styles.container} pointerEvents="box-none">
       {video.is_liked !== undefined ? (
         <LikeButton
-          liked={video.is_liked ?? false}
+          liked={currentLiked}
           count={video.like_count}
-          onPress={() => toggleLike.mutate({ currentLiked: video.is_liked ?? false })}
+          onPress={handleLikePress}
           disabled={toggleLike.isPending}
           variant="overlay"
         />
@@ -66,6 +70,19 @@ export function FeedOverlayActions({ video, onToggleInfo, infoVisible }: FeedOve
     </View>
   );
 }
+
+function areFeedOverlayActionsPropsEqual(prev: FeedOverlayActionsProps, next: FeedOverlayActionsProps) {
+  return (
+    prev.infoVisible === next.infoVisible &&
+    prev.onToggleInfo === next.onToggleInfo &&
+    prev.video.id === next.video.id &&
+    prev.video.like_count === next.video.like_count &&
+    prev.video.is_liked === next.video.is_liked &&
+    prev.video.title === next.video.title
+  );
+}
+
+export const FeedOverlayActions = React.memo(FeedOverlayActionsBase, areFeedOverlayActionsPropsEqual);
 
 const styles = StyleSheet.create({
   container: {

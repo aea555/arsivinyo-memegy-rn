@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
@@ -58,6 +58,9 @@ function ImmersiveFeedItemBase({
 
   const topScrim = useMemo(() => [withAlpha('#000000', 0.46), 'transparent'] as const, []);
   const bottomScrim = useMemo(() => ['transparent', withAlpha('#000000', 0.68)] as const, []);
+  const handleToggleInfo = useCallback(() => {
+    setInfoVisible((prev) => !prev);
+  }, []);
 
   return (
     <View style={[styles.container, { height }]}>
@@ -102,7 +105,7 @@ function ImmersiveFeedItemBase({
           <FeedOverlayActions
             video={video}
             infoVisible={infoVisible}
-            onToggleInfo={() => setInfoVisible((prev) => !prev)}
+            onToggleInfo={handleToggleInfo}
           />
         </View>
       </View>
@@ -110,7 +113,26 @@ function ImmersiveFeedItemBase({
   );
 }
 
-export const ImmersiveFeedItem = React.memo(ImmersiveFeedItemBase);
+function areImmersiveFeedItemPropsEqual(prev: ImmersiveFeedItemProps, next: ImmersiveFeedItemProps) {
+  return (
+    prev.isActive === next.isActive &&
+    prev.isScreenActive === next.isScreenActive &&
+    prev.height === next.height &&
+    prev.autoPlayEnabled === next.autoPlayEnabled &&
+    prev.preserveAspectRatio === next.preserveAspectRatio &&
+    prev.video.id === next.video.id &&
+    prev.video.url === next.video.url &&
+    prev.video.is_liked === next.video.is_liked &&
+    prev.video.like_count === next.video.like_count &&
+    prev.video.title === next.video.title &&
+    prev.video.description === next.video.description &&
+    prev.video.created_at === next.video.created_at &&
+    prev.video.uploader?.id === next.video.uploader?.id &&
+    prev.video.uploader?.username === next.video.uploader?.username
+  );
+}
+
+export const ImmersiveFeedItem = React.memo(ImmersiveFeedItemBase, areImmersiveFeedItemPropsEqual);
 
 const styles = StyleSheet.create({
   container: {

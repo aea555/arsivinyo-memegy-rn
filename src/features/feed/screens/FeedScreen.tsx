@@ -1,6 +1,6 @@
 import { useIsFocused } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, View, ViewToken } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, View, ViewToken } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -19,9 +19,11 @@ import { VideoFeedItem } from '@/src/shared/types/api';
 import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 
 const viewabilityConfig = {
-  itemVisiblePercentThreshold: 45,
+  itemVisiblePercentThreshold: 60,
 };
-const SWIPE_LOCK_MS = 500;
+const FEED_PERF_DEBUG =
+  __DEV__ &&
+  (globalThis as typeof globalThis & { __MEMEGY_FEED_PERF__?: boolean }).__MEMEGY_FEED_PERF__ === true;
 
 export function FeedScreen() {
   const { t } = useTranslation();
@@ -34,10 +36,9 @@ export function FeedScreen() {
   const [sort, setSort] = useState<'random' | 'latest' | 'popular'>('random');
   const [activeIndex, setActiveIndex] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
-  const [isSwipeLocked, setIsSwipeLocked] = useState(false);
   const listRef = useRef<FlatList<VideoFeedItem>>(null);
-  const activeIndexRef = useRef(0);
-  const swipeUnlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const renderCountRef = useRef(0);
+  const activeIndexRef = useRef(activeIndex);
 
   const { data, isFetchingNextPage, fetchNextPage, hasNextPage, isLoading, refetch } = useFeed(sort);
 
@@ -56,46 +57,53 @@ export function FeedScreen() {
 
   const activeId = videos[activeIndex]?.id ?? null;
 
+  renderCountRef.current += 1;
+  if (FEED_PERF_DEBUG) {
+    console.debug('[feed.perf] render', {
+      renderCount: renderCountRef.current,
+      sort,
+      activeIndex,
+      totalVideos: videos.length,
+    });
+  }
+
   useEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
 
-  const clearSwipeUnlockTimer = useCallback(() => {
-    if (swipeUnlockTimerRef.current) {
-      clearTimeout(swipeUnlockTimerRef.current);
-      swipeUnlockTimerRef.current = null;
-    }
-  }, []);
-
-  const lockSwipeTemporarily = useCallback(() => {
-    clearSwipeUnlockTimer();
-    setIsSwipeLocked(true);
-    swipeUnlockTimerRef.current = setTimeout(() => {
-      setIsSwipeLocked(false);
-      swipeUnlockTimerRef.current = null;
-    }, SWIPE_LOCK_MS);
-  }, [clearSwipeUnlockTimer]);
-
   const applyActiveIndex = useCallback(
-    (nextIndex: number) => {
+    (nextIndex: number, source: 'viewability' | 'focus' | 'sort' = 'viewability') => {
       if (videos.length === 0) {
         setActiveIndex((prev) => (prev === 0 ? prev : 0));
         return;
       }
       const clamped = Math.max(0, Math.min(nextIndex, videos.length - 1));
+      if (FEED_PERF_DEBUG && clamped !== activeIndexRef.current) {
+        console.debug('[feed.perf] active-index', {
+          source,
+          from: activeIndexRef.current,
+          to: clamped,
+        });
+      }
       setActiveIndex((prev) => (prev === clamped ? prev : clamped));
     },
     [videos.length]
   );
 
-  const onViewableItemsChanged = useCallback(
+  const applyActiveIndexRef = useRef(applyActiveIndex);
+  useEffect(() => {
+    applyActiveIndexRef.current = applyActiveIndex;
+  }, [applyActiveIndex]);
+
+  const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      const firstVisible = viewableItems.find((item) => item.isViewable && typeof item.index === 'number');
+      const firstVisible = viewableItems.find(
+        (item) => item.isViewable && typeof item.index === 'number'
+      );
       if (!firstVisible || typeof firstVisible.index !== 'number') return;
-      applyActiveIndex(firstVisible.index);
-    },
-    [applyActiveIndex]
-  );
+      applyActiveIndexRef.current(firstVisible.index, 'viewability');
+    }
+  ).current;
 
   const renderItem = useCallback(
     ({ item }: { item: VideoFeedItem }) => (
@@ -113,34 +121,24 @@ export function FeedScreen() {
 
   useEffect(() => {
     if (!isFocused) {
-      clearSwipeUnlockTimer();
-      setIsSwipeLocked(false);
       setActiveIndex(-1);
       return;
     }
     if (activeIndex < 0) {
-      applyActiveIndex(0);
+      applyActiveIndex(0, 'focus');
       return;
     }
     if (videos.length > 0 && activeIndex >= videos.length) {
-      applyActiveIndex(videos.length - 1);
+      applyActiveIndex(videos.length - 1, 'focus');
     }
-  }, [activeIndex, applyActiveIndex, clearSwipeUnlockTimer, isFocused, videos.length]);
+  }, [activeIndex, applyActiveIndex, isFocused, videos.length]);
 
   useEffect(() => {
-    clearSwipeUnlockTimer();
-    setIsSwipeLocked(false);
-    setActiveIndex(0);
+    applyActiveIndex(0, 'sort');
     requestAnimationFrame(() => {
       listRef.current?.scrollToOffset({ offset: 0, animated: false });
     });
-  }, [clearSwipeUnlockTimer, sort]);
-
-  useEffect(() => {
-    return () => {
-      clearSwipeUnlockTimer();
-    };
-  }, [clearSwipeUnlockTimer]);
+  }, [applyActiveIndex, sort]);
 
   useEffect(() => {
     if (videos.length === 0) return;
@@ -148,19 +146,6 @@ export function FeedScreen() {
       fetchNextPage();
     }
   }, [activeIndex, fetchNextPage, hasNextPage, isFetchingNextPage, videos.length]);
-
-  const onMomentumScrollEnd = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (viewportHeight <= 0) return;
-      const nextIndex = Math.round(event.nativeEvent.contentOffset.y / viewportHeight);
-      const previousIndex = activeIndexRef.current;
-      applyActiveIndex(nextIndex);
-      if (nextIndex !== previousIndex) {
-        lockSwipeTemporarily();
-      }
-    },
-    [applyActiveIndex, lockSwipeTemporarily, viewportHeight]
-  );
 
   const getItemLayout = useCallback(
     (_data: ArrayLike<VideoFeedItem> | null | undefined, index: number) => ({
@@ -178,11 +163,11 @@ export function FeedScreen() {
 
   const keyExtractor = useCallback((item: VideoFeedItem) => item.id, []);
 
-  const handleEndReached = () => {
+  const handleEndReached = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
     }
-  };
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   const isEmpty = !isLoading && videos.length === 0;
 
@@ -224,17 +209,16 @@ export function FeedScreen() {
           onEndReachedThreshold={0.55}
           viewabilityConfig={viewabilityConfig}
           onViewableItemsChanged={onViewableItemsChanged}
-          onMomentumScrollEnd={onMomentumScrollEnd}
-          scrollEnabled={!isSwipeLocked}
           pagingEnabled
           disableIntervalMomentum
-          decelerationRate="normal"
+          decelerationRate="fast"
           snapToInterval={viewportHeight > 0 ? viewportHeight : undefined}
           snapToAlignment="start"
           removeClippedSubviews={false}
-          initialNumToRender={2}
-          maxToRenderPerBatch={2}
-          windowSize={3}
+          initialNumToRender={1}
+          maxToRenderPerBatch={1}
+          windowSize={2}
+          updateCellsBatchingPeriod={16}
           getItemLayout={viewportHeight > 0 ? getItemLayout : undefined}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={

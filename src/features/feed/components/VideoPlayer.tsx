@@ -62,6 +62,7 @@ export function VideoPlayer({
   const lastKnownPlayingRef = React.useRef(false);
   const postFullscreenStateRef = React.useRef<boolean | null>(null);
   const resumeAfterForcedPauseUntilRef = React.useRef(0);
+  const shouldForcePostFullscreenState = isImmersive;
 
   const videoPlayer = useVideoPlayer(uri, (playerInstance) => {
     playerInstance.loop = true;
@@ -84,13 +85,27 @@ export function VideoPlayer({
     const subscription = videoPlayer.addListener('playingChange', ({ isPlaying }) => {
       lastKnownPlayingRef.current = isPlaying;
       // Once fullscreen state has been restored, do not keep forcing it.
-      if (!isFullscreenRef.current && postFullscreenStateRef.current !== null) {
+      if (
+        shouldForcePostFullscreenState &&
+        !isFullscreenRef.current &&
+        postFullscreenStateRef.current !== null
+      ) {
         postFullscreenStateRef.current = null;
       }
     });
 
     return () => {
       subscription.remove();
+    };
+  }, [shouldForcePostFullscreenState, videoPlayer]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        videoPlayer.pause();
+      } catch {
+        // no-op on unmount for already released players
+      }
     };
   }, [videoPlayer]);
 
@@ -182,7 +197,7 @@ export function VideoPlayer({
     clearPauseTimer();
 
     try {
-      if (postFullscreenStateRef.current !== null) {
+      if (shouldForcePostFullscreenState && postFullscreenStateRef.current !== null) {
         if (postFullscreenStateRef.current) {
           videoPlayer.play();
         } else {
@@ -222,6 +237,7 @@ export function VideoPlayer({
     isActive,
     isScreenActive,
     isFullscreen,
+    shouldForcePostFullscreenState,
     videoPlayer,
     uri,
   ]);
@@ -311,21 +327,25 @@ export function VideoPlayer({
           }
           postFullscreenStateRef.current = null;
           setIsFullscreen(true);
-          const shouldResumeAfterTransition =
-            resumeAfterForcedPauseUntilRef.current > Date.now() ||
-            lastKnownPlayingRef.current ||
-            videoPlayer.playing;
-          resumeAfterForcedPauseUntilRef.current = 0;
-          if (shouldResumeAfterTransition) {
-            try {
-              videoPlayer.play();
-            } catch {
-              // no-op: transient native fullscreen transition
+          if (shouldForcePostFullscreenState) {
+            const shouldResumeAfterTransition =
+              resumeAfterForcedPauseUntilRef.current > Date.now() ||
+              lastKnownPlayingRef.current ||
+              videoPlayer.playing;
+            resumeAfterForcedPauseUntilRef.current = 0;
+            if (shouldResumeAfterTransition) {
+              try {
+                videoPlayer.play();
+              } catch {
+                // no-op: transient native fullscreen transition
+              }
             }
           }
         }}
         onFullscreenExit={() => {
-          postFullscreenStateRef.current = lastKnownPlayingRef.current;
+          postFullscreenStateRef.current = shouldForcePostFullscreenState
+            ? lastKnownPlayingRef.current
+            : null;
           setIsFullscreen(false);
         }}
       />

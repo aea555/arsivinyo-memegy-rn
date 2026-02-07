@@ -152,10 +152,12 @@ export function MyVideosScreen() {
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      if (viewableItems.length === 0) return;
       const firstPlayable = viewableItems
         .map((token) => token.item as MyVideoItem | undefined)
         .find((item) => item && isPlayable(item));
-      setActiveId(firstPlayable?.id ?? null);
+      if (!firstPlayable) return;
+      setActiveId((prev) => (prev === firstPlayable.id ? prev : firstPlayable.id));
     }
   ).current;
 

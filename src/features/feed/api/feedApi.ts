@@ -11,6 +11,7 @@ export async function getFeed(sort: FeedSort, page: number) {
   const normalizedSort = normalizeFeedSort(sort);
   const endpoint = '/feed';
   const params = { sort: normalizedSort, page };
+  const startedAt = Date.now();
 
   if (__DEV__) {
     console.debug('[feed] request', {
@@ -26,11 +27,15 @@ export async function getFeed(sort: FeedSort, page: number) {
     });
 
     if (__DEV__) {
+      const data = Array.isArray(response.data) ? response.data : [];
       console.debug('[feed] response', {
         endpoint,
         status: response.status,
-        count: Array.isArray(response.data) ? response.data.length : 0,
-        data: response.data,
+        sort: normalizedSort,
+        page,
+        count: data.length,
+        firstVideoId: data[0]?.id,
+        elapsedMs: Date.now() - startedAt,
       });
     }
 
@@ -39,9 +44,11 @@ export async function getFeed(sort: FeedSort, page: number) {
     if (__DEV__) {
       console.debug('[feed] error', {
         endpoint,
+        sort: normalizedSort,
+        page,
         status: error?.response?.status,
-        data: error?.response?.data,
         message: error?.message,
+        elapsedMs: Date.now() - startedAt,
       });
     }
     throw error;

@@ -78,7 +78,8 @@ export function ExploreScreen() {
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       const first = viewableItems[0]?.item as VideoFeedItem | undefined;
-      setActiveId(first?.id ?? null);
+      if (!first) return;
+      setActiveId((prev) => (prev === first.id ? prev : first.id));
     }
   ).current;
 
