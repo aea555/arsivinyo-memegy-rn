@@ -27,6 +27,11 @@ import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 import { useToastStore } from '@/src/store/toastStore';
 import { extractApiErrorMessage } from '@/src/shared/utils/errorParser';
+import {
+  clampUtf8Bytes,
+  VIDEO_DESCRIPTION_MAX_BYTES,
+  VIDEO_TITLE_MAX_BYTES,
+} from '@/src/shared/utils/inputLimits';
 
 type PreviewProps = {
   player: ReturnType<typeof useVideoPlayer>;
@@ -127,11 +132,11 @@ export function UploadScreen() {
   });
 
   const handleTitleChange = React.useCallback((text: string) => {
-    setTitle(text);
+    setTitle(clampUtf8Bytes(text, VIDEO_TITLE_MAX_BYTES));
   }, []);
 
   const handleDescriptionChange = React.useCallback((text: string) => {
-    setDescription(text);
+    setDescription(clampUtf8Bytes(text, VIDEO_DESCRIPTION_MAX_BYTES));
   }, []);
 
   const handlePick = async () => {
@@ -159,8 +164,9 @@ export function UploadScreen() {
         sizeBytes,
         isAnonymous,
         metadata: {
-          title: title.trim() || null,
-          description: description.trim() || null,
+          title: clampUtf8Bytes(title.trim(), VIDEO_TITLE_MAX_BYTES) || null,
+          description:
+            clampUtf8Bytes(description.trim(), VIDEO_DESCRIPTION_MAX_BYTES) || null,
           is_anonymous: isAnonymous,
         },
       });
@@ -244,11 +250,17 @@ export function UploadScreen() {
             </AppText>
           </View>
         ) : null}
-        <Input placeholder={t('upload.videoTitle')} value={title} onChangeText={handleTitleChange} />
+        <Input
+          placeholder={t('upload.videoTitle')}
+          value={title}
+          onChangeText={handleTitleChange}
+          maxLength={VIDEO_TITLE_MAX_BYTES}
+        />
         <Input
           placeholder={t('upload.description')}
           value={description}
           onChangeText={handleDescriptionChange}
+          maxLength={VIDEO_DESCRIPTION_MAX_BYTES}
           multiline
           style={styles.textArea}
         />

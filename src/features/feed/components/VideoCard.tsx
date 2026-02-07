@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { DownloadButton } from '@/src/features/download/components/DownloadButton';
+import { ShareButton } from '@/src/features/share/components/ShareButton';
 import { VideoPlayer } from './VideoPlayer';
 import { useToggleLike } from '@/src/features/feed/hooks/useToggleLike';
 import { AppText } from '@/src/shared/components/ui/AppText';
@@ -19,6 +20,7 @@ type VideoCardProps = {
   isScreenActive?: boolean;
   showUploader?: boolean;
   showAnonymousBadge?: boolean;
+  extraAction?: React.ReactNode;
 };
 
 export function VideoCard({
@@ -27,6 +29,7 @@ export function VideoCard({
   isScreenActive = true,
   showUploader = true,
   showAnonymousBadge = false,
+  extraAction,
 }: VideoCardProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
@@ -47,7 +50,11 @@ export function VideoCard({
             </AppText>
           </View>
           <AppText variant="caption">{metaLine}</AppText>
-          <DownloadButton videoId={video.id} suggestedName={video.title} />
+          <View style={styles.actionsRow}>
+            <DownloadButton videoId={video.id} suggestedName={video.title} />
+            <ShareButton url={video.url} title={video.title} />
+            {extraAction}
+          </View>
           {showAnonymousBadge ? (
             <View
               style={[
@@ -95,6 +102,13 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.xs,
   },
+  actionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: 2,
+  },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -114,7 +128,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   likes: {
-    width: 110,
+    width: 96,
     marginTop: spacing.sm,
     gap: spacing.xs,
     alignItems: 'flex-end',

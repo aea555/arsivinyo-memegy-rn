@@ -24,13 +24,14 @@ export function DownloadButton({ videoId, suggestedName, variant = 'default' }: 
   const isOverlay = variant === 'overlay';
 
   const progress = Math.max(0, Math.min(100, Math.round(state.progress * 100)));
-  const iconColor = palette.onAccent;
   const baseColor =
     state.status === 'success'
       ? palette.success
       : state.status === 'error'
         ? palette.error
         : palette.accent;
+  const iconColor = palette.onAccent;
+  const defaultIconColor = baseColor;
   const iconName: keyof typeof Ionicons.glyphMap =
     state.status === 'success'
       ? 'checkmark-circle'
@@ -49,14 +50,16 @@ export function DownloadButton({ videoId, suggestedName, variant = 'default' }: 
         style={({ pressed }) => [
           isOverlay ? styles.overlayButton : styles.button,
           {
-            borderColor: withAlpha(baseColor, 0.9),
-            backgroundColor: isOverlay ? withAlpha(baseColor, 0.9) : baseColor,
+            borderColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.48),
+            backgroundColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.14),
           },
           pressed
             ? [
                 styles.pressed,
                 {
-                  backgroundColor: withAlpha(baseColor, 0.86),
+                  backgroundColor: isOverlay
+                    ? withAlpha(baseColor, 0.86)
+                    : withAlpha(baseColor, 0.22),
                 },
               ]
             : null,
@@ -66,16 +69,20 @@ export function DownloadButton({ videoId, suggestedName, variant = 'default' }: 
       >
         <View style={isOverlay ? styles.overlayIconWrap : styles.iconWrap}>
           {isBusy ? (
-            <ActivityIndicator size="small" color={palette.accent} />
+            <ActivityIndicator size="small" color={isOverlay ? palette.accent : defaultIconColor} />
           ) : (
-            <Ionicons name={iconName} size={isOverlay ? 18 : 16} color={iconColor} />
+            <Ionicons
+              name={iconName}
+              size={isOverlay ? 18 : 16}
+              color={isOverlay ? iconColor : defaultIconColor}
+            />
           )}
         </View>
         <AppText
           variant="caption"
           style={[
             isOverlay ? styles.overlayLabel : styles.label,
-            { color: palette.onAccent },
+            { color: isOverlay ? palette.onAccent : baseColor },
           ]}
         >
           {isBusy ? `${progress}%` : t('video.download')}
@@ -99,16 +106,17 @@ export function DownloadButton({ videoId, suggestedName, variant = 'default' }: 
 
 const styles = StyleSheet.create({
   button: {
-    minHeight: 38,
-    minWidth: 124,
-    borderRadius: 12,
+    minHeight: 36,
+    minWidth: 112,
+    borderRadius: 999,
     borderWidth: 1,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 12,
     paddingVertical: spacing.xs,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     gap: spacing.xs,
+    alignSelf: 'flex-start',
   },
   overlayButton: {
     minHeight: 40,
@@ -123,12 +131,12 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   iconWrap: {
-    width: 20,
+    width: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   label: {
-    fontSize: 12,
+    fontSize: 13,
   },
   overlayIconWrap: {
     width: 22,

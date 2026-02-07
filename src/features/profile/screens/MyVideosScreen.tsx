@@ -17,19 +17,27 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { VideoCard } from '@/src/features/feed/components/VideoCard';
 import { retryVideoProcessing } from '@/src/features/profile/api/profileApi';
+import { useDeleteVideo } from '@/src/features/profile/hooks/useDeleteVideo';
 import { useMyVideos } from '@/src/features/profile/hooks/useMyVideos';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
 import { Card } from '@/src/shared/components/ui/Card';
+import { ConfirmModal } from '@/src/shared/components/ui/ConfirmModal';
 import { Input } from '@/src/shared/components/ui/Input';
 import { SegmentedControl } from '@/src/shared/components/ui/SegmentedControl';
 import { useDebounce } from '@/src/shared/hooks/useDebounce';
+import { withAlpha } from '@/src/shared/theme/colorUtils';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { MyVideoItem, VideoFeedItem } from '@/src/shared/types/api';
 import { extractApiErrorMessage } from '@/src/shared/utils/errorParser';
 import { formatDate } from '@/src/shared/utils/formatters';
+import {
+  clampSearchQuery,
+  normalizeSearchQuery,
+  SEARCH_MAX_QUERY_CHARS,
+} from '@/src/shared/utils/inputLimits';
 import { useToastStore } from '@/src/store/toastStore';
 
 const viewabilityConfig = {
@@ -42,15 +50,23 @@ export function MyVideosScreen() {
   const { palette } = useTheme();
   const showToast = useToastStore((state) => state.showToast);
   const queryClient = useQueryClient();
+  const deleteMutation = useDeleteVideo();
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useMyVideos();
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<'date_desc' | 'title_asc'>('date_desc');
   const listRef = useRef<FlatList<MyVideoItem>>(null);
   const browseOffsetRef = useRef(0);
   const wasSearchingRef = useRef(false);
   const debouncedQuery = useDebounce(query, 200);
-  const normalizedQuery = useMemo(() => debouncedQuery.trim().toLocaleLowerCase(), [debouncedQuery]);
+  const handleQueryChange = useCallback((text: string) => {
+    setQuery(clampSearchQuery(text));
+  }, []);
+  const normalizedQuery = useMemo(
+    () => normalizeSearchQuery(debouncedQuery).toLocaleLowerCase(),
+    [debouncedQuery]
+  );
   const isSearching = normalizedQuery.length > 0;
 
   const retryMutation = useMutation({
@@ -150,6 +166,55 @@ export function MyVideosScreen() {
     []
   );
 
+  const handleRequestDelete = useCallback(
+    (videoId: string) => {
+      if (deleteMutation.isPending) return;
+      setPendingDeleteId(videoId);
+    },
+    [deleteMutation.isPending]
+  );
+
+  const renderDeleteAction = useCallback(
+    (videoId: string) => {
+      const isDeletingThisVideo =
+        deleteMutation.isPending && deleteMutation.variables === videoId;
+
+      return (
+        <Pressable
+          onPress={() => handleRequestDelete(videoId)}
+          disabled={deleteMutation.isPending}
+          style={({ pressed }) => [
+            styles.deleteAction,
+            {
+              borderColor: withAlpha(palette.error, 0.52),
+              backgroundColor: withAlpha(palette.error, 0.13),
+              opacity: deleteMutation.isPending && !isDeletingThisVideo ? 0.7 : 1,
+            },
+            pressed && !deleteMutation.isPending ? styles.pressedAction : null,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.delete')}
+        >
+          <Ionicons
+            name={isDeletingThisVideo ? 'time-outline' : 'trash-outline'}
+            size={16}
+            color={palette.error}
+          />
+          <AppText variant="caption" style={[styles.deleteActionText, { color: palette.error }]}>
+            {isDeletingThisVideo ? t('profile.deletingVideo') : t('common.delete')}
+          </AppText>
+        </Pressable>
+      );
+    },
+    [
+      deleteMutation.isPending,
+      deleteMutation.variables,
+      handleRequestDelete,
+      palette.error,
+      t,
+    ]
+  );
+
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       if (viewableItems.length === 0) return;
@@ -171,6 +236,7 @@ export function MyVideosScreen() {
             isScreenActive={isFocused}
             showUploader={false}
             showAnonymousBadge={item.is_anonymous}
+            extraAction={renderDeleteAction(item.id)}
           />
         );
       }
@@ -241,6 +307,7 @@ export function MyVideosScreen() {
               style={styles.retryButton}
             />
           ) : null}
+          {renderDeleteAction(item.id)}
         </Card>
       );
     },
@@ -253,6 +320,7 @@ export function MyVideosScreen() {
       palette.error,
       palette.text.secondary,
       retryMutation,
+      renderDeleteAction,
       t,
       toFeedItem,
     ]
@@ -307,9 +375,10 @@ export function MyVideosScreen() {
           <Input
             placeholder={t('profile.searchPlaceholder')}
             value={query}
-            onChangeText={setQuery}
+            onChangeText={handleQueryChange}
             autoCapitalize="none"
             returnKeyType="search"
+            maxLength={SEARCH_MAX_QUERY_CHARS}
           />
           <SegmentedControl
             value={sortMode}
@@ -365,6 +434,24 @@ export function MyVideosScreen() {
           contentContainerStyle={[styles.listContent, displayVideos.length === 0 ? styles.listEmptyContainer : null]}
         />
       </KeyboardAvoidingView>
+      <ConfirmModal
+        visible={Boolean(pendingDeleteId)}
+        title={t('profile.deleteVideoConfirmTitle')}
+        body={t('profile.deleteVideoConfirmBody')}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        variant="danger"
+        onCancel={() => {
+          if (deleteMutation.isPending) return;
+          setPendingDeleteId(null);
+        }}
+        onConfirm={() => {
+          if (!pendingDeleteId || deleteMutation.isPending) return;
+          const targetVideoId = pendingDeleteId;
+          setPendingDeleteId(null);
+          deleteMutation.mutate(targetVideoId);
+        }}
+      />
     </Screen>
   );
 }
@@ -434,6 +521,25 @@ const styles = StyleSheet.create({
   retryButton: {
     marginTop: spacing.xs,
     alignSelf: 'flex-start',
+  },
+  deleteAction: {
+    minHeight: 36,
+    minWidth: 92,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    alignSelf: 'flex-start',
+  },
+  deleteActionText: {
+    fontSize: 13,
+  },
+  pressedAction: {
+    transform: [{ scale: 0.98 }],
   },
   listContent: {
     paddingBottom: spacing.xxxl,

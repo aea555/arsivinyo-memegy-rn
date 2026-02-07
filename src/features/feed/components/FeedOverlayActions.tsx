@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import { DownloadButton } from '@/src/features/download/components/DownloadButton';
 import { useToggleLike } from '@/src/features/feed/hooks/useToggleLike';
+import { ShareButton } from '@/src/features/share/components/ShareButton';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { LikeButton } from '@/src/shared/components/ui/LikeButton';
 import { withAlpha } from '@/src/shared/theme/colorUtils';
@@ -44,6 +45,7 @@ function FeedOverlayActionsBase({ video, onToggleInfo, infoVisible }: FeedOverla
         </View>
       )}
       <DownloadButton videoId={video.id} suggestedName={video.title} variant="overlay" />
+      <ShareButton url={video.url} title={video.title} variant="overlay" />
       <Pressable
         onPress={onToggleInfo}
         style={({ pressed }) => [

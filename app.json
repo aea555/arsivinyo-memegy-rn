@@ -43,9 +43,11 @@
           "image": "./assets/images/arsivinyo_memegy_2048_transparent.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
           "dark": {
             "backgroundColor": "#000000"
+          },
+          "light": {
+            "backgroundColor": "#ffffff"
           }
         }
       ],
@@ -55,6 +57,32 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "MemegyShareExtension",
+                  "bundleIdentifier": "com.anonymous.arsivinyomemegyrn.share",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.anonymous.arsivinyomemegyrn"
+                    ]
+                  },
+                  "infoPlist": {
+                    "NSExtension": {
+                      "NSExtensionPointIdentifier": "com.apple.share-services"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
     }
   }
 }

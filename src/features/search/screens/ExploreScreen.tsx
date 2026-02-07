@@ -14,6 +14,10 @@ import { SegmentedControl } from '@/src/shared/components/ui/SegmentedControl';
 import { useDebounce } from '@/src/shared/hooks/useDebounce';
 import { spacing } from '@/src/shared/theme/spacing';
 import { VideoFeedItem } from '@/src/shared/types/api';
+import {
+  clampSearchQuery,
+  SEARCH_MAX_QUERY_CHARS,
+} from '@/src/shared/utils/inputLimits';
 
 const viewabilityConfig = {
   itemVisiblePercentThreshold: 70,
@@ -27,7 +31,7 @@ export function ExploreScreen() {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const handleQueryChange = useCallback((text: string) => {
-    setQuery(text);
+    setQuery(clampSearchQuery(text));
   }, []);
 
   const debouncedQuery = useDebounce(query, 400);
@@ -105,6 +109,7 @@ export function ExploreScreen() {
               value={query}
               onChangeText={handleQueryChange}
               autoCapitalize="none"
+              maxLength={SEARCH_MAX_QUERY_CHARS}
             />
             <SegmentedControl
               value={sort}
