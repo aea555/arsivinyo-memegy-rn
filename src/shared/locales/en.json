@@ -55,7 +55,7 @@
     "trim": "Trim clip",
     "uploading": "Uploading...",
     "confirming": "Confirming upload...",
-    "success": "Upload complete!",
+    "success": "Upload process started!",
     "tooLarge": "Video must be under 32 MB",
     "rateLimited": "Upload limit exceeded. Please wait.",
     "pickError": "We couldn\u2019t access your library."

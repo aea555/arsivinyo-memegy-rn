@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -21,17 +21,17 @@ import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
 import { Input } from '@/src/shared/components/ui/Input';
 import { queryClient } from '@/src/shared/services/api/queryClient';
-import { spacing } from '@/src/shared/theme/spacing';
 import { useShadows } from '@/src/shared/theme/shadows';
+import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
-import { useAppSettingsStore } from '@/src/store/appSettingsStore';
-import { useToastStore } from '@/src/store/toastStore';
 import { extractApiErrorMessage } from '@/src/shared/utils/errorParser';
 import {
   clampUtf8Bytes,
   VIDEO_DESCRIPTION_MAX_BYTES,
   VIDEO_TITLE_MAX_BYTES,
 } from '@/src/shared/utils/inputLimits';
+import { useAppSettingsStore } from '@/src/store/appSettingsStore';
+import { useToastStore } from '@/src/store/toastStore';
 
 type PreviewProps = {
   player: ReturnType<typeof useVideoPlayer>;
@@ -245,9 +245,9 @@ export function UploadScreen() {
         {assetUri ? (
           <View>
             <AppText variant="caption" style={{ marginBottom: 4 }}>{filename}</AppText>
-            <AppText variant="caption" style={{ fontSize: 10, opacity: 0.6 }}>
+            {/* <AppText variant="caption" style={{ fontSize: 10, opacity: 0.6 }}>
               Path: {assetUri.substring(assetUri.lastIndexOf('/') + 1)}
-            </AppText>
+            </AppText> */}
           </View>
         ) : null}
         <Input

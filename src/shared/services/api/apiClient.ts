@@ -1,4 +1,4 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosError, InternalAxiosRequestConfig, isAxiosError } from 'axios';
 
 import { SecureStorage } from '../storage/SecureStorage';
 import { notifyLogout, notifyTokenRefresh } from './authEvents';
@@ -11,6 +11,104 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+const REFRESH_RETRY_MAX_ATTEMPTS = 3;
+const REFRESH_RETRY_BASE_DELAY_MS = 400;
+
+type RefreshTokens = {
+  accessToken: string;
+  refreshToken: string;
+};
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function requestTokenRefresh(): Promise<RefreshTokens> {
+  const accessToken = await SecureStorage.getAccessToken();
+  const refreshToken = await SecureStorage.getRefreshToken();
+
+  if (!refreshToken) {
+    throw new Error('missing_refresh_token');
+  }
+
+  const response = await axios.post(
+    `${API_BASE_URL}/auth/refresh`,
+    {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    },
+    {
+      timeout: 15000,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+
+  const data = response.data as Partial<{ access_token: string; refresh_token: string }>;
+  if (!data.access_token || !data.refresh_token) {
+    throw new Error('invalid_refresh_response');
+  }
+
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+  };
+}
+
+function isRetryableRefreshError(error: unknown) {
+  if (!isAxiosError(error)) {
+    return false;
+  }
+
+  if (!error.response) {
+    return true;
+  }
+
+  const status = error.response.status;
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function shouldForceLogoutAfterRefreshFailure(error: unknown) {
+  if (error instanceof Error) {
+    if (error.message === 'missing_refresh_token' || error.message === 'invalid_refresh_response') {
+      return true;
+    }
+  }
+
+  if (!isAxiosError(error)) {
+    return false;
+  }
+
+  if (!error.response) {
+    return false;
+  }
+
+  const status = error.response.status;
+  return status === 400 || status === 401 || status === 403;
+}
+
+async function refreshTokensWithRetry(): Promise<RefreshTokens> {
+  let attempt = 0;
+  let lastError: unknown = null;
+
+  while (attempt < REFRESH_RETRY_MAX_ATTEMPTS) {
+    attempt += 1;
+
+    try {
+      return await requestTokenRefresh();
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableRefreshError(error) || attempt >= REFRESH_RETRY_MAX_ATTEMPTS) {
+        throw error;
+      }
+      await wait(REFRESH_RETRY_BASE_DELAY_MS * attempt);
+    }
+  }
+
+  throw lastError ?? new Error('refresh_failed');
+}
 
 apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   const token = await SecureStorage.getAccessToken();
@@ -64,6 +162,7 @@ apiClient.interceptors.response.use(
           failedQueue.push({ resolve, reject });
         }).then((token) => {
           if (token) {
+            originalRequest.headers = originalRequest.headers ?? {};
             originalRequest.headers.Authorization = `Bearer ${token}`;
           }
           return apiClient(originalRequest);
@@ -73,37 +172,22 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const accessToken = await SecureStorage.getAccessToken();
-      const refreshToken = await SecureStorage.getRefreshToken();
-
-      if (!refreshToken) {
-        await SecureStorage.clearTokens();
-        await notifyLogout();
-        return Promise.reject(error);
-      }
-
       try {
-        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-
-        const { access_token, refresh_token } = response.data as {
-          access_token: string;
-          refresh_token: string;
-        };
-
-        await SecureStorage.setTokens(access_token, refresh_token);
+        const { accessToken, refreshToken } = await refreshTokensWithRetry();
+        await SecureStorage.setTokens(accessToken, refreshToken);
         notifyTokenRefresh();
-        apiClient.defaults.headers.common.Authorization = `Bearer ${access_token}`;
-        originalRequest.headers.Authorization = `Bearer ${access_token}`;
-        processQueue(null, access_token);
+        apiClient.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
+        originalRequest.headers = originalRequest.headers ?? {};
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        processQueue(null, accessToken);
 
         return apiClient(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
-        await SecureStorage.clearTokens();
-        await notifyLogout();
+        if (shouldForceLogoutAfterRefreshFailure(refreshError)) {
+          await SecureStorage.clearTokens();
+          await notifyLogout();
+        }
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
