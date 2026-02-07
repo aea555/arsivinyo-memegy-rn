@@ -14,9 +14,12 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { layoutConfig } from '@/src/shared/config/layoutConfig';
+import { ConfirmModal } from '@/src/shared/components/ui/ConfirmModal';
+import { LocalStorage } from '@/src/shared/services/storage/LocalStorage';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { withAlpha } from '@/src/shared/theme/colorUtils';
 import { useShadows } from '@/src/shared/theme/shadows';
+import { useAuthStore } from '@/src/store/authStore';
 
 function TabItemButton({
   accessibilityLabel,
@@ -192,116 +195,167 @@ export default function TabLayout() {
   const { t } = useTranslation();
   const { palette } = useTheme();
   const shadows = useShadows();
+  const authStatus = useAuthStore((state) => state.status);
+  const [showOtaSuccessModal, setShowOtaSuccessModal] = React.useState(false);
+  const hasCheckedOtaSuccessModalRef = React.useRef(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    if (authStatus !== 'authenticated') {
+      hasCheckedOtaSuccessModalRef.current = false;
+      setShowOtaSuccessModal(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (hasCheckedOtaSuccessModalRef.current) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    hasCheckedOtaSuccessModalRef.current = true;
+
+    void (async () => {
+      const dismissed = await LocalStorage.getOtaSuccessModalDismissed();
+      if (cancelled) return;
+      if (dismissed !== true) {
+        setShowOtaSuccessModal(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authStatus]);
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: palette.accent,
-        tabBarInactiveTintColor: palette.text.secondary,
-        tabBarButton: (props) => <TabItemButton {...props} />,
-        tabBarStyle: {
-          backgroundColor: palette.surface,
-          borderTopColor: withAlpha(palette.border, 0.9),
-          borderTopWidth: 1,
-          overflow: 'visible',
-          height: layoutConfig.tabBar.height,
-          paddingBottom: layoutConfig.tabBar.paddingBottom,
-          paddingTop: layoutConfig.tabBar.paddingTop,
-          paddingHorizontal: layoutConfig.tabBar.paddingHorizontal,
-          ...shadows.medium,
-        },
-        tabBarItemStyle: {
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'visible',
-        },
-        tabBarIconStyle: {
-          marginTop: 0,
-          marginBottom: 8,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontFamily: 'Comfortaa_700Bold',
-          lineHeight: 13,
-          textShadowColor: withAlpha(palette.shadow, 0.22),
-          textShadowOffset: { width: 0, height: 1 },
-          textShadowRadius: 2,
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: t('tabs.myVideos'),
-          tabBarIcon: ({ color, size, focused }) => (
-            <TabIcon
-              name="albums"
-              color={color}
-              size={size}
-              focused={focused}
-              palette={palette}
-              shadows={shadows}
-            />
-          ),
+    <>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: palette.accent,
+          tabBarInactiveTintColor: palette.text.secondary,
+          tabBarButton: (props) => <TabItemButton {...props} />,
+          tabBarStyle: {
+            backgroundColor: palette.surface,
+            borderTopColor: withAlpha(palette.border, 0.9),
+            borderTopWidth: 1,
+            overflow: 'visible',
+            height: layoutConfig.tabBar.height,
+            paddingBottom: layoutConfig.tabBar.paddingBottom,
+            paddingTop: layoutConfig.tabBar.paddingTop,
+            paddingHorizontal: layoutConfig.tabBar.paddingHorizontal,
+            ...shadows.medium,
+          },
+          tabBarItemStyle: {
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'visible',
+          },
+          tabBarIconStyle: {
+            marginTop: 0,
+            marginBottom: 8,
+          },
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontFamily: 'Comfortaa_700Bold',
+            lineHeight: 13,
+            textShadowColor: withAlpha(palette.shadow, 0.22),
+            textShadowOffset: { width: 0, height: 1 },
+            textShadowRadius: 2,
+          },
+        }}
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: t('tabs.myVideos'),
+            tabBarIcon: ({ color, size, focused }) => (
+              <TabIcon
+                name="albums"
+                color={color}
+                size={size}
+                focused={focused}
+                palette={palette}
+                shadows={shadows}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="feed"
+          options={{
+            title: t('tabs.feed'),
+            tabBarIcon: ({ color, size, focused }) => (
+              <TabIcon
+                name="home"
+                color={color}
+                size={size}
+                focused={focused}
+                palette={palette}
+                shadows={shadows}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="upload"
+          options={{
+            title: t('tabs.upload'),
+            tabBarButton: (props) => <UploadTabButton {...props} />,
+          }}
+        />
+        <Tabs.Screen
+          name="explore"
+          options={{
+            title: t('tabs.explore'),
+            tabBarIcon: ({ color, size, focused }) => (
+              <TabIcon
+                name="search"
+                color={color}
+                size={size}
+                focused={focused}
+                palette={palette}
+                shadows={shadows}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="settings"
+          options={{
+            title: t('tabs.settings'),
+            tabBarIcon: ({ color, size, focused }) => (
+              <TabIcon
+                name="settings"
+                color={color}
+                size={size}
+                focused={focused}
+                palette={palette}
+                shadows={shadows}
+              />
+            ),
+          }}
+        />
+      </Tabs>
+      <ConfirmModal
+        visible={showOtaSuccessModal}
+        title={t('ota.successTitle')}
+        body={t('ota.successBody')}
+        confirmLabel={t('ota.dontShowAgain')}
+        cancelLabel={t('common.ok')}
+        onConfirm={() => {
+          void LocalStorage.setOtaSuccessModalDismissed(true);
+          setShowOtaSuccessModal(false);
+        }}
+        onCancel={() => {
+          setShowOtaSuccessModal(false);
         }}
       />
-      <Tabs.Screen
-        name="feed"
-        options={{
-          title: t('tabs.feed'),
-          tabBarIcon: ({ color, size, focused }) => (
-            <TabIcon
-              name="home"
-              color={color}
-              size={size}
-              focused={focused}
-              palette={palette}
-              shadows={shadows}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="upload"
-        options={{
-          title: t('tabs.upload'),
-          tabBarButton: (props) => <UploadTabButton {...props} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: t('tabs.explore'),
-          tabBarIcon: ({ color, size, focused }) => (
-            <TabIcon
-              name="search"
-              color={color}
-              size={size}
-              focused={focused}
-              palette={palette}
-              shadows={shadows}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: t('tabs.settings'),
-          tabBarIcon: ({ color, size, focused }) => (
-            <TabIcon
-              name="settings"
-              color={color}
-              size={size}
-              focused={focused}
-              palette={palette}
-              shadows={shadows}
-            />
-          ),
-        }}
-      />
-    </Tabs>
+    </>
   );
 }
 

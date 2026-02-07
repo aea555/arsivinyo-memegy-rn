@@ -5,6 +5,7 @@
     "error": "Something went wrong",
     "retry": "Retry",
     "cancel": "Cancel",
+    "ok": "Okay",
     "edit": "Edit",
     "save": "Save",
     "offline": "No internet connection.",
@@ -40,6 +41,11 @@
     "myVideos": "My Videos",
     "profile": "Profile",
     "settings": "Settings"
+  },
+  "ota": {
+    "successTitle": "OTA Update Applied",
+    "successBody": "If you can see this message, the OTA update was successful.",
+    "dontShowAgain": "Don't show this again"
   },
   "feed": {
     "sort": "Sort",

@@ -5,6 +5,7 @@
     "error": "Bir \u015feyler ters gitti",
     "retry": "Tekrar dene",
     "cancel": "Vazge\u00e7",
+    "ok": "Tamam",
     "edit": "D\u00fczenle",
     "save": "Kaydet",
     "offline": "Internet ba\u011flant\u0131s\u0131 yok.",
@@ -40,6 +41,11 @@
     "myVideos": "Videolar\u0131m",
     "profile": "Profil",
     "settings": "Ayarlar"
+  },
+  "ota": {
+    "successTitle": "OTA G\u00fcncellemesi Uyguland\u0131",
+    "successBody": "Bu mesaj\u0131 g\u00f6r\u00fcyorsan\u0131z OTA g\u00fcncellemesi ba\u015far\u0131yla uygulanm\u0131\u015f demektir.",
+    "dontShowAgain": "Bunu bir daha g\u00f6sterme"
   },
   "feed": {
     "sort": "S\u0131rala",
