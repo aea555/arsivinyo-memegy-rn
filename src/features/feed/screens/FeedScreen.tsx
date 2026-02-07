@@ -88,6 +88,7 @@ export function FeedScreen() {
         onEndReachedThreshold={0.5}
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
+        removeClippedSubviews={false}
         ListEmptyComponent={
           isLoading ? null : (
             <View style={styles.empty}>

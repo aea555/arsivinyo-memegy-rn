@@ -1,6 +1,16 @@
 import { useIsFocused } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, StyleSheet, View, ViewToken } from 'react-native';
+import {
+  FlatList,
+  KeyboardAvoidingView,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  ViewToken,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -10,6 +20,9 @@ import { Screen } from '@/src/shared/components/layout/Screen';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
 import { Card } from '@/src/shared/components/ui/Card';
+import { Input } from '@/src/shared/components/ui/Input';
+import { SegmentedControl } from '@/src/shared/components/ui/SegmentedControl';
+import { useDebounce } from '@/src/shared/hooks/useDebounce';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { MyVideoItem, VideoFeedItem } from '@/src/shared/types/api';
@@ -25,8 +38,49 @@ export function MyVideosScreen() {
   const { palette } = useTheme();
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, refetch } = useMyVideos();
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [sortMode, setSortMode] = useState<'date_desc' | 'title_asc'>('date_desc');
+  const listRef = useRef<FlatList<MyVideoItem>>(null);
+  const browseOffsetRef = useRef(0);
+  const wasSearchingRef = useRef(false);
+  const debouncedQuery = useDebounce(query, 200);
+  const normalizedQuery = useMemo(() => debouncedQuery.trim().toLocaleLowerCase(), [debouncedQuery]);
+  const isSearching = normalizedQuery.length > 0;
 
   const videos = useMemo(() => data?.pages.flatMap((page) => page) ?? [], [data]);
+  const indexedVideos = useMemo(
+    () =>
+      videos.map((item) => {
+        const title = (item.title ?? '').toLocaleLowerCase();
+        const description = (item.description ?? '').toLocaleLowerCase();
+        return {
+          item,
+          searchText: `${title} ${description}`.trim(),
+        };
+      }),
+    [videos]
+  );
+
+  const displayVideos = useMemo(() => {
+    const filtered = !isSearching
+      ? indexedVideos.map((entry) => entry.item)
+      : indexedVideos
+        .filter((entry) => entry.searchText.includes(normalizedQuery))
+        .map((entry) => entry.item);
+
+    const sorted = [...filtered];
+    if (sortMode === 'title_asc') {
+      sorted.sort((a, b) => {
+        const titleA = (a.title ?? t('video.untitled')).trim();
+        const titleB = (b.title ?? t('video.untitled')).trim();
+        return titleA.localeCompare(titleB, undefined, { sensitivity: 'base' });
+      });
+      return sorted;
+    }
+
+    sorted.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    return sorted;
+  }, [indexedVideos, isSearching, normalizedQuery, sortMode, t]);
 
   const isPlayable = useCallback(
     (item: MyVideoItem) => item.status === 'PUBLISHED' && typeof item.url === 'string' && item.url.length > 0,
@@ -143,7 +197,34 @@ export function MyVideosScreen() {
     }
   }, [isFocused]);
 
+  useEffect(() => {
+    if (!activeId) return;
+    const exists = displayVideos.some((item) => item.id === activeId);
+    if (!exists) {
+      setActiveId(null);
+    }
+  }, [activeId, displayVideos]);
+
+  useEffect(() => {
+    const wasSearching = wasSearchingRef.current;
+    if (wasSearching && !isSearching) {
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToOffset({ offset: browseOffsetRef.current, animated: false });
+      });
+    }
+    wasSearchingRef.current = isSearching;
+  }, [isSearching]);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (isSearching) return;
+      browseOffsetRef.current = event.nativeEvent.contentOffset.y;
+    },
+    [isSearching]
+  );
+
   const handleEndReached = () => {
+    if (isSearching) return;
     if (hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
     }
@@ -151,23 +232,72 @@ export function MyVideosScreen() {
 
   return (
     <Screen title={t('tabs.myVideos')} contentStyle={styles.container}>
-      <FlatList
-        data={videos}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        viewabilityConfig={viewabilityConfig}
-        onViewableItemsChanged={onViewableItemsChanged}
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.5}
-        ListEmptyComponent={
-          isLoading ? null : (
-            <View style={styles.empty}>
-              <AppText>{t('profile.noVideos')}</AppText>
+      <KeyboardAvoidingView
+        style={styles.keyboardContainer}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Card style={styles.controlsCard}>
+          <Input
+            placeholder={t('profile.searchPlaceholder')}
+            value={query}
+            onChangeText={setQuery}
+            autoCapitalize="none"
+            returnKeyType="search"
+          />
+          <SegmentedControl
+            value={sortMode}
+            onChange={(value) => setSortMode(value as 'date_desc' | 'title_asc')}
+            options={[
+              { label: t('profile.sortDate'), value: 'date_desc' },
+              { label: t('profile.sortAlphabetical'), value: 'title_asc' },
+            ]}
+          />
+          <View style={styles.metaRow}>
+            <View style={styles.metaLabelWrap}>
+              <AppText variant="caption" style={styles.metaLabel}>
+                {isSearching
+                  ? t('profile.searchResultsFor', { query: debouncedQuery.trim() })
+                  : t('profile.allUploads')}
+              </AppText>
+              <AppText variant="caption" style={styles.metaCount}>
+                {t('profile.resultCount', { count: displayVideos.length })}
+              </AppText>
             </View>
-          )
-        }
-        contentContainerStyle={[styles.listContent, videos.length === 0 ? styles.listEmptyContainer : null]}
-      />
+            {isSearching ? (
+              <Pressable onPress={() => setQuery('')} hitSlop={8}>
+                <AppText variant="caption" style={[styles.clearSearch, { color: palette.accent }]}>
+                  {t('profile.searchClear')}
+                </AppText>
+              </Pressable>
+            ) : null}
+          </View>
+        </Card>
+        <FlatList
+          ref={listRef}
+          data={displayVideos}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          viewabilityConfig={viewabilityConfig}
+          onViewableItemsChanged={onViewableItemsChanged}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          keyboardShouldPersistTaps="handled"
+          removeClippedSubviews={false}
+          initialNumToRender={4}
+          maxToRenderPerBatch={4}
+          windowSize={5}
+          ListEmptyComponent={
+            isLoading ? null : (
+              <View style={styles.empty}>
+                <AppText>{isSearching ? t('profile.searchNoResults') : t('profile.noVideos')}</AppText>
+              </View>
+            )
+          }
+          contentContainerStyle={[styles.listContent, displayVideos.length === 0 ? styles.listEmptyContainer : null]}
+        />
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
@@ -175,6 +305,33 @@ export function MyVideosScreen() {
 const styles = StyleSheet.create({
   container: {
     gap: spacing.md,
+  },
+  keyboardContainer: {
+    flex: 1,
+    gap: spacing.md,
+  },
+  controlsCard: {
+    gap: spacing.sm,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.md,
+    minHeight: 20,
+  },
+  metaLabelWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  metaLabel: {
+    opacity: 0.8,
+  },
+  metaCount: {
+    opacity: 0.65,
+  },
+  clearSearch: {
+    fontSize: 12,
   },
   statusCard: {
     marginBottom: spacing.lg,
