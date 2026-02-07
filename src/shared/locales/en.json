@@ -30,7 +30,11 @@
     "sortRandom": "Random",
     "sortLatest": "Latest",
     "sortPopular": "Popular",
-    "empty": "No videos yet."
+    "empty": "No videos yet.",
+    "info": "Info",
+    "hideInfo": "Hide",
+    "by": "By {{uploader}}",
+    "videoMetaUnavailable": "Video is not available right now."
   },
   "search": {
     "placeholder": "Search memes",
@@ -138,8 +142,10 @@
     "language": "Language",
     "languageEn": "English",
     "languageTr": "Turkish",
-    "autoPlayVideos": "Auto-play videos",
-    "autoPlayVideosHint": "Automatically play videos in feed, explore, and your videos.",
+    "autoPlayFeedVideos": "Auto-play feed videos",
+    "autoPlayFeedVideosHint": "Automatically play videos in the feed.",
+    "autoPlayVideos": "Auto-play videos (other pages)",
+    "autoPlayVideosHint": "Automatically play videos in Explore, My Videos, and upload preview.",
     "dangerZone": "Danger Zone",
     "logout": "Log out",
     "deleteAccount": "Delete account",

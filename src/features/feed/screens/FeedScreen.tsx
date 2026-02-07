@@ -1,9 +1,10 @@
 import { useIsFocused } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, View, ViewToken } from 'react-native';
+import { ActivityIndicator, FlatList, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, View, ViewToken } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { VideoCard } from '@/src/features/feed/components/VideoCard';
+import { ImmersiveFeedItem } from '@/src/features/feed/components/ImmersiveFeedItem';
 import { useFeed } from '@/src/features/feed/hooks/useFeed';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
@@ -11,43 +12,138 @@ import { Card } from '@/src/shared/components/ui/Card';
 import { SegmentedControl } from '@/src/shared/components/ui/SegmentedControl';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { useNetworkStatus } from '@/src/shared/hooks/useNetworkStatus';
+import { withAlpha } from '@/src/shared/theme/colorUtils';
 import { spacing } from '@/src/shared/theme/spacing';
+import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { VideoFeedItem } from '@/src/shared/types/api';
+import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 
 const viewabilityConfig = {
-  itemVisiblePercentThreshold: 70,
+  itemVisiblePercentThreshold: 65,
 };
 
 export function FeedScreen() {
   const { t } = useTranslation();
   const isFocused = useIsFocused();
+  const insets = useSafeAreaInsets();
+  const { palette } = useTheme();
+  const autoPlayFeedVideos = useAppSettingsStore((state) => state.autoPlayFeedVideos);
   const { isConnected } = useNetworkStatus();
   const [sort, setSort] = useState<'random' | 'latest' | 'popular'>('random');
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const listRef = useRef<FlatList<VideoFeedItem>>(null);
 
   const { data, isFetchingNextPage, fetchNextPage, hasNextPage, isLoading, refetch } = useFeed(sort);
 
-  const videos = useMemo(() => data?.pages.flatMap((page) => page) ?? [], [data]);
+  const videos = useMemo(() => {
+    const flattened = data?.pages.flatMap((page) => page) ?? [];
+    const seen = new Set<string>();
+    const deduped: VideoFeedItem[] = [];
+
+    for (const item of flattened) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      deduped.push(item);
+    }
+    return deduped;
+  }, [data]);
+
+  const activeId = videos[activeIndex]?.id ?? null;
+
+  const applyActiveIndex = useCallback(
+    (nextIndex: number) => {
+      if (videos.length === 0) {
+        setActiveIndex(0);
+        return;
+      }
+      setActiveIndex(Math.max(0, Math.min(nextIndex, videos.length - 1)));
+    },
+    [videos.length]
+  );
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      const first = viewableItems[0]?.item as VideoFeedItem | undefined;
-      setActiveId(first?.id ?? null);
+      const first = viewableItems[0];
+      if (!first || typeof first.index !== 'number') return;
+      applyActiveIndex(first.index);
     }
   ).current;
 
   const renderItem = useCallback(
     ({ item }: { item: VideoFeedItem }) => (
-      <VideoCard video={item} isActive={activeId === item.id} isScreenActive={isFocused} />
+      <ImmersiveFeedItem
+        video={item}
+        isActive={activeId === item.id}
+        isScreenActive={isFocused}
+        height={viewportHeight}
+        autoPlayEnabled={autoPlayFeedVideos}
+      />
     ),
-    [activeId, isFocused]
+    [activeId, autoPlayFeedVideos, isFocused, viewportHeight]
   );
 
   useEffect(() => {
     if (!isFocused) {
-      setActiveId(null);
+      setActiveIndex(-1);
+      return;
     }
-  }, [isFocused]);
+    if (activeIndex < 0) {
+      applyActiveIndex(0);
+      return;
+    }
+    if (videos.length > 0 && activeIndex >= videos.length) {
+      applyActiveIndex(videos.length - 1);
+    }
+  }, [activeIndex, applyActiveIndex, isFocused, videos.length]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    });
+  }, [sort]);
+
+  useEffect(() => {
+    if (videos.length === 0) return;
+    if (activeIndex >= videos.length - 2 && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [activeIndex, fetchNextPage, hasNextPage, isFetchingNextPage, videos.length]);
+
+  const onMomentumScrollEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (viewportHeight <= 0) return;
+      const nextIndex = Math.round(event.nativeEvent.contentOffset.y / viewportHeight);
+      applyActiveIndex(nextIndex);
+    },
+    [applyActiveIndex, viewportHeight]
+  );
+
+  const onScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (viewportHeight <= 0) return;
+      const nextIndex = Math.round(event.nativeEvent.contentOffset.y / viewportHeight);
+      if (nextIndex !== activeIndex) {
+        applyActiveIndex(nextIndex);
+      }
+    },
+    [activeIndex, applyActiveIndex, viewportHeight]
+  );
+
+  const getItemLayout = useCallback(
+    (_data: ArrayLike<VideoFeedItem> | null | undefined, index: number) => ({
+      index,
+      length: viewportHeight,
+      offset: viewportHeight * index,
+    }),
+    [viewportHeight]
+  );
+
+  const handleLayout = useCallback((height: number) => {
+    if (height <= 0 || Math.abs(height - viewportHeight) < 1) return;
+    setViewportHeight(height);
+  }, [viewportHeight]);
 
   const keyExtractor = useCallback((item: VideoFeedItem) => item.id, []);
 
@@ -60,15 +156,16 @@ export function FeedScreen() {
   const isEmpty = !isLoading && videos.length === 0;
 
   return (
-    <Screen title={t('tabs.feed')} contentStyle={styles.container}>
+    <Screen contentStyle={styles.screenContent}>
       {!isConnected ? (
-        <View style={styles.offline}>
-          <AppText variant="caption">{t('common.offline')}</AppText>
+        <View style={[styles.offline, { top: insets.top + spacing.sm }]}>
+          <AppText variant="caption" style={{ color: palette.onAccent }}>
+            {t('common.offline')}
+          </AppText>
         </View>
       ) : null}
-      <View style={styles.header}>
-        <Card style={styles.headerCard}>
-          <AppText variant="bodyBold">{t('feed.sort')}</AppText>
+      <View style={[styles.sortOverlay, { top: insets.top + spacing.sm }]}>
+        <Card style={[styles.sortCard, { backgroundColor: withAlpha(palette.overlay, 0.93) }]}>
           <SegmentedControl
             value={sort}
             onChange={(value) => setSort(value as 'random' | 'latest' | 'popular')}
@@ -80,63 +177,111 @@ export function FeedScreen() {
           />
         </Card>
       </View>
-      <FlatList
-        data={videos}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.5}
-        viewabilityConfig={viewabilityConfig}
-        onViewableItemsChanged={onViewableItemsChanged}
-        removeClippedSubviews={false}
-        ListEmptyComponent={
-          isLoading ? null : (
-            <View style={styles.empty}>
-              <AppText>{t('feed.empty')}</AppText>
-              <Button label={t('common.retry')} onPress={() => refetch()} variant="secondary" />
-            </View>
-          )
-        }
-        ListFooterComponent={
-          isFetchingNextPage ? (
-            <View style={styles.footer}>
-              <ActivityIndicator />
-            </View>
-          ) : null
-        }
-        contentContainerStyle={[styles.listContent, isEmpty ? styles.listEmptyContainer : null]}
-      />
+      <View
+        style={styles.container}
+        onLayout={(event) => {
+          handleLayout(event.nativeEvent.layout.height);
+        }}
+      >
+        <FlatList
+          ref={listRef}
+          data={videos}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.55}
+          viewabilityConfig={viewabilityConfig}
+          onViewableItemsChanged={onViewableItemsChanged}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          onMomentumScrollEnd={onMomentumScrollEnd}
+          pagingEnabled
+          disableIntervalMomentum
+          decelerationRate="normal"
+          snapToInterval={viewportHeight > 0 ? viewportHeight : undefined}
+          snapToAlignment="start"
+          removeClippedSubviews={false}
+          initialNumToRender={2}
+          maxToRenderPerBatch={2}
+          windowSize={3}
+          getItemLayout={viewportHeight > 0 ? getItemLayout : undefined}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            isLoading ? null : (
+              <View style={styles.empty}>
+                <AppText>{t('feed.empty')}</AppText>
+                <Button label={t('common.retry')} onPress={() => refetch()} variant="secondary" />
+              </View>
+            )
+          }
+          contentContainerStyle={[styles.listContent, isEmpty ? styles.listEmptyContainer : null]}
+        />
+      </View>
+      {isFetchingNextPage && !isEmpty ? (
+        <View style={styles.paginationHint} pointerEvents="none">
+          <View style={[styles.paginationPill, { backgroundColor: withAlpha(palette.overlay, 0.9) }]}>
+            <ActivityIndicator size="small" color={palette.text.primary} />
+            <AppText variant="caption">{t('common.loading')}</AppText>
+          </View>
+        </View>
+      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  screenContent: {
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+  },
   container: {
-    gap: spacing.md,
+    flex: 1,
   },
-  header: {
-    marginBottom: spacing.md,
-    gap: spacing.md,
+  sortOverlay: {
+    position: 'absolute',
+    left: spacing.md,
+    right: spacing.md,
+    zIndex: 30,
   },
-  headerCard: {
-    gap: spacing.md,
+  sortCard: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: 14,
   },
   listContent: {
-    paddingBottom: spacing.xxxl,
     flexGrow: 1,
   },
   listEmptyContainer: {
     justifyContent: 'center',
   },
-  footer: {
-    paddingVertical: spacing.md,
+  paginationHint: {
+    position: 'absolute',
+    left: spacing.md,
+    right: spacing.md,
+    bottom: spacing.xl,
+    alignItems: 'center',
+  },
+  paginationPill: {
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   empty: {
     gap: spacing.md,
     alignItems: 'center',
+    paddingHorizontal: spacing.lg,
   },
   offline: {
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
+    position: 'absolute',
+    alignSelf: 'center',
+    zIndex: 35,
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: '#CF1E2A',
   },
 });

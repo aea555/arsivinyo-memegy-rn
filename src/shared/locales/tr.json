@@ -30,7 +30,11 @@
     "sortRandom": "Rastgele",
     "sortLatest": "En yeni",
     "sortPopular": "Pop\u00fcler",
-    "empty": "Hen\u00fcz video yok."
+    "empty": "Hen\u00fcz video yok.",
+    "info": "Bilgi",
+    "hideInfo": "Gizle",
+    "by": "{{uploader}} taraf\u0131ndan",
+    "videoMetaUnavailable": "Video \u015fu anda kullan\u0131lam\u0131yor."
   },
   "search": {
     "placeholder": "Meme ara",
@@ -138,8 +142,10 @@
     "language": "Dil",
     "languageEn": "\u0130ngilizce",
     "languageTr": "T\u00fcrk\u00e7e",
-    "autoPlayVideos": "Videolar\u0131 otomatik oynat",
-    "autoPlayVideosHint": "Ak\u0131\u015f, ke\u015ffet ve videolar\u0131m ekranlar\u0131nda videolar\u0131 otomatik ba\u015flat\u0131r.",
+    "autoPlayFeedVideos": "Ak\u0131\u015f videolar\u0131n\u0131 otomatik oynat",
+    "autoPlayFeedVideosHint": "Ak\u0131\u015f ekran\u0131ndaki videolar\u0131 otomatik ba\u015flat\u0131r.",
+    "autoPlayVideos": "Videolar\u0131 otomatik oynat (di\u011fer sayfalar)",
+    "autoPlayVideosHint": "Ke\u015ffet, videolar\u0131m ve y\u00fckleme \u00f6nizlemesinde videolar\u0131 otomatik ba\u015flat\u0131r.",
     "dangerZone": "Tehlike B\u00f6lgesi",
     "logout": "\u00c7\u0131k\u0131\u015f yap",
     "deleteAccount": "Hesab\u0131 sil",

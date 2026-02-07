@@ -13,13 +13,15 @@ import { withAlpha } from '@/src/shared/theme/colorUtils';
 type DownloadButtonProps = {
   videoId: string;
   suggestedName?: string | null;
+  variant?: 'default' | 'overlay';
 };
 
-export function DownloadButton({ videoId, suggestedName }: DownloadButtonProps) {
+export function DownloadButton({ videoId, suggestedName, variant = 'default' }: DownloadButtonProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
   const { state, isBusy, onPress } = useVideoDownload(videoId, suggestedName);
   const [confirmVisible, setConfirmVisible] = React.useState(false);
+  const isOverlay = variant === 'overlay';
 
   const progress = Math.max(0, Math.min(100, Math.round(state.progress * 100)));
   const iconColor = palette.onAccent;
@@ -45,10 +47,10 @@ export function DownloadButton({ videoId, suggestedName }: DownloadButtonProps) 
         }}
         disabled={isBusy}
         style={({ pressed }) => [
-          styles.button,
+          isOverlay ? styles.overlayButton : styles.button,
           {
             borderColor: withAlpha(baseColor, 0.9),
-            backgroundColor: baseColor,
+            backgroundColor: isOverlay ? withAlpha(baseColor, 0.9) : baseColor,
           },
           pressed
             ? [
@@ -62,14 +64,20 @@ export function DownloadButton({ videoId, suggestedName }: DownloadButtonProps) 
         accessibilityRole="button"
         accessibilityLabel={t('video.download')}
       >
-        <View style={styles.iconWrap}>
+        <View style={isOverlay ? styles.overlayIconWrap : styles.iconWrap}>
           {isBusy ? (
             <ActivityIndicator size="small" color={palette.accent} />
           ) : (
-            <Ionicons name={iconName} size={16} color={iconColor} />
+            <Ionicons name={iconName} size={isOverlay ? 18 : 16} color={iconColor} />
           )}
         </View>
-        <AppText variant="caption" style={[styles.label, { color: palette.onAccent }]}>
+        <AppText
+          variant="caption"
+          style={[
+            isOverlay ? styles.overlayLabel : styles.label,
+            { color: palette.onAccent },
+          ]}
+        >
           {isBusy ? `${progress}%` : t('video.download')}
         </AppText>
       </Pressable>
@@ -102,12 +110,32 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     gap: spacing.xs,
   },
+  overlayButton: {
+    minHeight: 40,
+    minWidth: 92,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
   iconWrap: {
     width: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   label: {
+    fontSize: 12,
+  },
+  overlayIconWrap: {
+    width: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  overlayLabel: {
     fontSize: 12,
   },
   pressed: {

@@ -15,6 +15,8 @@ import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 export function AppSettingsScreen() {
   const { t } = useTranslation();
   const { palette } = useTheme();
+  const autoPlayFeedVideos = useAppSettingsStore((state) => state.autoPlayFeedVideos);
+  const setAutoPlayFeedVideos = useAppSettingsStore((state) => state.setAutoPlayFeedVideos);
   const autoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
   const setAutoPlayVideos = useAppSettingsStore((state) => state.setAutoPlayVideos);
 
@@ -37,6 +39,23 @@ export function AppSettingsScreen() {
             label={t('settings.languageTr')}
             onPress={() => updateLanguage('tr')}
             variant={i18n.language === 'tr' ? 'primary' : 'secondary'}
+          />
+        </View>
+      </Card>
+      <Card style={styles.sectionCard}>
+        <View style={styles.switchRow}>
+          <View style={styles.switchText}>
+            <AppText variant="bodyBold">{t('settings.autoPlayFeedVideos')}</AppText>
+            <AppText variant="caption" style={{ color: palette.text.secondary }}>
+              {t('settings.autoPlayFeedVideosHint')}
+            </AppText>
+          </View>
+          <Switch
+            value={autoPlayFeedVideos}
+            onValueChange={(value) => {
+              void setAutoPlayFeedVideos(value);
+            }}
+            trackColor={{ true: palette.accent, false: palette.border }}
           />
         </View>
       </Card>

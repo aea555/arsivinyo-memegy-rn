@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
-import { AppState, AppStateStatus, StyleSheet, View } from 'react-native';
+import { AppState, AppStateStatus, Animated, Pressable, StyleSheet, View } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { Ionicons } from '@expo/vector-icons';
 
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { useAppSettingsStore } from '@/src/store/appSettingsStore';
@@ -9,19 +10,51 @@ type VideoPlayerProps = {
   uri: string;
   isActive: boolean;
   isScreenActive?: boolean;
+  variant?: 'card' | 'immersive';
+  height?: number;
+  contentFit?: 'cover' | 'contain';
+  showNativeControls?: boolean;
+  autoPlayEnabled?: boolean;
+  allowTapToToggle?: boolean;
 };
 
 const SCREEN_LOSS_PAUSE_DELAY_MS = 250;
 const VIEWABILITY_LOSS_PAUSE_DELAY_MS = 900;
 const BACKGROUND_PAUSE_DELAY_MS = 1200;
 const FULLSCREEN_RESUME_WINDOW_MS = 2000;
+const TAP_FEEDBACK_TOTAL_MS = 500;
 
-export function VideoPlayer({ uri, isActive, isScreenActive = true }: VideoPlayerProps) {
+function isReleasedPlayerError(error: unknown) {
+  if (!error) return false;
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('Cannot use shared object that was already released') ||
+    message.includes('already released')
+  );
+}
+
+export function VideoPlayer({
+  uri,
+  isActive,
+  isScreenActive = true,
+  variant = 'card',
+  height,
+  contentFit,
+  showNativeControls,
+  autoPlayEnabled,
+  allowTapToToggle = false,
+}: VideoPlayerProps) {
   const { palette } = useTheme();
-  const autoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
+  const defaultAutoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
+  const autoPlayVideos = autoPlayEnabled ?? defaultAutoPlayVideos;
+  const isImmersive = variant === 'immersive';
   const [appState, setAppState] = React.useState<AppStateStatus>(AppState.currentState);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
+  const [manualPaused, setManualPaused] = React.useState<boolean | null>(null);
+  const [tapFeedbackIcon, setTapFeedbackIcon] = React.useState<'pause' | 'play' | null>(null);
   const pauseTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tapFeedbackOpacity = React.useRef(new Animated.Value(0)).current;
+  const tapFeedbackScale = React.useRef(new Animated.Value(0.84)).current;
   const appStateRef = React.useRef<AppStateStatus>(appState);
   const isActiveRef = React.useRef(isActive);
   const isScreenActiveRef = React.useRef(isScreenActive);
@@ -67,6 +100,7 @@ export function VideoPlayer({ uri, isActive, isScreenActive = true }: VideoPlaye
       pauseTimerRef.current = null;
     }
     postFullscreenStateRef.current = null;
+    setManualPaused(null);
   }, [uri]);
 
   useEffect(() => {
@@ -80,6 +114,7 @@ export function VideoPlayer({ uri, isActive, isScreenActive = true }: VideoPlaye
         }
         player.pause();
       } catch (error) {
+        if (isReleasedPlayerError(error)) return;
         if (__DEV__) {
           console.debug('[video] pause skipped for released player', {
             uri,
@@ -124,7 +159,15 @@ export function VideoPlayer({ uri, isActive, isScreenActive = true }: VideoPlaye
     }
 
     if (!isActive || !isScreenActive) {
+      if (manualPaused !== null) {
+        setManualPaused(null);
+      }
       postFullscreenStateRef.current = null;
+      if (isImmersive) {
+        clearPauseTimer();
+        pauseNow();
+        return;
+      }
       // Losing only viewability (while screen remains focused) can be a fullscreen transition.
       // Keep a longer delay to avoid pausing during the native fullscreen animation.
       const delayMs = !isActive && isScreenActive
@@ -143,10 +186,15 @@ export function VideoPlayer({ uri, isActive, isScreenActive = true }: VideoPlaye
         } else {
           player.pause();
         }
+      } else if (manualPaused === true) {
+        player.pause();
+      } else if (manualPaused === false) {
+        player.play();
       } else if (autoPlayVideos) {
         player.play();
       }
     } catch (error) {
+      if (isReleasedPlayerError(error)) return;
       if (__DEV__) {
         console.debug('[video] playback sync skipped for released player', {
           uri,
@@ -167,6 +215,8 @@ export function VideoPlayer({ uri, isActive, isScreenActive = true }: VideoPlaye
   }, [
     appState,
     autoPlayVideos,
+    isImmersive,
+    manualPaused,
     isActive,
     isScreenActive,
     isFullscreen,
@@ -174,12 +224,84 @@ export function VideoPlayer({ uri, isActive, isScreenActive = true }: VideoPlaye
     uri,
   ]);
 
+  const runTapFeedback = (icon: 'pause' | 'play') => {
+    setTapFeedbackIcon(icon);
+    tapFeedbackOpacity.stopAnimation();
+    tapFeedbackScale.stopAnimation();
+    tapFeedbackOpacity.setValue(0);
+    tapFeedbackScale.setValue(0.84);
+
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(tapFeedbackOpacity, {
+          toValue: 1,
+          duration: 120,
+          useNativeDriver: true,
+        }),
+        Animated.timing(tapFeedbackScale, {
+          toValue: 1,
+          duration: 120,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.delay(160),
+      Animated.parallel([
+        Animated.timing(tapFeedbackOpacity, {
+          toValue: 0,
+          duration: TAP_FEEDBACK_TOTAL_MS - 280,
+          useNativeDriver: true,
+        }),
+        Animated.timing(tapFeedbackScale, {
+          toValue: 1.04,
+          duration: TAP_FEEDBACK_TOTAL_MS - 280,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setTapFeedbackIcon(null);
+      }
+    });
+  };
+
+  const handleTogglePlayback = () => {
+    if (!allowTapToToggle) return;
+    if (!isActive || !isScreenActive) return;
+
+    const isPlaying = player.playing || lastKnownPlayingRef.current;
+    const nextPaused = isPlaying;
+    setManualPaused(nextPaused);
+    runTapFeedback(nextPaused ? 'pause' : 'play');
+    try {
+      if (nextPaused) {
+        player.pause();
+      } else {
+        player.play();
+      }
+    } catch (error) {
+      if (isReleasedPlayerError(error)) return;
+      if (__DEV__) {
+        console.debug('[video] tap-toggle skipped for released player', {
+          uri,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  };
+
   return (
-    <View style={[styles.container, { backgroundColor: palette.surface }]}>
+    <View
+      style={[
+        isImmersive ? styles.immersiveContainer : styles.container,
+        { backgroundColor: palette.surface },
+        typeof height === 'number' ? { height } : null,
+      ]}
+    >
       <VideoView
-        style={styles.video}
+        style={isImmersive ? styles.videoImmersive : styles.videoCard}
         player={player}
-        contentFit="cover"
+        contentFit={contentFit ?? (isImmersive ? 'cover' : 'cover')}
+        nativeControls={showNativeControls ?? !isImmersive}
         onFullscreenEnter={() => {
           if (pauseTimerRef.current) {
             clearTimeout(pauseTimerRef.current);
@@ -205,6 +327,27 @@ export function VideoPlayer({ uri, isActive, isScreenActive = true }: VideoPlaye
           setIsFullscreen(false);
         }}
       />
+      {allowTapToToggle ? <Pressable style={styles.tapOverlay} onPress={handleTogglePlayback} /> : null}
+      {allowTapToToggle && tapFeedbackIcon ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.tapFeedbackWrap,
+            {
+              opacity: tapFeedbackOpacity,
+              transform: [{ scale: tapFeedbackScale }],
+            },
+          ]}
+        >
+          <View style={[styles.tapFeedbackBadge, { backgroundColor: palette.mediaControl }]}>
+            <Ionicons
+              name={tapFeedbackIcon === 'pause' ? 'pause' : 'play'}
+              size={24}
+              color={palette.mediaControlText}
+            />
+          </View>
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -214,8 +357,33 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
   },
-  video: {
+  immersiveContainer: {
+    borderRadius: 0,
+    overflow: 'hidden',
+    width: '100%',
+    height: '100%',
+  },
+  videoCard: {
     width: '100%',
     height: 360,
+  },
+  videoImmersive: {
+    width: '100%',
+    height: '100%',
+  },
+  tapOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  tapFeedbackWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tapFeedbackBadge: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -13,6 +13,7 @@ const KEYS = {
   THEME_SETTINGS: 'theme_settings_v1',
   LANGUAGE: 'language',
   AUTO_PLAY_VIDEOS: 'auto_play_videos',
+  AUTO_PLAY_FEED_VIDEOS: 'auto_play_feed_videos',
 } as const;
 
 function isThemeSettingsShape(value: unknown): value is ThemeSettingsState {
@@ -82,6 +83,14 @@ export const LocalStorage = {
   },
   async getAutoPlayVideos() {
     const value = await AsyncStorage.getItem(KEYS.AUTO_PLAY_VIDEOS);
+    if (value === null) return null;
+    return value === '1';
+  },
+  async setAutoPlayFeedVideos(enabled: boolean) {
+    await AsyncStorage.setItem(KEYS.AUTO_PLAY_FEED_VIDEOS, enabled ? '1' : '0');
+  },
+  async getAutoPlayFeedVideos() {
+    const value = await AsyncStorage.getItem(KEYS.AUTO_PLAY_FEED_VIDEOS);
     if (value === null) return null;
     return value === '1';
   },
