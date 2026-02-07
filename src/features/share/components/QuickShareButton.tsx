@@ -1,27 +1,32 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, Share, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import { useQuickShareVideo } from '@/src/features/share/hooks/useQuickShareVideo';
 import { AppText } from '@/src/shared/components/ui/AppText';
+import { withAlpha } from '@/src/shared/theme/colorUtils';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
-import { withAlpha } from '@/src/shared/theme/colorUtils';
-import { useToastStore } from '@/src/store/toastStore';
 
-type ShareButtonProps = {
-  url: string;
-  title?: string | null;
+type QuickShareButtonProps = {
+  videoId: string;
+  suggestedName?: string | null;
   variant?: 'default' | 'overlay';
   iconOnly?: boolean;
 };
 
-export function ShareButton({ url, title, variant = 'default', iconOnly = false }: ShareButtonProps) {
+export function QuickShareButton({
+  videoId,
+  suggestedName,
+  variant = 'default',
+  iconOnly = false,
+}: QuickShareButtonProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
-  const showToast = useToastStore((state) => state.showToast);
+  const { isBusy, onQuickShare } = useQuickShareVideo(videoId, suggestedName);
   const isOverlay = variant === 'overlay';
-  const baseColor = palette.accent;
+  const baseColor = palette.success;
   const buttonStyle = isOverlay
     ? iconOnly
       ? styles.overlayIconButton
@@ -30,33 +35,18 @@ export function ShareButton({ url, title, variant = 'default', iconOnly = false 
       ? styles.iconButton
       : styles.button;
 
-  const onPress = React.useCallback(async () => {
-    if (!url) {
-      showToast(t('video.shareUnavailable'), 'error');
-      return;
-    }
-    const caption = t('video.quickShareCaption');
-    try {
-      await Share.share({
-        message: `${caption}\n${url}`,
-        url,
-        title: title ?? t('video.untitled'),
-      });
-    } catch {
-      showToast(t('video.shareFailed'), 'error');
-    }
-  }, [showToast, t, title, url]);
-
   return (
     <Pressable
-      onPress={() => void onPress()}
+      onPress={() => void onQuickShare()}
+      disabled={isBusy}
       style={({ pressed }) => [
         buttonStyle,
         {
           borderColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.48),
           backgroundColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.14),
+          opacity: isBusy ? 0.85 : 1,
         },
-        pressed
+        pressed && !isBusy
           ? [
               styles.pressed,
               {
@@ -68,34 +58,36 @@ export function ShareButton({ url, title, variant = 'default', iconOnly = false 
           : null,
       ]}
       accessibilityRole="button"
-      accessibilityLabel={t('video.share')}
+      accessibilityLabel={t('video.quickShare')}
     >
       {iconOnly ? (
-        <Ionicons
-          name="share-social-outline"
-          size={isOverlay ? 24 : 20}
-          color={isOverlay ? palette.onAccent : baseColor}
-        />
-      ) : (
-        <View style={isOverlay ? styles.overlayIconWrap : styles.iconWrap}>
+        isBusy ? (
+          <ActivityIndicator size="small" color={isOverlay ? palette.onAccent : baseColor} />
+        ) : (
           <Ionicons
-            name="share-social-outline"
+            name="logo-whatsapp"
+            size={isOverlay ? 24 : 20}
+            color={isOverlay ? palette.onAccent : baseColor}
+          />
+        )
+      ) : (
+        <>
+          <Ionicons
+            name={isBusy ? 'time-outline' : 'logo-whatsapp'}
             size={isOverlay ? 18 : 16}
             color={isOverlay ? palette.onAccent : baseColor}
           />
-        </View>
+          <AppText
+            variant="caption"
+            style={[
+              isOverlay ? styles.overlayLabel : styles.label,
+              { color: isOverlay ? palette.onAccent : baseColor },
+            ]}
+          >
+            {isBusy ? t('video.quickSharePreparing') : t('video.quickShare')}
+          </AppText>
+        </>
       )}
-      {!iconOnly ? (
-        <AppText
-          variant="caption"
-          style={[
-            isOverlay ? styles.overlayLabel : styles.label,
-            { color: isOverlay ? palette.onAccent : baseColor },
-          ]}
-        >
-          {t('video.share')}
-        </AppText>
-      ) : null}
     </Pressable>
   );
 }
@@ -143,18 +135,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconWrap: {
-    width: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   label: {
     fontSize: 13,
-  },
-  overlayIconWrap: {
-    width: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   overlayLabel: {
     fontSize: 12,

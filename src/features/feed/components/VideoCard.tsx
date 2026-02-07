@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { DownloadButton } from '@/src/features/download/components/DownloadButton';
+import { QuickShareButton } from '@/src/features/share/components/QuickShareButton';
 import { ShareButton } from '@/src/features/share/components/ShareButton';
 import { VideoPlayer } from './VideoPlayer';
 import { useToggleLike } from '@/src/features/feed/hooks/useToggleLike';
@@ -52,6 +53,7 @@ export function VideoCard({
           <AppText variant="caption">{metaLine}</AppText>
           <View style={styles.actionsRow}>
             <DownloadButton videoId={video.id} suggestedName={video.title} iconOnly />
+            <QuickShareButton videoId={video.id} suggestedName={video.title} iconOnly />
             <ShareButton url={video.url} title={video.title} iconOnly />
             {extraAction}
           </View>

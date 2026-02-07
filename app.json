@@ -14,7 +14,10 @@
       "bundleIdentifier": "com.anonymous.arsivinyomemegyrn",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Allow Memegy to access your photo library for downloaded videos.",
-        "NSPhotoLibraryAddUsageDescription": "Allow Memegy to save downloaded videos to your photo library."
+        "NSPhotoLibraryAddUsageDescription": "Allow Memegy to save downloaded videos to your photo library.",
+        "LSApplicationQueriesSchemes": [
+          "whatsapp"
+        ]
       }
     },
     "android": {

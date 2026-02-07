@@ -14,6 +14,13 @@ type DownloadVideoParams = {
   onProgress?: (progress: number) => void;
 };
 
+type DownloadVideoToTempFileParams = {
+  videoId: string;
+  suggestedName?: string | null;
+  onStageChange?: (stage: Extract<VideoDownloadStage, 'requesting' | 'downloading'>) => void;
+  onProgress?: (progress: number) => void;
+};
+
 const PROGRESS_THROTTLE_MS = 180;
 const TRANSIENT_RETRY_DELAY_MS = 350;
 
@@ -123,14 +130,26 @@ async function runDownloadTaskWithRetry({
   }
 }
 
-export async function downloadVideo({
+function createTempCleanup(tempUri: string) {
+  let cleaned = false;
+  return async () => {
+    if (cleaned || !tempUri) return;
+    cleaned = true;
+    try {
+      await FileSystem.deleteAsync(tempUri, { idempotent: true });
+    } catch {
+      // no-op
+    }
+  };
+}
+
+export async function downloadVideoToTempFile({
   videoId,
   suggestedName,
   onStageChange,
   onProgress,
-}: DownloadVideoParams) {
+}: DownloadVideoToTempFileParams) {
   let tempUri = '';
-  let downloadedUri: string | null = null;
 
   try {
     onStageChange?.('requesting');
@@ -140,6 +159,8 @@ export async function downloadVideo({
     }
 
     tempUri = createTempFileUri(videoId, suggestedName);
+    const cleanup = createTempCleanup(tempUri);
+    let downloadedUri: string | null = null;
 
     try {
       if (__DEV__) {
@@ -188,6 +209,32 @@ export async function downloadVideo({
       throw new DownloadError('unknown', 'No downloaded file URI.');
     }
 
+    return { uri: downloadedUri, cleanup };
+  } catch (error) {
+    await createTempCleanup(tempUri)();
+    throw toDownloadError(error);
+  }
+}
+
+export async function downloadVideo({
+  videoId,
+  suggestedName,
+  onStageChange,
+  onProgress,
+}: DownloadVideoParams) {
+  let cleanup = async () => {};
+  let downloadedUri = '';
+
+  try {
+    const tempFile = await downloadVideoToTempFile({
+      videoId,
+      suggestedName,
+      onStageChange,
+      onProgress,
+    });
+    downloadedUri = tempFile.uri;
+    cleanup = tempFile.cleanup;
+
     onStageChange?.('saving');
     try {
       // Prefer seamless save path first. On modern Android scoped storage, this can
@@ -226,11 +273,6 @@ export async function downloadVideo({
     }
     throw mapped;
   } finally {
-    if (!tempUri) return;
-    try {
-      await FileSystem.deleteAsync(tempUri, { idempotent: true });
-    } catch {
-      // no-op
-    }
+    await cleanup();
   }
 }

@@ -12,7 +12,7 @@
   },
   "auth": {
     "loginTitle": "Giri\u015f yap",
-    "loginSubtitle": "Meme videolar\u0131n\u0131 y\u00fckle ve ke\u015ffet",
+    "loginSubtitle": "Miim videolar\u0131n\u0131 y\u00fckle ve ke\u015ffet",
     "loginWithGoogle": "Google ile devam et",
     "loggingIn": "Giri\u015f yap\u0131l\u0131yor...",
     "authFailed": "Kimlik do\u011frulama ba\u015far\u0131s\u0131z."
@@ -37,7 +37,7 @@
     "videoMetaUnavailable": "Video \u015fu anda kullan\u0131lam\u0131yor."
   },
   "search": {
-    "placeholder": "Meme ara",
+    "placeholder": "Miim ara",
     "empty": "Sonu\u00e7 bulunamad\u0131",
     "hint": "Farkl\u0131 bir anahtar kelime dene",
     "sortRelevance": "Alaka",
@@ -201,13 +201,20 @@
     "downloadAuthRequired": "L\u00fctfen tekrar giri\u015f yap\u0131p yeniden dene.",
     "downloadRetryLater": "\u0130ndirme ba\u015far\u0131s\u0131z oldu. L\u00fctfen biraz sonra tekrar dene.",
     "share": "Payla\u015f",
+    "quickShare": "H\u0131zl\u0131 payla\u015f",
+    "quickShareCaption": "Arsivinyo Memegy ile payla\u015f\u0131ld\u0131",
+    "quickSharePreparing": "H\u0131zl\u0131 payla\u015f\u0131m haz\u0131rlan\u0131yor...",
+    "quickShareFailed": "Video h\u0131zl\u0131 payla\u015f\u0131lamad\u0131.",
+    "quickShareUnavailable": "Bu video h\u0131zl\u0131 payla\u015f\u0131m i\u00e7in uygun de\u011fil.",
+    "quickShareWhatsAppUnavailable": "WhatsApp y\u00fckl\u00fc de\u011fil. Sistem payla\u015f\u0131m\u0131 a\u00e7\u0131l\u0131yor.",
+    "quickShareFallbackToSystem": "Sistem payla\u015f\u0131m ekran\u0131 a\u00e7\u0131l\u0131yor.",
     "shareUnavailable": "Bu video \u015fu anda payla\u015f\u0131lam\u0131yor.",
     "shareFailed": "Payla\u015f\u0131m ekran\u0131 a\u00e7\u0131lamad\u0131.",
     "downloadConfirmTitle": "Bu video indirilsin mi?",
     "downloadConfirmBody": "Video cihaz galerine kaydedilecek.",
     "likeRateLimited": "\u00c7ok fazla be\u011feni i\u015flemi yapt\u0131n, l\u00fctfen biraz bekle.",
     "anonymous": "Anonim",
-    "untitled": "Ba\u015fl\u0131ks\u0131z Meme",
+    "untitled": "Ba\u015fl\u0131ks\u0131z miim",
     "noDetails": "Video ayr\u0131nt\u0131lar\u0131na ula\u015f\u0131lamad\u0131."
   }
 }
