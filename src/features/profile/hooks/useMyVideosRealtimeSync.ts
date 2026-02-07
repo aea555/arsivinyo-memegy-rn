@@ -22,6 +22,7 @@ const MAX_RECONNECT_DELAY_MS = 30_000;
 const BASE_RECONNECT_DELAY_MS = 1_000;
 const RECONNECT_JITTER_MS = 500;
 const MAX_SEEN_EVENT_IDS = 250;
+const BACKGROUND_CLOSE_GRACE_MS = 3_000;
 
 type RNWebSocketConstructor = new (
   url: string,
@@ -116,6 +117,7 @@ export function useMyVideosRealtimeSync() {
   const wsRef = useRef<WebSocket | null>(null);
   const authStatusRef = useRef(status);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backgroundCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const shouldSkipReconnectOnNextCloseRef = useRef(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -131,6 +133,13 @@ export function useMyVideosRealtimeSync() {
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const clearBackgroundCloseTimer = useCallback(() => {
+    if (backgroundCloseTimerRef.current) {
+      clearTimeout(backgroundCloseTimerRef.current);
+      backgroundCloseTimerRef.current = null;
     }
   }, []);
 
@@ -201,6 +210,7 @@ export function useMyVideosRealtimeSync() {
 
   const closeSocket = useCallback((reason: string, skipReconnect: boolean) => {
     clearReconnectTimer();
+    clearBackgroundCloseTimer();
 
     if (skipReconnect) {
       shouldSkipReconnectOnNextCloseRef.current = true;
@@ -217,7 +227,7 @@ export function useMyVideosRealtimeSync() {
     } catch {
       // no-op
     }
-  }, [clearReconnectTimer]);
+  }, [clearBackgroundCloseTimer, clearReconnectTimer]);
 
   const scheduleReconnect = useCallback((trigger: string, connectFn: (reason: string) => Promise<void>) => {
     if (!shouldConnect()) return;
@@ -371,13 +381,23 @@ export function useMyVideosRealtimeSync() {
       const prevState = appStateRef.current;
       appStateRef.current = nextState;
 
-      if (prevState !== 'active' && nextState === 'active') {
+      if (nextState === 'active') {
+        clearBackgroundCloseTimer();
         void connect('app_foreground');
         return;
       }
 
-      if (prevState === 'active' && nextState !== 'active') {
-        closeSocket('app_background', true);
+      if (prevState === 'active' && nextState === 'inactive') {
+        return;
+      }
+
+      if (nextState === 'background') {
+        clearBackgroundCloseTimer();
+        backgroundCloseTimerRef.current = setTimeout(() => {
+          if (appStateRef.current === 'background') {
+            closeSocket('app_background', true);
+          }
+        }, BACKGROUND_CLOSE_GRACE_MS);
       }
     });
 
@@ -409,7 +429,8 @@ export function useMyVideosRealtimeSync() {
       unsubscribeAppState.remove();
       unsubscribeNetInfo();
       unsubscribeTokenRefresh();
+      clearBackgroundCloseTimer();
       closeSocket('unmount', true);
     };
-  }, [closeSocket, connect, shouldConnect]);
+  }, [clearBackgroundCloseTimer, closeSocket, connect, shouldConnect]);
 }
