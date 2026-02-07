@@ -12,12 +12,27 @@ type LikeButtonProps = {
   onPress: () => void;
   disabled?: boolean;
   variant?: 'default' | 'overlay';
+  iconOnly?: boolean;
 };
 
-export function LikeButton({ liked, count, onPress, disabled, variant = 'default' }: LikeButtonProps) {
+export function LikeButton({
+  liked,
+  count,
+  onPress,
+  disabled,
+  variant = 'default',
+  iconOnly = false,
+}: LikeButtonProps) {
   const { palette } = useTheme();
   const scale = useRef(new Animated.Value(1)).current;
   const isOverlay = variant === 'overlay';
+  const buttonStyle = isOverlay
+    ? iconOnly
+      ? styles.overlayIconButton
+      : styles.overlayButton
+    : iconOnly
+      ? styles.iconButton
+      : styles.button;
 
   const animatePop = () => {
     Animated.sequence([
@@ -48,7 +63,7 @@ export function LikeButton({ liked, count, onPress, disabled, variant = 'default
       onPress={handlePress}
       disabled={disabled}
       style={({ pressed, hovered }) => [
-        isOverlay ? styles.overlayButton : styles.button,
+        buttonStyle,
         {
           borderColor: liked ? palette.likeActive : palette.border,
           backgroundColor: liked
@@ -67,23 +82,25 @@ export function LikeButton({ liked, count, onPress, disabled, variant = 'default
       <Animated.View style={{ transform: [{ scale }] }}>
         <Ionicons
           name={liked ? 'heart' : 'heart-outline'}
-          size={isOverlay ? 20 : 18}
+          size={isOverlay ? (iconOnly ? 24 : 20) : iconOnly ? 20 : 18}
           color={liked ? palette.likeActive : palette.text.secondary}
         />
       </Animated.View>
-      <View style={isOverlay ? styles.overlayCountWrapper : styles.countWrapper}>
-        <AppText
-          variant="caption"
-          style={[
+      {!iconOnly ? (
+        <View style={isOverlay ? styles.overlayCountWrapper : styles.countWrapper}>
+          <AppText
+            variant="caption"
+            style={[
               isOverlay ? styles.overlayCount : styles.count,
               {
                 color: liked ? palette.likeActive : palette.text.secondary,
               },
             ]}
-        >
-          {formatCount(count)}
-        </AppText>
-      </View>
+          >
+            {formatCount(count)}
+          </AppText>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -109,6 +126,22 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     minWidth: 84,
     minHeight: 38,
+  },
+  iconButton: {
+    height: 38,
+    width: 38,
+    borderWidth: 1,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  overlayIconButton: {
+    height: 50,
+    width: 50,
+    borderWidth: 1,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   hovered: {
     opacity: 0.92,

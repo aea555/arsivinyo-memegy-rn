@@ -14,9 +14,15 @@ type DownloadButtonProps = {
   videoId: string;
   suggestedName?: string | null;
   variant?: 'default' | 'overlay';
+  iconOnly?: boolean;
 };
 
-export function DownloadButton({ videoId, suggestedName, variant = 'default' }: DownloadButtonProps) {
+export function DownloadButton({
+  videoId,
+  suggestedName,
+  variant = 'default',
+  iconOnly = false,
+}: DownloadButtonProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
   const { state, isBusy, onPress } = useVideoDownload(videoId, suggestedName);
@@ -32,6 +38,13 @@ export function DownloadButton({ videoId, suggestedName, variant = 'default' }: 
         : palette.accent;
   const iconColor = palette.onAccent;
   const defaultIconColor = baseColor;
+  const buttonStyle = isOverlay
+    ? iconOnly
+      ? styles.overlayIconButton
+      : styles.overlayButton
+    : iconOnly
+      ? styles.iconButton
+      : styles.button;
   const iconName: keyof typeof Ionicons.glyphMap =
     state.status === 'success'
       ? 'checkmark-circle'
@@ -48,7 +61,7 @@ export function DownloadButton({ videoId, suggestedName, variant = 'default' }: 
         }}
         disabled={isBusy}
         style={({ pressed }) => [
-          isOverlay ? styles.overlayButton : styles.button,
+          buttonStyle,
           {
             borderColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.48),
             backgroundColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.14),
@@ -67,26 +80,40 @@ export function DownloadButton({ videoId, suggestedName, variant = 'default' }: 
         accessibilityRole="button"
         accessibilityLabel={t('video.download')}
       >
-        <View style={isOverlay ? styles.overlayIconWrap : styles.iconWrap}>
-          {isBusy ? (
-            <ActivityIndicator size="small" color={isOverlay ? palette.accent : defaultIconColor} />
+        {iconOnly ? (
+          isBusy ? (
+            <ActivityIndicator size="small" color={isOverlay ? palette.onAccent : defaultIconColor} />
           ) : (
             <Ionicons
               name={iconName}
-              size={isOverlay ? 18 : 16}
+              size={isOverlay ? 24 : 20}
               color={isOverlay ? iconColor : defaultIconColor}
             />
-          )}
-        </View>
-        <AppText
-          variant="caption"
-          style={[
-            isOverlay ? styles.overlayLabel : styles.label,
-            { color: isOverlay ? palette.onAccent : baseColor },
-          ]}
-        >
-          {isBusy ? `${progress}%` : t('video.download')}
-        </AppText>
+          )
+        ) : (
+          <View style={isOverlay ? styles.overlayIconWrap : styles.iconWrap}>
+            {isBusy ? (
+              <ActivityIndicator size="small" color={isOverlay ? palette.onAccent : defaultIconColor} />
+            ) : (
+              <Ionicons
+                name={iconName}
+                size={isOverlay ? 18 : 16}
+                color={isOverlay ? iconColor : defaultIconColor}
+              />
+            )}
+          </View>
+        )}
+        {!iconOnly ? (
+          <AppText
+            variant="caption"
+            style={[
+              isOverlay ? styles.overlayLabel : styles.label,
+              { color: isOverlay ? palette.onAccent : baseColor },
+            ]}
+          >
+            {isBusy ? `${progress}%` : t('video.download')}
+          </AppText>
+        ) : null}
       </Pressable>
       <ConfirmModal
         visible={confirmVisible}
@@ -129,6 +156,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
+  },
+  iconButton: {
+    height: 38,
+    width: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
+  overlayIconButton: {
+    height: 50,
+    width: 50,
+    borderRadius: 25,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   iconWrap: {
     width: 18,

@@ -13,14 +13,22 @@ type ShareButtonProps = {
   url: string;
   title?: string | null;
   variant?: 'default' | 'overlay';
+  iconOnly?: boolean;
 };
 
-export function ShareButton({ url, title, variant = 'default' }: ShareButtonProps) {
+export function ShareButton({ url, title, variant = 'default', iconOnly = false }: ShareButtonProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
   const showToast = useToastStore((state) => state.showToast);
   const isOverlay = variant === 'overlay';
   const baseColor = palette.accent;
+  const buttonStyle = isOverlay
+    ? iconOnly
+      ? styles.overlayIconButton
+      : styles.overlayButton
+    : iconOnly
+      ? styles.iconButton
+      : styles.button;
 
   const onPress = React.useCallback(async () => {
     if (!url) {
@@ -42,7 +50,7 @@ export function ShareButton({ url, title, variant = 'default' }: ShareButtonProp
     <Pressable
       onPress={() => void onPress()}
       style={({ pressed }) => [
-        isOverlay ? styles.overlayButton : styles.button,
+        buttonStyle,
         {
           borderColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.48),
           backgroundColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.14),
@@ -61,22 +69,32 @@ export function ShareButton({ url, title, variant = 'default' }: ShareButtonProp
       accessibilityRole="button"
       accessibilityLabel={t('video.share')}
     >
-      <View style={isOverlay ? styles.overlayIconWrap : styles.iconWrap}>
+      {iconOnly ? (
         <Ionicons
           name="share-social-outline"
-          size={isOverlay ? 18 : 16}
+          size={isOverlay ? 24 : 20}
           color={isOverlay ? palette.onAccent : baseColor}
         />
-      </View>
-      <AppText
-        variant="caption"
-        style={[
-          isOverlay ? styles.overlayLabel : styles.label,
-          { color: isOverlay ? palette.onAccent : baseColor },
-        ]}
-      >
-        {t('video.share')}
-      </AppText>
+      ) : (
+        <View style={isOverlay ? styles.overlayIconWrap : styles.iconWrap}>
+          <Ionicons
+            name="share-social-outline"
+            size={isOverlay ? 18 : 16}
+            color={isOverlay ? palette.onAccent : baseColor}
+          />
+        </View>
+      )}
+      {!iconOnly ? (
+        <AppText
+          variant="caption"
+          style={[
+            isOverlay ? styles.overlayLabel : styles.label,
+            { color: isOverlay ? palette.onAccent : baseColor },
+          ]}
+        >
+          {t('video.share')}
+        </AppText>
+      ) : null}
     </Pressable>
   );
 }
@@ -106,6 +124,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
+  },
+  iconButton: {
+    height: 38,
+    width: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
+  overlayIconButton: {
+    height: 50,
+    width: 50,
+    borderRadius: 25,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   iconWrap: {
     width: 18,

@@ -1,6 +1,15 @@
 import { useIsFocused } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, View, ViewToken } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  Pressable,
+  StyleSheet,
+  View,
+  ViewToken,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -8,8 +17,6 @@ import { ImmersiveFeedItem } from '@/src/features/feed/components/ImmersiveFeedI
 import { useFeed } from '@/src/features/feed/hooks/useFeed';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
-import { Card } from '@/src/shared/components/ui/Card';
-import { SegmentedControl } from '@/src/shared/components/ui/SegmentedControl';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { useNetworkStatus } from '@/src/shared/hooks/useNetworkStatus';
 import { withAlpha } from '@/src/shared/theme/colorUtils';
@@ -34,6 +41,7 @@ export function FeedScreen() {
   const feedPreserveAspectRatio = useAppSettingsStore((state) => state.feedPreserveAspectRatio);
   const { isConnected } = useNetworkStatus();
   const [sort, setSort] = useState<'random' | 'latest' | 'popular'>('random');
+  const [sortPickerVisible, setSortPickerVisible] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const listRef = useRef<FlatList<VideoFeedItem>>(null);
@@ -57,6 +65,17 @@ export function FeedScreen() {
   }, [data]);
 
   const activeId = videos[activeIndex]?.id ?? null;
+  const openSortPicker = useCallback(() => {
+    setSortPickerVisible(true);
+  }, []);
+  const sortOptions = useMemo(
+    () => [
+      { label: t('feed.sortRandom'), value: 'random' as const },
+      { label: t('feed.sortLatest'), value: 'latest' as const },
+      { label: t('feed.sortPopular'), value: 'popular' as const },
+    ],
+    [t]
+  );
 
   renderCountRef.current += 1;
   if (FEED_PERF_DEBUG) {
@@ -118,9 +137,10 @@ export function FeedScreen() {
         height={viewportHeight}
         autoPlayEnabled={autoPlayFeedVideos}
         preserveAspectRatio={feedPreserveAspectRatio}
+        onOpenSortPicker={openSortPicker}
       />
     ),
-    [activeId, autoPlayFeedVideos, feedPreserveAspectRatio, isFocused, viewportHeight]
+    [activeId, autoPlayFeedVideos, feedPreserveAspectRatio, isFocused, openSortPicker, viewportHeight]
   );
 
   useEffect(() => {
@@ -187,19 +207,6 @@ export function FeedScreen() {
           </AppText>
         </View>
       ) : null}
-      <View style={[styles.sortOverlay, { top: insets.top + spacing.sm }]}>
-        <Card style={[styles.sortCard, { backgroundColor: withAlpha(palette.overlay, 0.93) }]}>
-          <SegmentedControl
-            value={sort}
-            onChange={(value) => setSort(value as 'random' | 'latest' | 'popular')}
-            options={[
-              { label: t('feed.sortRandom'), value: 'random' },
-              { label: t('feed.sortLatest'), value: 'latest' },
-              { label: t('feed.sortPopular'), value: 'popular' },
-            ]}
-          />
-        </Card>
-      </View>
       <View
         style={styles.container}
         onLayout={(event) => {
@@ -247,6 +254,61 @@ export function FeedScreen() {
           </View>
         </View>
       ) : null}
+      <Modal
+        transparent
+        animationType="fade"
+        visible={sortPickerVisible}
+        onRequestClose={() => setSortPickerVisible(false)}
+      >
+        <Pressable
+          style={styles.sortBackdrop}
+          onPress={() => setSortPickerVisible(false)}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.cancel')}
+        >
+          <Pressable
+            style={[styles.sortSheet, { backgroundColor: withAlpha(palette.surface, 0.98) }]}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <AppText variant="bodyBold" style={styles.sortTitle}>
+              {t('feed.sort')}
+            </AppText>
+            <View style={styles.sortOptions}>
+              {sortOptions.map((option) => {
+                const selected = sort === option.value;
+                return (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => {
+                      setSort(option.value);
+                      setSortPickerVisible(false);
+                    }}
+                    style={({ pressed }) => [
+                      styles.sortOption,
+                      {
+                        borderColor: selected
+                          ? withAlpha(palette.accent, 0.82)
+                          : withAlpha(palette.border, 0.78),
+                        backgroundColor: selected
+                          ? withAlpha(palette.accent, 0.16)
+                          : withAlpha(palette.background, 0.9),
+                      },
+                      pressed ? styles.pressedOption : null,
+                    ]}
+                  >
+                    <AppText style={{ color: palette.text.primary }}>{option.label}</AppText>
+                    {selected ? (
+                      <Ionicons name="checkmark-circle" size={19} color={palette.accent} />
+                    ) : (
+                      <Ionicons name="ellipse-outline" size={19} color={palette.text.secondary} />
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Screen>
   );
 }
@@ -259,17 +321,6 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-  },
-  sortOverlay: {
-    position: 'absolute',
-    left: spacing.md,
-    right: spacing.md,
-    zIndex: 30,
-  },
-  sortCard: {
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    borderRadius: 14,
   },
   listContent: {
     flexGrow: 1,
@@ -305,5 +356,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     backgroundColor: '#CF1E2A',
+  },
+  sortBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'flex-end',
+    padding: spacing.md,
+  },
+  sortSheet: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  sortTitle: {
+    marginBottom: spacing.xs,
+  },
+  sortOptions: {
+    gap: spacing.xs,
+  },
+  sortOption: {
+    minHeight: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  pressedOption: {
+    transform: [{ scale: 0.99 }],
   },
 });

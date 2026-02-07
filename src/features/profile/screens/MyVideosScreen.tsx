@@ -188,7 +188,7 @@ export function MyVideosScreen() {
             {
               borderColor: withAlpha(palette.error, 0.52),
               backgroundColor: withAlpha(palette.error, 0.13),
-              opacity: deleteMutation.isPending && !isDeletingThisVideo ? 0.7 : 1,
+              opacity: deleteMutation.isPending && !isDeletingThisVideo ? 0.55 : 1,
             },
             pressed && !deleteMutation.isPending ? styles.pressedAction : null,
           ]}
@@ -197,12 +197,9 @@ export function MyVideosScreen() {
         >
           <Ionicons
             name={isDeletingThisVideo ? 'time-outline' : 'trash-outline'}
-            size={16}
+            size={20}
             color={palette.error}
           />
-          <AppText variant="caption" style={[styles.deleteActionText, { color: palette.error }]}>
-            {isDeletingThisVideo ? t('profile.deletingVideo') : t('common.delete')}
-          </AppText>
         </Pressable>
       );
     },
@@ -523,20 +520,13 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   deleteAction: {
-    minHeight: 36,
-    minWidth: 92,
-    borderRadius: 999,
+    height: 38,
+    width: 38,
+    borderRadius: 19,
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: spacing.xs,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
     alignSelf: 'flex-start',
-  },
-  deleteActionText: {
-    fontSize: 13,
   },
   pressedAction: {
     transform: [{ scale: 0.98 }],

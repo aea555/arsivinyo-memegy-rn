@@ -12,14 +12,21 @@ import { withAlpha } from '@/src/shared/theme/colorUtils';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { VideoFeedItem } from '@/src/shared/types/api';
+import { formatCount } from '@/src/shared/utils/formatters';
 
 type FeedOverlayActionsProps = {
   video: VideoFeedItem;
   onToggleInfo: () => void;
+  onOpenSortPicker: () => void;
   infoVisible: boolean;
 };
 
-function FeedOverlayActionsBase({ video, onToggleInfo, infoVisible }: FeedOverlayActionsProps) {
+function FeedOverlayActionsBase({
+  video,
+  onToggleInfo,
+  onOpenSortPicker,
+  infoVisible,
+}: FeedOverlayActionsProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
   const toggleLike = useToggleLike(video.id);
@@ -30,26 +37,59 @@ function FeedOverlayActionsBase({ video, onToggleInfo, infoVisible }: FeedOverla
 
   return (
     <View style={styles.container} pointerEvents="box-none">
+      <Pressable
+        onPress={onOpenSortPicker}
+        style={({ pressed }) => [
+          styles.iconButton,
+          {
+            backgroundColor: withAlpha(palette.overlay, 0.9),
+            borderColor: withAlpha(palette.border, 0.85),
+          },
+          pressed ? styles.pressed : null,
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={t('feed.sort')}
+      >
+        <Ionicons name="options-outline" size={24} color={palette.text.primary} />
+      </Pressable>
       {video.is_liked !== undefined ? (
-        <LikeButton
-          liked={currentLiked}
-          count={video.like_count}
-          onPress={handleLikePress}
-          disabled={toggleLike.isPending}
-          variant="overlay"
-        />
+        <View style={styles.likeGroup}>
+          <LikeButton
+            liked={currentLiked}
+            count={video.like_count}
+            onPress={handleLikePress}
+            disabled={toggleLike.isPending}
+            variant="overlay"
+            iconOnly
+          />
+          <AppText variant="caption" style={[styles.likeCount, { color: '#FFFFFF' }]}>
+            {formatCount(video.like_count)}
+          </AppText>
+        </View>
       ) : (
-        <View style={[styles.counterFallback, { backgroundColor: withAlpha(palette.overlay, 0.9) }]}>
-          <Ionicons name="heart-outline" size={18} color={palette.text.secondary} />
-          <AppText variant="caption">{video.like_count}</AppText>
+        <View style={styles.likeGroup}>
+          <View
+            style={[
+              styles.counterFallback,
+              {
+                backgroundColor: withAlpha(palette.overlay, 0.9),
+                borderColor: withAlpha(palette.border, 0.85),
+              },
+            ]}
+          >
+            <Ionicons name="heart-outline" size={24} color={palette.text.secondary} />
+          </View>
+          <AppText variant="caption" style={[styles.likeCount, { color: '#FFFFFF' }]}>
+            {formatCount(video.like_count)}
+          </AppText>
         </View>
       )}
-      <DownloadButton videoId={video.id} suggestedName={video.title} variant="overlay" />
-      <ShareButton url={video.url} title={video.title} variant="overlay" />
+      <DownloadButton videoId={video.id} suggestedName={video.title} variant="overlay" iconOnly />
+      <ShareButton url={video.url} title={video.title} variant="overlay" iconOnly />
       <Pressable
         onPress={onToggleInfo}
         style={({ pressed }) => [
-          styles.infoButton,
+          styles.iconButton,
           {
             backgroundColor: infoVisible
               ? withAlpha(palette.accent, 0.9)
@@ -61,13 +101,11 @@ function FeedOverlayActionsBase({ video, onToggleInfo, infoVisible }: FeedOverla
         accessibilityRole="button"
         accessibilityLabel={infoVisible ? t('feed.hideInfo') : t('feed.info')}
       >
-        <Ionicons name="information-circle-outline" size={17} color={infoVisible ? palette.onAccent : palette.text.primary} />
-        <AppText
-          variant="caption"
-          style={{ color: infoVisible ? palette.onAccent : palette.text.primary }}
-        >
-          {infoVisible ? t('feed.hideInfo') : t('feed.info')}
-        </AppText>
+        <Ionicons
+          name="information-circle-outline"
+          size={24}
+          color={infoVisible ? palette.onAccent : palette.text.primary}
+        />
       </Pressable>
     </View>
   );
@@ -77,6 +115,7 @@ function areFeedOverlayActionsPropsEqual(prev: FeedOverlayActionsProps, next: Fe
   return (
     prev.infoVisible === next.infoVisible &&
     prev.onToggleInfo === next.onToggleInfo &&
+    prev.onOpenSortPicker === next.onOpenSortPicker &&
     prev.video.id === next.video.id &&
     prev.video.like_count === next.video.like_count &&
     prev.video.is_liked === next.video.is_liked &&
@@ -88,30 +127,34 @@ export const FeedOverlayActions = React.memo(FeedOverlayActionsBase, areFeedOver
 
 const styles = StyleSheet.create({
   container: {
-    width: 106,
-    alignItems: 'stretch',
+    width: 56,
+    alignItems: 'center',
     gap: spacing.sm,
   },
   counterFallback: {
-    minHeight: 40,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: spacing.xs,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.xs,
-  },
-  infoButton: {
-    minHeight: 40,
-    borderRadius: 999,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: spacing.xs,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
+  },
+  likeGroup: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  likeCount: {
+    textAlign: 'center',
+    minWidth: 38,
+    opacity: 0.95,
+  },
+  iconButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pressed: {
     transform: [{ scale: 0.98 }],

@@ -51,8 +51,8 @@ export function VideoCard({
           </View>
           <AppText variant="caption">{metaLine}</AppText>
           <View style={styles.actionsRow}>
-            <DownloadButton videoId={video.id} suggestedName={video.title} />
-            <ShareButton url={video.url} title={video.title} />
+            <DownloadButton videoId={video.id} suggestedName={video.title} iconOnly />
+            <ShareButton url={video.url} title={video.title} iconOnly />
             {extraAction}
           </View>
           {showAnonymousBadge ? (
@@ -104,10 +104,9 @@ const styles = StyleSheet.create({
   },
   actionsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: spacing.xs,
-    marginTop: 2,
+    gap: spacing.sm,
+    marginTop: spacing.xs,
   },
   titleRow: {
     flexDirection: 'row',

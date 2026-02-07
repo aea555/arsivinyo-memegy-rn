@@ -10,8 +10,8 @@ import { AppText } from '@/src/shared/components/ui/AppText';
 import { withAlpha } from '@/src/shared/theme/colorUtils';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
-import { formatDate } from '@/src/shared/utils/formatters';
 import { VideoFeedItem } from '@/src/shared/types/api';
+import { formatDate } from '@/src/shared/utils/formatters';
 
 type ImmersiveFeedItemProps = {
   video: VideoFeedItem;
@@ -20,6 +20,7 @@ type ImmersiveFeedItemProps = {
   height: number;
   autoPlayEnabled: boolean;
   preserveAspectRatio: boolean;
+  onOpenSortPicker: () => void;
 };
 
 const INFO_AUTO_DISMISS_MS = 2800;
@@ -31,6 +32,7 @@ function ImmersiveFeedItemBase({
   height,
   autoPlayEnabled,
   preserveAspectRatio,
+  onOpenSortPicker,
 }: ImmersiveFeedItemProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
@@ -54,9 +56,9 @@ function ImmersiveFeedItemBase({
 
   const uploaderName = video.uploader ? `@${video.uploader.username}` : t('video.anonymous');
   const title = video.title?.trim() || t('video.untitled');
+  const description = video.description?.trim() || null;
   const hasPlayableUrl = typeof video.url === 'string' && video.url.length > 0;
 
-  const topScrim = useMemo(() => [withAlpha('#000000', 0.46), 'transparent'] as const, []);
   const bottomScrim = useMemo(() => ['transparent', withAlpha('#000000', 0.68)] as const, []);
   const handleToggleInfo = useCallback(() => {
     setInfoVisible((prev) => !prev);
@@ -82,30 +84,34 @@ function ImmersiveFeedItemBase({
         </View>
       )}
 
-      <LinearGradient colors={topScrim} style={styles.topScrim} pointerEvents="none" />
       <LinearGradient colors={bottomScrim} style={styles.bottomScrim} pointerEvents="none" />
 
       <View style={styles.overlayRoot} pointerEvents="box-none">
-        <View style={styles.topMeta}>
-          <AppText variant="caption" style={styles.metaText}>
-            {uploaderName} - {formatDate(video.created_at)}
-          </AppText>
-        </View>
-
         <View style={styles.bottomRow}>
           <View style={styles.leftMeta}>
             <AppText variant="heading2" style={styles.title} numberOfLines={2}>
               {title}
             </AppText>
-            <AppText variant="caption" style={styles.subtitle} numberOfLines={2}>
-              {video.description?.trim() || uploaderName}
-            </AppText>
+            {description ? (
+              <AppText variant="caption" style={styles.subtitle} numberOfLines={2}>
+                {description}
+              </AppText>
+            ) : null}
+            <View style={styles.metaStack}>
+              <AppText variant="caption" style={styles.metaText} numberOfLines={1}>
+                {uploaderName}
+              </AppText>
+              <AppText variant="caption" style={styles.metaDate} numberOfLines={1}>
+                {formatDate(video.created_at)}
+              </AppText>
+            </View>
             <FeedInfoPopup video={video} visible={infoVisible} />
           </View>
           <FeedOverlayActions
             video={video}
             infoVisible={infoVisible}
             onToggleInfo={handleToggleInfo}
+            onOpenSortPicker={onOpenSortPicker}
           />
         </View>
       </View>
@@ -120,6 +126,7 @@ function areImmersiveFeedItemPropsEqual(prev: ImmersiveFeedItemProps, next: Imme
     prev.height === next.height &&
     prev.autoPlayEnabled === next.autoPlayEnabled &&
     prev.preserveAspectRatio === next.preserveAspectRatio &&
+    prev.onOpenSortPicker === next.onOpenSortPicker &&
     prev.video.id === next.video.id &&
     prev.video.url === next.video.url &&
     prev.video.is_liked === next.video.is_liked &&
@@ -146,13 +153,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.xl,
   },
-  topScrim: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 150,
-  },
   bottomScrim: {
     position: 'absolute',
     bottom: 0,
@@ -162,13 +162,10 @@ const styles = StyleSheet.create({
   },
   overlayRoot: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
     paddingBottom: spacing.xl,
-  },
-  topMeta: {
-    alignItems: 'flex-start',
   },
   metaText: {
     color: '#FFFFFF',
@@ -191,5 +188,13 @@ const styles = StyleSheet.create({
   subtitle: {
     color: '#FFFFFF',
     opacity: 0.9,
+  },
+  metaStack: {
+    gap: 2,
+    marginTop: spacing.xs,
+  },
+  metaDate: {
+    color: '#FFFFFF',
+    opacity: 0.75,
   },
 });
