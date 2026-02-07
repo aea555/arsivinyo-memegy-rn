@@ -44,15 +44,7 @@ export function VideoPlayer({
   autoPlayEnabled,
   allowTapToToggle = false,
 }: VideoPlayerProps) {
-  const [appState, setAppState] = React.useState<AppStateStatus>(AppState.currentState);
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', setAppState);
-    return () => subscription.remove();
-  }, []);
-
-  const canMountNativePlayer =
-    appState === 'active' && isScreenActive && typeof uri === 'string' && uri.length > 0;
+  const canMountNativePlayer = typeof uri === 'string' && uri.length > 0;
 
   if (!canMountNativePlayer) {
     return (
@@ -391,18 +383,24 @@ function VideoPlayerNative({
           }
           postFullscreenStateRef.current = null;
           setIsFullscreen(true);
-          if (shouldForcePostFullscreenState) {
-            const shouldResumeAfterTransition =
+          const shouldResumeAfterTransition = shouldForcePostFullscreenState
+            ? (
               resumeAfterForcedPauseUntilRef.current > Date.now() ||
               lastKnownPlayingRef.current ||
-              videoPlayer.playing;
-            resumeAfterForcedPauseUntilRef.current = 0;
-            if (shouldResumeAfterTransition) {
-              try {
-                videoPlayer.play();
-              } catch {
-                // no-op: transient native fullscreen transition
+              videoPlayer.playing
+            )
+            : true;
+          resumeAfterForcedPauseUntilRef.current = 0;
+          if (shouldResumeAfterTransition) {
+            try {
+              // Card-mode fullscreen can be triggered while list viewability has paused playback.
+              // Force a resume to avoid blank fullscreen with only native controls.
+              videoPlayer.play();
+              if (!shouldForcePostFullscreenState) {
+                setManualPaused(false);
               }
+            } catch {
+              // no-op: transient native fullscreen transition
             }
           }
         }}

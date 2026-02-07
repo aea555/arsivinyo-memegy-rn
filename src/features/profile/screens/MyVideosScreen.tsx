@@ -517,7 +517,7 @@ export function MyVideosScreen() {
           onMomentumScrollEnd={onControlsMomentumEnd}
           scrollEventThrottle={32}
           keyboardShouldPersistTaps="handled"
-          removeClippedSubviews
+          removeClippedSubviews={false}
           initialNumToRender={LIST_INITIAL_RENDER_COUNT}
           maxToRenderPerBatch={LIST_BATCH_RENDER_COUNT}
           windowSize={LIST_WINDOW_SIZE}
