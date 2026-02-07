@@ -16,7 +16,7 @@ export function MainSettingsScreen() {
   const { palette } = useTheme();
 
   return (
-    <Screen title={t('settings.title')} contentStyle={styles.container}>
+    <Screen contentStyle={styles.container}>
       <Card style={styles.listCard}>
         <SettingsRow
           title={t('settings.profile')}

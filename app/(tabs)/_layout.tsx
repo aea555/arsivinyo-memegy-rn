@@ -28,11 +28,19 @@ function TabItemButton({
   testID,
   children,
 }: BottomTabBarButtonProps) {
+  const { palette } = useTheme();
+  const isActive = Boolean(accessibilityState?.selected);
+
   return (
     <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
-      style={({ pressed }) => [style, styles.tabItemButton, pressed ? styles.tabItemPressed : null]}
+      style={({ pressed }) => [
+        style,
+        styles.tabItemButton,
+        isActive ? { backgroundColor: palette.background } : null,
+        pressed ? styles.tabItemPressed : null,
+      ]}
       accessibilityRole={accessibilityRole ?? 'button'}
       accessibilityLabel={accessibilityLabel}
       accessibilityState={accessibilityState}
@@ -119,7 +127,7 @@ function TabIcon({
 }) {
   const progress = useSharedValue(focused ? 1 : 0);
   const inactiveBg = withAlpha(palette.background, 0.76);
-  const activeBg = withAlpha(palette.accent, 0.23);
+  const activeBg = palette.accent;
   const inactiveBorder = withAlpha(palette.border, 0.95);
   const activeBorder = withAlpha(palette.accent, 0.6);
 
@@ -174,7 +182,7 @@ function TabIcon({
         ]}
       />
       <Animated.View style={[styles.tabIconWrap, activeStyle, shellStyle]}>
-        <Ionicons name={name} size={size - 1} color={color} />
+        <Ionicons name={name} size={size - 1} color={focused ? palette.onAccent : color} />
       </Animated.View>
     </View>
   );
@@ -196,6 +204,7 @@ export default function TabLayout() {
           backgroundColor: palette.surface,
           borderTopColor: withAlpha(palette.border, 0.9),
           borderTopWidth: 1,
+          overflow: 'visible',
           height: layoutConfig.tabBar.height,
           paddingBottom: layoutConfig.tabBar.paddingBottom,
           paddingTop: layoutConfig.tabBar.paddingTop,
@@ -205,6 +214,7 @@ export default function TabLayout() {
         tabBarItemStyle: {
           alignItems: 'center',
           justifyContent: 'center',
+          overflow: 'visible',
         },
         tabBarIconStyle: {
           marginTop: 0,
@@ -299,6 +309,7 @@ const styles = StyleSheet.create({
   tabItemButton: {
     borderRadius: 16,
     marginHorizontal: 3,
+    top: layoutConfig.tabBar.itemTopOffset,
     paddingTop: 3,
     paddingBottom: 2,
     justifyContent: 'center',

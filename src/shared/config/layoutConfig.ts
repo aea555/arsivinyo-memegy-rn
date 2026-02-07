@@ -37,6 +37,7 @@ export const layoutConfig = {
     paddingTop: fromEnv('EXPO_PUBLIC_UI_TAB_PADDING_TOP', 4, 0, 20),
     paddingBottom: fromEnv('EXPO_PUBLIC_UI_TAB_PADDING_BOTTOM', 6, 0, 24),
     paddingHorizontal: fromEnv('EXPO_PUBLIC_UI_TAB_PADDING_HORIZONTAL', 4, 0, 20),
+    itemTopOffset: fromEnv('EXPO_PUBLIC_UI_TAB_ITEM_TOP_OFFSET', -12, -24, 0),
     uploadTopOffset: fromEnv('EXPO_PUBLIC_UI_TAB_UPLOAD_TOP_OFFSET', -19, -30, 0),
     uploadShellSize: fromEnv('EXPO_PUBLIC_UI_TAB_UPLOAD_SHELL_SIZE', 56, 44, 72),
     uploadInnerSize: fromEnv('EXPO_PUBLIC_UI_TAB_UPLOAD_INNER_SIZE', 48, 38, 64),

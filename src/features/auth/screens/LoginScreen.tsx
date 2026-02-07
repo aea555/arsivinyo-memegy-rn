@@ -9,27 +9,30 @@ import { AppText } from '@/src/shared/components/ui/AppText';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
+import { useAuthStore } from '@/src/store/authStore';
 
 export function LoginScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const { palette } = useTheme();
   const { start } = useGoogleLogin();
+  const clearPendingSignup = useAuthStore((state) => state.clearPendingSignup);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleLogin = async () => {
     if (loading) return;
     setLoading(true);
+    clearPendingSignup();
     try {
       const result = await start();
       if (result.type === 'success') {
         const params = result.params as Record<string, string>;
         const codeParam = params.code ?? params.otc;
         if (__DEV__) {
-          console.debug('[auth] login redirect params', {
-            code: codeParam,
-            params,
+          console.debug('[auth] login redirect params received', {
+            hasCode: Boolean(codeParam),
+            paramKeys: Object.keys(params),
           });
         }
         if (codeParam) {

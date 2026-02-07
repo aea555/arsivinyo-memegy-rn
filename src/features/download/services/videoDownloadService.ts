@@ -3,7 +3,7 @@ import * as MediaLibrary from 'expo-media-library';
 
 import { getDownloadRedirectUrl, refreshDownloadUrl } from '@/src/features/download/api/downloadApi';
 import { DownloadError, mapStatusToDownloadError, shouldTryRefreshFallback, toDownloadError } from '@/src/features/download/utils/downloadErrors';
-import { SecureStorage } from '@/src/shared/services/storage/SecureStorage';
+import { authSessionManager } from '@/src/shared/services/auth/authSessionManager';
 
 export type VideoDownloadStage = 'requesting' | 'downloading' | 'saving';
 
@@ -153,7 +153,21 @@ export async function downloadVideoToTempFile({
 
   try {
     onStageChange?.('requesting');
-    const accessToken = await SecureStorage.getAccessToken();
+    let accessToken: string | null = null;
+    try {
+      accessToken = await authSessionManager.ensureFreshToken({
+        force: false,
+        minValidityMs: 90_000,
+        reason: 'download',
+      });
+    } catch {
+      const fallbackToken = authSessionManager.getAccessToken();
+      if (!fallbackToken || !authSessionManager.hasValidAccessToken()) {
+        throw new DownloadError('auth', 'Missing access token.', 401);
+      }
+      accessToken = fallbackToken;
+    }
+
     if (!accessToken) {
       throw new DownloadError('auth', 'Missing access token.', 401);
     }

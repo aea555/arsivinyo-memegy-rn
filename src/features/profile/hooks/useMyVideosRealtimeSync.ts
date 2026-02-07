@@ -5,8 +5,8 @@ import { AppState, AppStateStatus } from 'react-native';
 
 import { mapUserVideoDtoToMyVideoItem } from '@/src/features/profile/utils/myVideoMapper';
 import { subscribeTokenRefresh } from '@/src/shared/services/api/authEvents';
+import { authSessionManager } from '@/src/shared/services/auth/authSessionManager';
 import { queryClient } from '@/src/shared/services/api/queryClient';
-import { SecureStorage } from '@/src/shared/services/storage/SecureStorage';
 import { MY_VIDEOS_PAGE_SIZE } from '@/src/shared/utils/constants';
 import { API_BASE_URL } from '@/src/shared/utils/env';
 import { MyVideoItem, UserVideoDto } from '@/src/shared/types/api';
@@ -276,8 +276,24 @@ export function useMyVideosRealtimeSync() {
       return;
     }
 
-    const token = await SecureStorage.getAccessToken();
-    if (!token) return;
+    let token: string | null = null;
+    try {
+      token = await authSessionManager.ensureFreshToken({
+        force: false,
+        minValidityMs: 90_000,
+        reason: 'websocket',
+      });
+    } catch {
+      const fallbackToken = authSessionManager.getAccessToken();
+      if (!fallbackToken || !authSessionManager.hasValidAccessToken()) {
+        return;
+      }
+      token = fallbackToken;
+    }
+
+    if (!token) {
+      return;
+    }
 
     if (__DEV__) {
       console.debug('[myVideos.ws] connect attempt', { reason, url: wsUrl });

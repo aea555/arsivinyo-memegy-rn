@@ -11,6 +11,38 @@ export type AuthResponse = {
   user: UserDto;
 };
 
+export type UsernameRulesDto = {
+  min_length: number;
+  max_length: number;
+  pattern: string;
+};
+
+export type ExchangeOtcUsernameRequiredResponse = {
+  error: 'username_required';
+  signup_ticket: string;
+  suggested_username: string;
+  rules: UsernameRulesDto;
+};
+
+export type ExchangeOtcResult =
+  | { kind: 'authenticated'; data: AuthResponse }
+  | { kind: 'username_required'; data: ExchangeOtcUsernameRequiredResponse };
+
+export type SignupCompleteRequest = {
+  signup_ticket: string;
+  username: string;
+};
+
+export type UpdateUsernameRequest = {
+  username: string;
+};
+
+export type ApiErrorResponse = {
+  error?: string;
+  message?: string;
+  detail?: string;
+};
+
 export type RefreshRequest = {
   access_token: string;
   refresh_token: string;

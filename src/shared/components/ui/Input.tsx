@@ -5,7 +5,10 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { typography } from '@/src/shared/theme/typography';
 
-function InputComponent({ style, onFocus, onBlur, ...props }: TextInputProps) {
+function InputComponent(
+  { style, onFocus, onBlur, ...props }: TextInputProps,
+  ref: React.ForwardedRef<TextInput>
+) {
   const { palette } = useTheme();
 
   // Use shared value effectively bypasses React state updates, avoiding re-renders
@@ -36,6 +39,7 @@ function InputComponent({ style, onFocus, onBlur, ...props }: TextInputProps) {
       ]}
     >
       <TextInput
+        ref={ref}
         placeholderTextColor={palette.text.secondary}
         style={[styles.input, { color: palette.text.primary }, style]}
         onFocus={handleFocus}
@@ -49,7 +53,10 @@ function InputComponent({ style, onFocus, onBlur, ...props }: TextInputProps) {
   );
 }
 
-export const Input = React.memo(InputComponent);
+const ForwardedInput = React.forwardRef(InputComponent);
+ForwardedInput.displayName = 'Input';
+
+export const Input = React.memo(ForwardedInput);
 
 const styles = StyleSheet.create({
   container: {

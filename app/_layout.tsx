@@ -10,6 +10,7 @@ import { I18nextProvider } from 'react-i18next';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { SplashScreen as AppSplashScreen } from '@/src/features/auth/screens/SplashScreen';
+import { useAuthSessionLifecycle } from '@/src/features/auth/hooks/useAuthSessionLifecycle';
 import { useMyVideosRealtimeSync } from '@/src/features/profile/hooks/useMyVideosRealtimeSync';
 import i18n from '@/src/shared/locales/i18n';
 import { AppToastHost } from '@/src/shared/components/ui/AppToastHost';
@@ -49,6 +50,7 @@ export default function RootLayout() {
   const hydrateAppSettings = useAppSettingsStore((state) => state.hydrate);
 
   useMyVideosRealtimeSync();
+  useAuthSessionLifecycle();
 
   const [fontsLoaded] = useFonts({
     Comfortaa_300Light,
@@ -89,7 +91,7 @@ export default function RootLayout() {
       if (!code) return;
       const codeValue = Array.isArray(code) ? code[0] : String(code);
       if (__DEV__) {
-        console.debug('[auth] deep link received', { url, parsed });
+        console.debug('[auth] deep link received', { path: parsed.path });
       }
       router.replace({ pathname: '/(auth)/callback', params: { code: codeValue } });
     };

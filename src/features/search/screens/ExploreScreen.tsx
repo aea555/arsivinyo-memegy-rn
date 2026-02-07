@@ -1,7 +1,19 @@
 import { useIsFocused } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Animated, Easing, FlatList, KeyboardAvoidingView, Platform, StyleSheet, View, ViewToken } from 'react-native';
+import {
+  FlatList,
+  KeyboardAvoidingView,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
+  ViewToken,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { VideoCard } from '@/src/features/feed/components/VideoCard';
 import { useSearch } from '@/src/features/search/hooks/useSearch';
@@ -9,10 +21,12 @@ import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Card } from '@/src/shared/components/ui/Card';
+import { FloatingSearchControls } from '@/src/shared/components/ui/FloatingSearchControls';
 import { Input } from '@/src/shared/components/ui/Input';
 import { SegmentedControl } from '@/src/shared/components/ui/SegmentedControl';
-import { useAutoHideControlsOnScroll } from '@/src/shared/hooks/useAutoHideControlsOnScroll';
 import { useDebounce } from '@/src/shared/hooks/useDebounce';
+import { useFloatingSearchControls } from '@/src/shared/hooks/useFloatingSearchControls';
+import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { spacing } from '@/src/shared/theme/spacing';
 import { VideoFeedItem } from '@/src/shared/types/api';
 import {
@@ -27,24 +41,30 @@ const LIST_INITIAL_RENDER_COUNT = 3;
 const LIST_BATCH_RENDER_COUNT = 3;
 const LIST_WINDOW_SIZE = 4;
 const LIST_BATCH_UPDATE_MS = 32;
+const DEFAULT_CONTROLS_HEIGHT = 120;
 
 export function ExploreScreen() {
   const { t } = useTranslation();
   const isFocused = useIsFocused();
+  const { palette } = useTheme();
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<'relevance' | 'recent' | 'popular'>('relevance');
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [controlsHeight, setControlsHeight] = useState(0);
-  const controlsAnim = useRef(new Animated.Value(1)).current;
+  const [controlsHeight, setControlsHeight] = useState(DEFAULT_CONTROLS_HEIGHT);
+  const searchInputRef = useRef<TextInput>(null);
   const {
-    isVisible: areControlsVisible,
+    mode: controlsMode,
+    onScroll: onControlsScroll,
     onScrollBeginDrag: onControlsScrollBeginDrag,
     onScrollEndDrag: onControlsScrollEndDrag,
     onMomentumScrollBegin: onControlsMomentumBegin,
     onMomentumScrollEnd: onControlsMomentumEnd,
-    setInputFocused: setControlsInputFocused,
-    showControlsOnFocus,
-  } = useAutoHideControlsOnScroll({ graceMs: 3000 });
+    onInputFocus: onControlsInputFocus,
+    onInputBlur: onControlsInputBlur,
+    expand: expandControls,
+    expandedAnimatedStyle,
+    collapsedAnimatedStyle,
+  } = useFloatingSearchControls();
 
   const handleQueryChange = useCallback((text: string) => {
     setQuery(clampSearchQueryDraft(text));
@@ -52,40 +72,8 @@ export function ExploreScreen() {
 
   useEffect(() => {
     if (!isFocused) return;
-    showControlsOnFocus();
-  }, [isFocused, showControlsOnFocus]);
-
-  useEffect(() => {
-    Animated.timing(controlsAnim, {
-      toValue: areControlsVisible ? 1 : 0,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [areControlsVisible, controlsAnim]);
-
-  const controlsAnimatedStyle = useMemo(
-    () => ({
-      opacity: controlsAnim,
-      height: controlsAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, Math.max(controlsHeight, 1)],
-      }),
-      marginBottom: controlsAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, layoutConfig.list.headerBottomMargin],
-      }),
-      transform: [
-        {
-          translateY: controlsAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [-12, 0],
-          }),
-        },
-      ],
-    }),
-    [controlsAnim, controlsHeight]
-  );
+    expandControls();
+  }, [expandControls, isFocused]);
 
   const debouncedQuery = useDebounce(query, 550);
   const isSearching = debouncedQuery.trim().length > 0;
@@ -107,64 +95,67 @@ export function ExploreScreen() {
   const isFetchingNextPage = isSearching ? isFetchingSearch : false;
   const hasNextPage = isSearching ? hasNextSearch : false;
   const fetchNextPage = isSearching ? fetchNextSearch : undefined;
-  const listHeader = useMemo(
-    () => (
-      <Animated.View
-        style={[
-          styles.controlsAnimated,
-          controlsAnimatedStyle,
-        ]}
-        pointerEvents={areControlsVisible ? 'auto' : 'none'}
-      >
-        <View
-          style={styles.controls}
-          onLayout={(event) => {
-            const nextHeight = Math.round(event.nativeEvent.layout.height);
-            if (nextHeight > 0 && nextHeight !== controlsHeight) {
-              setControlsHeight(nextHeight);
-            }
-          }}
-        >
-          <Card style={styles.controlsCard}>
-            <Input
-              placeholder={t('search.placeholder')}
-              value={query}
-              onChangeText={handleQueryChange}
-              autoCapitalize="none"
-              maxLength={SEARCH_MAX_QUERY_CHARS}
-              onFocus={() => setControlsInputFocused(true)}
-              onBlur={() => setControlsInputFocused(false)}
-            />
-            <SegmentedControl
-              value={sort}
-              onChange={(value) => setSort(value as 'relevance' | 'recent' | 'popular')}
-              options={[
-                { label: t('search.sortRelevance'), value: 'relevance' },
-                { label: t('search.sortRecent'), value: 'recent' },
-                { label: t('search.sortPopular'), value: 'popular' },
-              ]}
-            />
-            {isSearching ? (
-              <AppText variant="caption" style={styles.resultsForText}>
-                {t('search.resultsFor', { query: debouncedQuery.trim() })}
-              </AppText>
-            ) : null}
-          </Card>
-        </View>
-      </Animated.View>
-    ),
-    [
-      areControlsVisible,
-      controlsAnimatedStyle,
-      controlsHeight,
-      debouncedQuery,
-      handleQueryChange,
-      isSearching,
-      query,
-      setControlsInputFocused,
-      sort,
-      t,
-    ]
+  const listTopInset = controlsHeight + layoutConfig.list.headerBottomMargin;
+
+  const collapsedTriggerLabel = isSearching
+    ? t('search.resultsForCompact', { query: debouncedQuery.trim() })
+    : t('search.openControls');
+
+  const expandedControls = (
+    <View style={styles.controls}>
+      <Card style={styles.controlsCard}>
+        <Input
+          ref={searchInputRef}
+          placeholder={t('search.placeholder')}
+          value={query}
+          onChangeText={handleQueryChange}
+          autoCapitalize="none"
+          maxLength={SEARCH_MAX_QUERY_CHARS}
+          onFocus={onControlsInputFocus}
+          onBlur={onControlsInputBlur}
+        />
+        <SegmentedControl
+          value={sort}
+          onChange={(value) => setSort(value as 'relevance' | 'recent' | 'popular')}
+          options={[
+            { label: t('search.sortRelevance'), value: 'relevance' },
+            { label: t('search.sortRecent'), value: 'recent' },
+            { label: t('search.sortPopular'), value: 'popular' },
+          ]}
+        />
+        {isSearching ? (
+          <AppText variant="caption" style={styles.resultsForText}>
+            {t('search.resultsFor', { query: debouncedQuery.trim() })}
+          </AppText>
+        ) : null}
+      </Card>
+    </View>
+  );
+
+  const collapsedControls = (
+    <Pressable
+      onPress={() => {
+        expandControls();
+        requestAnimationFrame(() => {
+          searchInputRef.current?.focus();
+        });
+      }}
+      style={({ pressed }) => [
+        styles.collapsedTrigger,
+        {
+          backgroundColor: palette.surface,
+          borderColor: palette.border,
+        },
+        pressed ? styles.collapsedTriggerPressed : null,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={t('search.openControlsA11y')}
+    >
+      <Ionicons name="search" size={16} color={palette.text.primary} />
+      <AppText numberOfLines={1} style={styles.collapsedTriggerText}>
+        {collapsedTriggerLabel}
+      </AppText>
+    </Pressable>
   );
 
   const renderItem = useCallback(
@@ -194,46 +185,76 @@ export function ExploreScreen() {
       fetchNextPage();
     }
   };
+  const handleListScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      onControlsScroll(event);
+    },
+    [onControlsScroll]
+  );
+  const handleListTouchStart = useCallback(() => {
+    if (searchInputRef.current?.isFocused()) {
+      searchInputRef.current.blur();
+    }
+  }, []);
 
   const isEmpty = !isLoading && videos.length === 0;
 
   return (
-    <Screen title={t('tabs.explore')} contentStyle={styles.container}>
+    <Screen contentStyle={styles.container}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 100}
       >
-        <FlatList
-          data={videos}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          ListHeaderComponent={listHeader}
-          stickyHeaderIndices={[0]}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.5}
-          onScrollBeginDrag={onControlsScrollBeginDrag}
-          onScrollEndDrag={onControlsScrollEndDrag}
-          onMomentumScrollBegin={onControlsMomentumBegin}
-          onMomentumScrollEnd={onControlsMomentumEnd}
-          scrollEventThrottle={16}
-          viewabilityConfig={viewabilityConfig}
-          onViewableItemsChanged={onViewableItemsChanged}
-          keyboardShouldPersistTaps="handled"
-          removeClippedSubviews
-          initialNumToRender={LIST_INITIAL_RENDER_COUNT}
-          maxToRenderPerBatch={LIST_BATCH_RENDER_COUNT}
-          windowSize={LIST_WINDOW_SIZE}
-          updateCellsBatchingPeriod={LIST_BATCH_UPDATE_MS}
-          ListEmptyComponent={
-            isLoading ? null : (
-              <View style={styles.empty}>
-                <AppText>{isSearching ? t('search.empty') : t('search.hint')}</AppText>
-              </View>
-            )
-          }
-          contentContainerStyle={[styles.listContent, isEmpty ? styles.listEmptyContainer : null]}
-        />
+        <View style={styles.listHost}>
+          <FloatingSearchControls
+            mode={controlsMode}
+            expandedContent={expandedControls}
+            collapsedContent={collapsedControls}
+            expandedAnimatedStyle={expandedAnimatedStyle}
+            collapsedAnimatedStyle={collapsedAnimatedStyle}
+          onMeasureHeight={(nextHeight) => {
+              if (nextHeight !== controlsHeight) {
+                setControlsHeight(nextHeight);
+              }
+            }}
+            containerStyle={styles.controlsOverlay}
+          />
+          <FlatList
+            data={videos}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.5}
+            onScroll={handleListScroll}
+            onTouchStart={handleListTouchStart}
+            onScrollBeginDrag={onControlsScrollBeginDrag}
+            onScrollEndDrag={onControlsScrollEndDrag}
+            onMomentumScrollBegin={onControlsMomentumBegin}
+            onMomentumScrollEnd={onControlsMomentumEnd}
+            scrollEventThrottle={16}
+            viewabilityConfig={viewabilityConfig}
+            onViewableItemsChanged={onViewableItemsChanged}
+            keyboardShouldPersistTaps="handled"
+            removeClippedSubviews
+            initialNumToRender={LIST_INITIAL_RENDER_COUNT}
+            maxToRenderPerBatch={LIST_BATCH_RENDER_COUNT}
+            windowSize={LIST_WINDOW_SIZE}
+            updateCellsBatchingPeriod={LIST_BATCH_UPDATE_MS}
+            ListEmptyComponent={
+              isLoading ? null : (
+                <View style={styles.empty}>
+                  <AppText>{isSearching ? t('search.empty') : t('search.hint')}</AppText>
+                </View>
+              )
+            }
+            contentContainerStyle={[
+              styles.listContent,
+              { paddingTop: listTopInset },
+              isEmpty ? styles.listEmptyContainer : null,
+            ]}
+          />
+        </View>
       </KeyboardAvoidingView>
     </Screen>
   );
@@ -246,14 +267,35 @@ const styles = StyleSheet.create({
   controls: {
     gap: layoutConfig.list.headerGap,
   },
-  controlsAnimated: {
-    overflow: 'hidden',
-  },
   controlsCard: {
     gap: spacing.sm,
   },
   resultsForText: {
     paddingHorizontal: spacing.xs,
+  },
+  controlsOverlay: {
+    left: 0,
+    right: 0,
+  },
+  listHost: {
+    flex: 1,
+  },
+  collapsedTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    alignSelf: 'flex-start',
+  },
+  collapsedTriggerPressed: {
+    transform: [{ scale: 0.98 }],
+  },
+  collapsedTriggerText: {
+    maxWidth: 220,
+    opacity: 0.9,
   },
   listContent: {
     paddingBottom: spacing.xxxl,

@@ -1,7 +1,9 @@
+import { isAxiosError } from 'axios';
+
 import { apiClient } from '@/src/shared/services/api/apiClient';
 import { useAuthStore } from '@/src/store/authStore';
 import { mapUserVideoDtoToMyVideoItem } from '@/src/features/profile/utils/myVideoMapper';
-import { UserDto, UserVideoDto } from '@/src/shared/types/api';
+import { ApiErrorResponse, UpdateUsernameRequest, UserDto, UserVideoDto } from '@/src/shared/types/api';
 import { toDeleteVideoError } from '@/src/features/profile/utils/deleteVideoErrors';
 
 export async function getMyProfile() {
@@ -54,6 +56,78 @@ export async function getMyVideos(page: number, limit: number) {
 
 export async function deleteAccount() {
   await apiClient.delete('/users/me');
+}
+
+export type UpdateUsernameErrorCode =
+  | 'invalid_username'
+  | 'auth'
+  | 'username_taken'
+  | 'idempotency_mismatch'
+  | 'rate_limited'
+  | 'network'
+  | 'unknown';
+
+export class UpdateUsernameError extends Error {
+  constructor(
+    public code: UpdateUsernameErrorCode,
+    message: string,
+    public status?: number
+  ) {
+    super(message);
+    this.name = 'UpdateUsernameError';
+  }
+}
+
+function toUpdateUsernameError(error: unknown) {
+  if (!isAxiosError(error)) {
+    return new UpdateUsernameError('unknown', 'Unknown error');
+  }
+
+  if (!error.response) {
+    return new UpdateUsernameError('network', error.message || 'Network error');
+  }
+
+  const status = error.response.status;
+  const data = error.response.data as ApiErrorResponse | undefined;
+  const errorCode = typeof data?.error === 'string' ? data.error : null;
+
+  if (status === 400) {
+    return new UpdateUsernameError('invalid_username', 'Invalid username', status);
+  }
+  if (status === 401 || status === 403) {
+    return new UpdateUsernameError('auth', 'Authentication required', status);
+  }
+  if (status === 409) {
+    if (errorCode === 'idempotency_key_reuse_mismatch') {
+      return new UpdateUsernameError('idempotency_mismatch', 'Idempotency key mismatch', status);
+    }
+    return new UpdateUsernameError('username_taken', 'Username already taken', status);
+  }
+  if (status === 429) {
+    return new UpdateUsernameError('rate_limited', 'Rate limited', status);
+  }
+
+  return new UpdateUsernameError('unknown', error.message || 'Unknown error', status);
+}
+
+type UpdateMyUsernameOptions = {
+  idempotencyKey?: string;
+};
+
+export async function updateMyUsername(
+  payload: UpdateUsernameRequest,
+  options: UpdateMyUsernameOptions = {}
+) {
+  try {
+    const response = await apiClient.put<UserDto>('/users/me/username', payload, {
+      headers: options.idempotencyKey
+        ? { 'Idempotency-Key': options.idempotencyKey }
+        : undefined,
+    });
+    return response.data;
+  } catch (error) {
+    throw toUpdateUsernameError(error);
+  }
 }
 
 // Backend semantics:

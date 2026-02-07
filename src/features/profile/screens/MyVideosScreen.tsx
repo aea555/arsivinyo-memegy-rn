@@ -2,8 +2,6 @@ import { useIsFocused } from '@react-navigation/native';
 import { InfiniteData, useMutation, useQueryClient } from '@tanstack/react-query';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated,
-  Easing,
   FlatList,
   KeyboardAvoidingView,
   NativeScrollEvent,
@@ -11,6 +9,7 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  TextInput,
   View,
   ViewToken,
 } from 'react-native';
@@ -27,10 +26,11 @@ import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
 import { Card } from '@/src/shared/components/ui/Card';
 import { ConfirmModal } from '@/src/shared/components/ui/ConfirmModal';
+import { FloatingSearchControls } from '@/src/shared/components/ui/FloatingSearchControls';
 import { Input } from '@/src/shared/components/ui/Input';
 import { SegmentedControl } from '@/src/shared/components/ui/SegmentedControl';
-import { useAutoHideControlsOnScroll } from '@/src/shared/hooks/useAutoHideControlsOnScroll';
 import { useDebounce } from '@/src/shared/hooks/useDebounce';
+import { useFloatingSearchControls } from '@/src/shared/hooks/useFloatingSearchControls';
 import { withAlpha } from '@/src/shared/theme/colorUtils';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
@@ -51,6 +51,7 @@ const LIST_INITIAL_RENDER_COUNT = 3;
 const LIST_BATCH_RENDER_COUNT = 3;
 const LIST_WINDOW_SIZE = 4;
 const LIST_BATCH_UPDATE_MS = 32;
+const DEFAULT_CONTROLS_HEIGHT = 138;
 
 export function MyVideosScreen() {
   const { t } = useTranslation();
@@ -64,17 +65,21 @@ export function MyVideosScreen() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<'date_desc' | 'title_asc'>('date_desc');
-  const [controlsHeight, setControlsHeight] = useState(0);
-  const controlsAnim = useRef(new Animated.Value(1)).current;
+  const [controlsHeight, setControlsHeight] = useState(DEFAULT_CONTROLS_HEIGHT);
+  const searchInputRef = useRef<TextInput>(null);
   const {
-    isVisible: areControlsVisible,
+    mode: controlsMode,
+    onScroll: onControlsScroll,
     onScrollBeginDrag: onControlsScrollBeginDrag,
     onScrollEndDrag: onControlsScrollEndDrag,
     onMomentumScrollBegin: onControlsMomentumBegin,
     onMomentumScrollEnd: onControlsMomentumEnd,
-    setInputFocused: setControlsInputFocused,
-    showControlsOnFocus,
-  } = useAutoHideControlsOnScroll({ graceMs: 3000 });
+    onInputFocus: onControlsInputFocus,
+    onInputBlur: onControlsInputBlur,
+    expand: expandControls,
+    expandedAnimatedStyle,
+    collapsedAnimatedStyle,
+  } = useFloatingSearchControls();
   const listRef = useRef<FlatList<MyVideoItem>>(null);
   const browseOffsetRef = useRef(0);
   const wasSearchingRef = useRef(false);
@@ -85,40 +90,8 @@ export function MyVideosScreen() {
 
   useEffect(() => {
     if (!isFocused) return;
-    showControlsOnFocus();
-  }, [isFocused, showControlsOnFocus]);
-
-  useEffect(() => {
-    Animated.timing(controlsAnim, {
-      toValue: areControlsVisible ? 1 : 0,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [areControlsVisible, controlsAnim]);
-
-  const controlsAnimatedStyle = useMemo(
-    () => ({
-      opacity: controlsAnim,
-      height: controlsAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, Math.max(controlsHeight, 1)],
-      }),
-      marginBottom: controlsAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, layoutConfig.list.headerBottomMargin],
-      }),
-      transform: [
-        {
-          translateY: controlsAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [-12, 0],
-          }),
-        },
-      ],
-    }),
-    [controlsAnim, controlsHeight]
-  );
+    expandControls();
+  }, [expandControls, isFocused]);
   const normalizedQuery = useMemo(
     () => normalizeSearchQuery(debouncedQuery).toLocaleLowerCase(),
     [debouncedQuery]
@@ -412,10 +385,16 @@ export function MyVideosScreen() {
   );
   const handleListScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      onControlsScroll(event);
       handleScroll(event);
     },
-    [handleScroll]
+    [handleScroll, onControlsScroll]
   );
+  const handleListTouchStart = useCallback(() => {
+    if (searchInputRef.current?.isFocused()) {
+      searchInputRef.current.blur();
+    }
+  }, []);
 
   const handleEndReached = () => {
     if (isSearching) return;
@@ -423,100 +402,115 @@ export function MyVideosScreen() {
       fetchNextPage();
     }
   };
-  const listHeader = useMemo(
-    () => (
-      <Animated.View
-        style={[
-          styles.controlsWrapAnimated,
-          controlsAnimatedStyle,
-        ]}
-        pointerEvents={areControlsVisible ? 'auto' : 'none'}
-      >
-        <View
-          style={styles.controlsWrap}
-          onLayout={(event) => {
-            const nextHeight = Math.round(event.nativeEvent.layout.height);
-            if (nextHeight > 0 && nextHeight !== controlsHeight) {
-              setControlsHeight(nextHeight);
-            }
-          }}
-        >
-          <Card style={styles.controlsCard}>
-            <Input
-              placeholder={t('profile.searchPlaceholder')}
-              value={query}
-              onChangeText={handleQueryChange}
-              autoCapitalize="none"
-              returnKeyType="search"
-              maxLength={SEARCH_MAX_QUERY_CHARS}
-              onFocus={() => setControlsInputFocused(true)}
-              onBlur={() => setControlsInputFocused(false)}
-            />
-            <SegmentedControl
-              value={sortMode}
-              onChange={(value) => setSortMode(value as 'date_desc' | 'title_asc')}
-              options={[
-                { label: t('profile.sortDate'), value: 'date_desc' },
-                { label: t('profile.sortAlphabetical'), value: 'title_asc' },
-              ]}
-            />
-            <View style={styles.metaRow}>
-              <View style={styles.metaLabelWrap}>
-                <AppText variant="caption" style={styles.metaLabel}>
-                  {isSearching
-                    ? t('profile.searchResultsFor', { query: debouncedQuery.trim() })
-                    : t('profile.allUploads')}
-                </AppText>
-                <AppText variant="caption" style={styles.metaCount}>
-                  {t('profile.resultCount', { count: displayVideos.length })}
-                </AppText>
-              </View>
-            {isSearching ? (
-              <Pressable onPress={() => setQuery('')} hitSlop={8}>
-                <AppText variant="caption" style={[styles.clearSearch, { color: palette.accent }]}>
-                  {t('profile.searchClear')}
-                </AppText>
-              </Pressable>
-            ) : null}
+
+  const collapsedTriggerLabel = isSearching
+    ? t('profile.searchResultsForCompact', { query: debouncedQuery.trim() })
+    : t('profile.searchOpenControls');
+
+  const listTopInset = controlsHeight + layoutConfig.list.headerBottomMargin;
+
+  const expandedControls = (
+    <View style={styles.controlsWrap}>
+      <Card style={styles.controlsCard}>
+        <Input
+          ref={searchInputRef}
+          placeholder={t('profile.searchPlaceholder')}
+          value={query}
+          onChangeText={handleQueryChange}
+          autoCapitalize="none"
+          returnKeyType="search"
+          maxLength={SEARCH_MAX_QUERY_CHARS}
+          onFocus={onControlsInputFocus}
+          onBlur={onControlsInputBlur}
+        />
+        <SegmentedControl
+          value={sortMode}
+          onChange={(value) => setSortMode(value as 'date_desc' | 'title_asc')}
+          options={[
+            { label: t('profile.sortDate'), value: 'date_desc' },
+            { label: t('profile.sortAlphabetical'), value: 'title_asc' },
+          ]}
+        />
+        <View style={styles.metaRow}>
+          <View style={styles.metaLabelWrap}>
+            <AppText variant="caption" style={styles.metaLabel}>
+              {isSearching
+                ? t('profile.searchResultsFor', { query: debouncedQuery.trim() })
+                : t('profile.allUploads')}
+            </AppText>
+            <AppText variant="caption" style={styles.metaCount}>
+              {t('profile.resultCount', { count: displayVideos.length })}
+            </AppText>
           </View>
-          </Card>
+          {isSearching ? (
+            <Pressable onPress={() => setQuery('')} hitSlop={8}>
+              <AppText variant="caption" style={[styles.clearSearch, { color: palette.accent }]}>
+                {t('profile.searchClear')}
+              </AppText>
+            </Pressable>
+          ) : null}
         </View>
-      </Animated.View>
-    ),
-    [
-      controlsAnimatedStyle,
-      controlsHeight,
-      debouncedQuery,
-      displayVideos.length,
-      handleQueryChange,
-      isSearching,
-      areControlsVisible,
-      palette.accent,
-      query,
-      setControlsInputFocused,
-      sortMode,
-      t,
-    ]
+      </Card>
+    </View>
+  );
+
+  const collapsedControls = (
+    <Pressable
+      onPress={() => {
+        expandControls();
+        requestAnimationFrame(() => {
+          searchInputRef.current?.focus();
+        });
+      }}
+      style={({ pressed }) => [
+        styles.collapsedTrigger,
+        {
+          backgroundColor: palette.surface,
+          borderColor: palette.border,
+        },
+        pressed ? styles.pressedAction : null,
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={t('profile.searchOpenControlsA11y')}
+    >
+      <Ionicons name="search" size={16} color={palette.text.primary} />
+      <AppText numberOfLines={1} style={styles.collapsedTriggerText}>
+        {collapsedTriggerLabel}
+      </AppText>
+    </Pressable>
   );
 
   return (
-    <Screen title={t('tabs.myVideos')} contentStyle={styles.container}>
+    <Screen contentStyle={styles.container}>
       <KeyboardAvoidingView
         style={styles.keyboardContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        <View style={styles.listHost}>
+          <FloatingSearchControls
+            mode={controlsMode}
+            expandedContent={expandedControls}
+            collapsedContent={collapsedControls}
+            expandedAnimatedStyle={expandedAnimatedStyle}
+            collapsedAnimatedStyle={collapsedAnimatedStyle}
+            onMeasureHeight={(nextHeight) => {
+              if (nextHeight !== controlsHeight) {
+                setControlsHeight(nextHeight);
+              }
+            }}
+            containerStyle={styles.controlsOverlay}
+          />
         <FlatList
           ref={listRef}
           data={displayVideos}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          ListHeaderComponent={listHeader}
-          stickyHeaderIndices={[0]}
           viewabilityConfig={viewabilityConfig}
           onViewableItemsChanged={onViewableItemsChanged}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
           onScroll={handleListScroll}
+          onTouchStart={handleListTouchStart}
           onScrollBeginDrag={onControlsScrollBeginDrag}
           onScrollEndDrag={onControlsScrollEndDrag}
           onMomentumScrollBegin={onControlsMomentumBegin}
@@ -535,8 +529,13 @@ export function MyVideosScreen() {
               </View>
             )
           }
-          contentContainerStyle={[styles.listContent, displayVideos.length === 0 ? styles.listEmptyContainer : null]}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingTop: listTopInset },
+            displayVideos.length === 0 ? styles.listEmptyContainer : null,
+          ]}
         />
+        </View>
       </KeyboardAvoidingView>
       <ConfirmModal
         visible={Boolean(pendingDeleteId)}
@@ -568,11 +567,15 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: layoutConfig.list.headerGap,
   },
+  listHost: {
+    flex: 1,
+  },
+  controlsOverlay: {
+    left: 0,
+    right: 0,
+  },
   controlsWrap: {
     gap: layoutConfig.list.headerGap,
-  },
-  controlsWrapAnimated: {
-    overflow: 'hidden',
   },
   controlsCard: {
     gap: spacing.sm,
@@ -643,6 +646,20 @@ const styles = StyleSheet.create({
   },
   pressedAction: {
     transform: [{ scale: 0.98 }],
+  },
+  collapsedTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    alignSelf: 'flex-start',
+  },
+  collapsedTriggerText: {
+    maxWidth: 230,
+    opacity: 0.9,
   },
   listContent: {
     paddingBottom: spacing.xxxl,
