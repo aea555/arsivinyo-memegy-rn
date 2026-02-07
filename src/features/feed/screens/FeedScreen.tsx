@@ -161,11 +161,12 @@ export function FeedScreen() {
   }, [activeIndex, applyActiveIndex, isFocused, videos.length]);
 
   useEffect(() => {
-    applyActiveIndex(0, 'sort');
+    pausedIndexRef.current = 0;
+    setActiveIndex((prev) => (prev === 0 ? prev : 0));
     requestAnimationFrame(() => {
       listRef.current?.scrollToOffset({ offset: 0, animated: false });
     });
-  }, [applyActiveIndex, sort]);
+  }, [sort]);
 
   useEffect(() => {
     if (videos.length === 0) return;
