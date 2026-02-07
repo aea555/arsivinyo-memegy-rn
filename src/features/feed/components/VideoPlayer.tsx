@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AppState, AppStateStatus, StyleSheet, View } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
@@ -8,23 +8,46 @@ import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 type VideoPlayerProps = {
   uri: string;
   isActive: boolean;
+  isScreenActive?: boolean;
 };
 
-export function VideoPlayer({ uri, isActive }: VideoPlayerProps) {
+export function VideoPlayer({ uri, isActive, isScreenActive = true }: VideoPlayerProps) {
   const { palette } = useTheme();
   const autoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
+  const [appState, setAppState] = React.useState<AppStateStatus>(AppState.currentState);
   const player = useVideoPlayer(uri, (playerInstance) => {
     playerInstance.loop = true;
     playerInstance.muted = false;
   });
 
   useEffect(() => {
-    if (isActive && autoPlayVideos) {
-      player.play();
-    } else {
-      player.pause();
+    const subscription = AppState.addEventListener('change', setAppState);
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    const shouldPlay =
+      isActive &&
+      isScreenActive &&
+      autoPlayVideos &&
+      appState === 'active';
+
+    try {
+      if (shouldPlay) {
+        player.play();
+      } else {
+        player.pause();
+      }
+    } catch (error) {
+      if (__DEV__) {
+        console.debug('[video] play/pause skipped for released player', {
+          uri,
+          shouldPlay,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
-  }, [isActive, autoPlayVideos, player]);
+  }, [appState, autoPlayVideos, isActive, isScreenActive, player, uri]);
 
   return (
     <View style={[styles.container, { backgroundColor: palette.surface }]}>

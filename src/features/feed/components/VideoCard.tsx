@@ -6,42 +6,73 @@ import { VideoPlayer } from './VideoPlayer';
 import { useToggleLike } from '@/src/features/feed/hooks/useToggleLike';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Card } from '@/src/shared/components/ui/Card';
-import { Button } from '@/src/shared/components/ui/Button';
+import { LikeButton } from '@/src/shared/components/ui/LikeButton';
 import { spacing } from '@/src/shared/theme/spacing';
-import { formatCount, formatDate } from '@/src/shared/utils/formatters';
+import { useTheme } from '@/src/shared/theme/ThemeProvider';
+import { formatDate } from '@/src/shared/utils/formatters';
 import { VideoFeedItem } from '@/src/shared/types/api';
 
 type VideoCardProps = {
   video: VideoFeedItem;
   isActive: boolean;
+  isScreenActive?: boolean;
+  showUploader?: boolean;
+  showAnonymousBadge?: boolean;
 };
 
-export function VideoCard({ video, isActive }: VideoCardProps) {
+export function VideoCard({
+  video,
+  isActive,
+  isScreenActive = true,
+  showUploader = true,
+  showAnonymousBadge = false,
+}: VideoCardProps) {
   const { t } = useTranslation();
+  const { palette } = useTheme();
   const toggleLike = useToggleLike(video.id);
   const showLike = video.is_liked !== undefined;
+  const metaLine = showUploader
+    ? `${video.uploader ? `@${video.uploader.username}` : t('video.anonymous')} - ${formatDate(video.created_at)}`
+    : formatDate(video.created_at);
 
   return (
     <Card style={styles.card}>
-      <VideoPlayer uri={video.url} isActive={isActive} />
+      <VideoPlayer uri={video.url} isActive={isActive} isScreenActive={isScreenActive} />
       <View style={styles.meta}>
         <View style={styles.metaText}>
-          <AppText variant="bodyBold">{video.title ?? t('video.untitled')}</AppText>
-          <AppText variant="caption">
-            {video.uploader ? `@${video.uploader.username}` : 'Anonymous'} - {formatDate(video.created_at)}
-          </AppText>
+          <View style={styles.titleRow}>
+            <AppText variant="bodyBold" style={styles.titleText}>
+              {video.title ?? t('video.untitled')}
+            </AppText>
+          </View>
+          <AppText variant="caption">{metaLine}</AppText>
+          {showAnonymousBadge ? (
+            <View
+              style={[
+                styles.anonymousBadge,
+                {
+                  borderColor: palette.border,
+                  backgroundColor: palette.background,
+                },
+              ]}
+            >
+              <AppText variant="caption" style={styles.anonymousBadgeText}>
+                {t('video.anonymous')}
+              </AppText>
+            </View>
+          ) : null}
         </View>
         <View style={styles.likes}>
-          <AppText variant="caption">{t('video.likes')}</AppText>
-          <AppText variant="bodyBold">{formatCount(video.like_count)}</AppText>
           {showLike ? (
-            <Button
-              label={video.is_liked ? t('video.unlike') : t('video.like')}
-              onPress={() => toggleLike.mutate()}
+            <LikeButton
+              liked={video.is_liked ?? false}
+              count={video.like_count}
+              onPress={() => toggleLike.mutate({ currentLiked: video.is_liked ?? false })}
               disabled={toggleLike.isPending}
-              variant={video.is_liked ? 'secondary' : 'primary'}
             />
-          ) : null}
+          ) : (
+            <AppText variant="caption">{video.like_count}</AppText>
+          )}
         </View>
       </View>
     </Card>
@@ -62,9 +93,28 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.xs,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  titleText: {
+    flexShrink: 1,
+  },
+  anonymousBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  anonymousBadgeText: {
+    fontSize: 11,
+  },
   likes: {
-    width: 120,
+    width: 110,
     gap: spacing.xs,
     alignItems: 'flex-end',
+    justifyContent: 'center',
   },
 });

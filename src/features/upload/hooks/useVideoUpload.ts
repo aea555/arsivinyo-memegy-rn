@@ -73,5 +73,9 @@ export async function uploadVideo({
 
 export async function getVideoSize(uri: string) {
   const info = await FileSystem.getInfoAsync(uri);
-  return info.size ?? 0;
+  if (!info.exists) return 0;
+  if ('size' in info && typeof info.size === 'number') {
+    return info.size;
+  }
+  return 0;
 }

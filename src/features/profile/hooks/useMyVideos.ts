@@ -1,14 +1,14 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 
 import { getMyVideos } from '@/src/features/profile/api/profileApi';
-import { FEED_PAGE_SIZE } from '@/src/shared/utils/constants';
+import { MY_VIDEOS_PAGE_SIZE } from '@/src/shared/utils/constants';
 
 export function useMyVideos() {
   return useInfiniteQuery({
     queryKey: ['myVideos'],
-    queryFn: ({ pageParam = 0 }) => getMyVideos(pageParam, FEED_PAGE_SIZE),
-    initialPageParam: 0,
+    queryFn: ({ pageParam = 1 }) => getMyVideos(pageParam, MY_VIDEOS_PAGE_SIZE),
+    initialPageParam: 1,
     getNextPageParam: (lastPage, pages) =>
-      lastPage.length === FEED_PAGE_SIZE ? pages.length : undefined,
+      lastPage.length === MY_VIDEOS_PAGE_SIZE ? pages.length + 1 : undefined,
   });
 }

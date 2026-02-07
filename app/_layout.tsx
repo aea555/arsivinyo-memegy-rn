@@ -10,6 +10,7 @@ import { I18nextProvider } from 'react-i18next';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { SplashScreen as AppSplashScreen } from '@/src/features/auth/screens/SplashScreen';
+import { useMyVideosRealtimeSync } from '@/src/features/profile/hooks/useMyVideosRealtimeSync';
 import i18n from '@/src/shared/locales/i18n';
 import { queryClient } from '@/src/shared/services/api/queryClient';
 import { LocalStorage } from '@/src/shared/services/storage/LocalStorage';
@@ -44,6 +45,8 @@ export default function RootLayout() {
   const segments = useSegments();
   const { status, hydrate } = useAuthStore();
   const hydrateAppSettings = useAppSettingsStore((state) => state.hydrate);
+
+  useMyVideosRealtimeSync();
 
   const [fontsLoaded] = useFonts({
     Comfortaa_300Light,

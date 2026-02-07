@@ -1,7 +1,9 @@
 import { Platform } from 'react-native';
 
-const iosShadow = (opacity: number, radius: number, height: number) => ({
-  shadowColor: '#000',
+import { useTheme } from '@/src/shared/theme/ThemeProvider';
+
+const iosShadow = (color: string, opacity: number, radius: number, height: number) => ({
+  shadowColor: color,
   shadowOpacity: opacity,
   shadowRadius: radius,
   shadowOffset: { width: 0, height },
@@ -13,17 +15,22 @@ const androidShadow = (elevation: number) =>
     default: {},
   });
 
-export const shadows = {
+export const createShadows = (color: string) => ({
   subtle: {
-    ...iosShadow(0.08, 6, 3),
+    ...iosShadow(color, 0.08, 6, 3),
     ...androidShadow(3),
   },
   medium: {
-    ...iosShadow(0.12, 10, 6),
+    ...iosShadow(color, 0.12, 10, 6),
     ...androidShadow(6),
   },
   strong: {
-    ...iosShadow(0.2, 16, 10),
+    ...iosShadow(color, 0.2, 16, 10),
     ...androidShadow(10),
   },
-};
+});
+
+export function useShadows() {
+  const { palette } = useTheme();
+  return createShadows(palette.shadow);
+}

@@ -6,7 +6,7 @@ import { useRouter } from 'expo-router';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { spacing } from '@/src/shared/theme/spacing';
-import { shadows } from '@/src/shared/theme/shadows';
+import { useShadows } from '@/src/shared/theme/shadows';
 
 type AppHeaderProps = {
   title: string;
@@ -17,9 +17,16 @@ type AppHeaderProps = {
 export function AppHeader({ title, showBack = false, rightAction }: AppHeaderProps) {
   const router = useRouter();
   const { palette } = useTheme();
+  const shadows = useShadows();
 
   return (
-    <View style={[styles.container, { borderBottomColor: palette.border, backgroundColor: palette.background }]}>
+    <View
+      style={[
+        styles.container,
+        shadows.subtle,
+        { borderBottomColor: palette.border, backgroundColor: palette.background },
+      ]}
+    >
       <View style={styles.left}>
         {showBack ? (
           <Pressable
@@ -49,7 +56,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     minHeight: 56,
-    ...shadows.subtle,
   },
   left: {
     width: 44,

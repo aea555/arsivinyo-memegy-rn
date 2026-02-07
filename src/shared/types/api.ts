@@ -26,6 +26,8 @@ export type UploaderInfo = {
   username: string;
 };
 
+export type VideoStatus = 'DRAFT' | 'PROCESSING' | 'PUBLISHED' | 'FAILED';
+
 export type VideoFeedItem = {
   id: string;
   title?: string | null;
@@ -35,6 +37,34 @@ export type VideoFeedItem = {
   uploader?: UploaderInfo | null;
   is_liked?: boolean;
   description?: string | null;
+};
+
+export type UserVideoDto = {
+  id: string;
+  title?: string | null;
+  description?: string | null;
+  status: VideoStatus;
+  created_at: string;
+  updated_at: string;
+  is_anonymous: boolean;
+  like_count: number;
+  is_liked?: boolean;
+  url: string | null;
+  uploader?: UploaderInfo | null;
+};
+
+export type MyVideoItem = {
+  id: string;
+  title?: string | null;
+  description?: string | null;
+  status: VideoStatus;
+  created_at: string;
+  updated_at: string;
+  is_anonymous: boolean;
+  like_count: number;
+  is_liked: boolean;
+  uploader: UploaderInfo | null;
+  url: string | null;
 };
 
 export type InitUploadRequest = {

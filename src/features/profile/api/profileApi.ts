@@ -1,5 +1,7 @@
 import { apiClient } from '@/src/shared/services/api/apiClient';
-import { UserDto, VideoFeedItem } from '@/src/shared/types/api';
+import { useAuthStore } from '@/src/store/authStore';
+import { mapUserVideoDtoToMyVideoItem } from '@/src/features/profile/utils/myVideoMapper';
+import { UserDto, UserVideoDto } from '@/src/shared/types/api';
 
 export async function getMyProfile() {
   const response = await apiClient.get<UserDto>('/users/me');
@@ -7,10 +9,46 @@ export async function getMyProfile() {
 }
 
 export async function getMyVideos(page: number, limit: number) {
-  const response = await apiClient.get<VideoFeedItem[]>('/users/me/videos', {
-    params: { page, limit },
-  });
-  return response.data;
+  const endpoint = '/users/me/videos';
+  const params = { page, per_page: limit };
+
+  if (__DEV__) {
+    console.debug('[myVideos] request', {
+      method: 'GET',
+      endpoint,
+      params,
+    });
+  }
+
+  try {
+    const response = await apiClient.get<UserVideoDto[]>(endpoint, {
+      params,
+    });
+
+    const currentUser = useAuthStore.getState().user;
+    const mapped = response.data.map((item) => mapUserVideoDtoToMyVideoItem(item, currentUser));
+
+    if (__DEV__) {
+      console.debug('[myVideos] response', {
+        endpoint,
+        status: response.status,
+        count: Array.isArray(response.data) ? response.data.length : 0,
+        data: response.data,
+      });
+    }
+
+    return mapped;
+  } catch (error: any) {
+    if (__DEV__) {
+      console.debug('[myVideos] error', {
+        endpoint,
+        status: error?.response?.status,
+        data: error?.response?.data,
+        message: error?.message,
+      });
+    }
+    throw error;
+  }
 }
 
 export async function deleteAccount() {

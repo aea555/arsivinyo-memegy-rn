@@ -2,10 +2,11 @@ import React from 'react';
 import { StyleSheet, View, ViewProps } from 'react-native';
 
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
-import { shadows } from '@/src/shared/theme/shadows';
+import { useShadows } from '@/src/shared/theme/shadows';
 
 export function Card({ style, ...rest }: ViewProps) {
   const { palette } = useTheme();
+  const shadows = useShadows();
 
   return (
     <View

@@ -1,12 +1,18 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 
-import { getFeed } from '@/src/features/feed/api/feedApi';
+import { FeedSort, getFeed } from '@/src/features/feed/api/feedApi';
 import { FEED_PAGE_SIZE } from '@/src/shared/utils/constants';
 
-export function useFeed(sort: 'random' | 'latest' | 'popular', options?: { enabled?: boolean }) {
+function normalizeFeedSort(sort: FeedSort): 'random' | 'latest' | 'popular' {
+  return sort === 'newest' ? 'latest' : sort;
+}
+
+export function useFeed(sort: FeedSort, options?: { enabled?: boolean }) {
+  const normalizedSort = normalizeFeedSort(sort);
+
   return useInfiniteQuery({
-    queryKey: ['feed', sort],
-    queryFn: ({ pageParam = 0 }) => getFeed(sort, pageParam),
+    queryKey: ['feed', normalizedSort],
+    queryFn: ({ pageParam = 0 }) => getFeed(normalizedSort, pageParam),
     getNextPageParam: (lastPage, pages) =>
       lastPage.length === FEED_PAGE_SIZE ? pages.length : undefined,
     initialPageParam: 0,

@@ -1,16 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
-  DeviceEventEmitter,
   KeyboardAvoidingView,
   Modal,
-  NativeEventEmitter,
-  NativeModules,
   Platform,
   Pressable,
   ScrollView,
@@ -26,6 +23,7 @@ import { Button } from '@/src/shared/components/ui/Button';
 import { Input } from '@/src/shared/components/ui/Input';
 import { queryClient } from '@/src/shared/services/api/queryClient';
 import { spacing } from '@/src/shared/theme/spacing';
+import { useShadows } from '@/src/shared/theme/shadows';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 
@@ -74,7 +72,7 @@ const UploadVideoPreview = React.memo(function UploadVideoPreview({
         isFullscreen ? styles.previewFullscreen : styles.preview,
         {
           borderColor: palette.border,
-          backgroundColor: '#000000',
+          backgroundColor: palette.mediaBackground,
           aspectRatio: isFullscreen ? undefined : 16 / 9,
         },
       ]}
@@ -86,16 +84,16 @@ const UploadVideoPreview = React.memo(function UploadVideoPreview({
         nativeControls={false}
       />
       <Pressable style={styles.previewOverlay} onPress={onTogglePlay} accessibilityRole="button">
-        <View style={[styles.previewControl, isPlaying ? styles.previewHidden : null]}>
-          <Ionicons name={isPlaying ? 'pause' : 'play'} size={18} color="#FFFFFF" />
+        <View style={[styles.previewControl, { backgroundColor: palette.mediaControl }, isPlaying ? styles.previewHidden : null]}>
+          <Ionicons name={isPlaying ? 'pause' : 'play'} size={18} color={palette.mediaControlText} />
         </View>
       </Pressable>
       <View style={styles.previewControls}>
-        <Pressable onPress={onToggleFullscreen} style={styles.previewControlButton} hitSlop={8}>
-          <Ionicons name="expand" size={20} color="#FFFFFF" />
+        <Pressable onPress={onToggleFullscreen} style={[styles.previewControlButton, { backgroundColor: palette.mediaControl }]} hitSlop={8}>
+          <Ionicons name="expand" size={20} color={palette.mediaControlText} />
         </Pressable>
-        <Pressable onPress={onToggleLoop} style={styles.previewControlButton} hitSlop={8}>
-          <Ionicons name={isLooping ? "repeat" : "repeat-outline"} size={20} color={isLooping ? "#4CAF50" : "#FFFFFF"} />
+        <Pressable onPress={onToggleLoop} style={[styles.previewControlButton, { backgroundColor: palette.mediaControl }]} hitSlop={8}>
+          <Ionicons name={isLooping ? "repeat" : "repeat-outline"} size={20} color={isLooping ? palette.success : palette.mediaControlText} />
         </Pressable>
       </View>
     </View>
@@ -105,6 +103,7 @@ const UploadVideoPreview = React.memo(function UploadVideoPreview({
 export function UploadScreen() {
   const { t } = useTranslation();
   const { palette } = useTheme();
+  const shadows = useShadows();
   const router = useRouter();
   const autoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
 
@@ -182,64 +181,6 @@ export function UploadScreen() {
     }
   };
 
-  const handleTrimComplete = React.useCallback((e: any) => {
-    console.log('✅ Trim complete! Event data:', JSON.stringify(e, null, 2));
-    console.log('Previous URI:', assetUri);
-    console.log('New URI:', e.outputPath);
-    setAssetUri(e.outputPath);
-    setFilename('trimmed_' + (filename || 'video.mp4'));
-    setIsPreviewPlaying(false);
-    Alert.alert('✅ Success', `Video trimmed!\n\nOld: ${assetUri?.substring(assetUri.lastIndexOf('/') + 1)}\nNew: ${e.outputPath?.substring(e.outputPath.lastIndexOf('/') + 1)}`);
-  }, [assetUri, filename]);
-
-  useEffect(() => {
-    console.log('🔧 Setting up trim event listeners...');
-
-    // Try both iOS and Android patterns
-    const iosEmitter = new NativeEventEmitter(NativeModules.VideoTrim);
-    const androidEmitter = DeviceEventEmitter;
-
-    // Subscribe to both to see which one works
-    const subscriptions: any[] = [];
-
-    ['onFinishTrimming', 'VideoTrimFinished', 'onComplete'].forEach(eventName => {
-      subscriptions.push(
-        iosEmitter.addListener(eventName, (e: any) => {
-          console.log(`✅ iOS event '${eventName}':`, e);
-          handleTrimComplete(e)
-        })
-      );
-
-      subscriptions.push(
-        androidEmitter.addListener(eventName, (e: any) => {
-          console.log(`✅ Android event '${eventName}':`, e);
-          handleTrimComplete(e);
-        })
-      );
-    });
-
-    ['onError', 'VideoTrimError'].forEach(eventName => {
-      subscriptions.push(
-        iosEmitter.addListener(eventName, (e: any) => {
-          console.error(`❌ iOS error '${eventName}':`, e);
-          Alert.alert(t('common.error'), e.message || t('upload.trimError'));
-        })
-      );
-
-      subscriptions.push(
-        androidEmitter.addListener(eventName, (e: any) => {
-          console.error(`❌ Android error '${eventName}':`, e);
-          Alert.alert(t('common.error'), e.message || t('upload.trimError'));
-        })
-      );
-    });
-
-    return () => {
-      console.log('🧹 Cleaning up trim listeners');
-      subscriptions.forEach(sub => sub?.remove?.());
-    };
-  }, [t, handleTrimComplete]);
-
   const handleRemove = () => {
     setAssetUri(null);
     setFilename('');
@@ -284,8 +225,8 @@ export function UploadScreen() {
               onPress={handleRemove}
               hitSlop={8}
             >
-              <View style={[styles.removeIconContainer, { backgroundColor: palette.error }]}>
-                <Ionicons name="trash" size={16} color="#FFFFFF" />
+              <View style={[styles.removeIconContainer, shadows.subtle, { backgroundColor: palette.error }]}>
+                <Ionicons name="trash" size={16} color={palette.onAccent} />
               </View>
             </Pressable>
           </View>
@@ -362,7 +303,7 @@ export function UploadScreen() {
           onRequestClose={() => setShowFullscreen(false)}
           statusBarTranslucent
         >
-          <View style={styles.fullscreenContainer}>
+          <View style={[styles.fullscreenContainer, { backgroundColor: palette.mediaBackground }]}>
             <View style={styles.fullscreenVideoWrapper}>
               <UploadVideoPreview
                 player={videoPlayer}
@@ -380,7 +321,7 @@ export function UploadScreen() {
               onPress={() => setShowFullscreen(false)}
               hitSlop={12}
             >
-              <Ionicons name="close-circle" size={40} color="#FFFFFF" />
+              <Ionicons name="close-circle" size={40} color={palette.mediaControlText} />
             </Pressable>
           </View>
         </Modal>
@@ -436,7 +377,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -483,11 +423,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
   previewControls: {
     position: 'absolute',
@@ -500,7 +435,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.6)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -512,7 +446,6 @@ const styles = StyleSheet.create({
   },
   fullscreenContainer: {
     flex: 1,
-    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
   },

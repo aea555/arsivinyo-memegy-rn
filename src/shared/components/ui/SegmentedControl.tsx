@@ -34,7 +34,7 @@ export function SegmentedControl({ options, value, onChange }: SegmentedControlP
               hovered && styles.hovered,
             ]}
           >
-            <Text style={[styles.label, { color: active ? '#FFFFFF' : palette.text.primary }]}>
+            <Text style={[styles.label, { color: active ? palette.onAccent : palette.text.primary }]}>
               {option.label}
             </Text>
           </Pressable>

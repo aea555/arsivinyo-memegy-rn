@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, View, ViewProps } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
@@ -15,6 +16,7 @@ type ScreenProps = ViewProps & {
 
 export function Screen({ style, title, showBack, rightAction, contentStyle, children, ...rest }: ScreenProps) {
   const { palette } = useTheme();
+  const hasGradient = Boolean(palette.backgroundGradient);
 
   return (
     <SafeAreaView
@@ -22,6 +24,15 @@ export function Screen({ style, title, showBack, rightAction, contentStyle, chil
       {...rest}
       edges={['top', 'left', 'right']}
     >
+      {hasGradient ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[palette.backgroundGradient!.start, palette.backgroundGradient!.end]}
+          start={{ x: 0.08, y: 0.02 }}
+          end={{ x: 0.96, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
       {title ? <AppHeader title={title} showBack={showBack} rightAction={rightAction} /> : null}
       <View style={[styles.content, title ? styles.withHeader : styles.noHeader, contentStyle]}>
         {children}

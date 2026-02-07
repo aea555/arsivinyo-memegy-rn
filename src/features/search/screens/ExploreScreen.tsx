@@ -1,4 +1,5 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useIsFocused } from '@react-navigation/native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FlatList, KeyboardAvoidingView, Platform, StyleSheet, View, ViewToken } from 'react-native';
 
@@ -20,6 +21,7 @@ const viewabilityConfig = {
 
 export function ExploreScreen() {
   const { t } = useTranslation();
+  const isFocused = useIsFocused();
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<'relevance' | 'recent' | 'popular'>('relevance');
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -61,9 +63,17 @@ export function ExploreScreen() {
   const fetchNextPage = isSearching ? fetchNextSearch : fetchNextPopular;
 
   const renderItem = useCallback(
-    ({ item }: { item: VideoFeedItem }) => <VideoCard video={item} isActive={activeId === item.id} />,
-    [activeId]
+    ({ item }: { item: VideoFeedItem }) => (
+      <VideoCard video={item} isActive={activeId === item.id} isScreenActive={isFocused} />
+    ),
+    [activeId, isFocused]
   );
+
+  useEffect(() => {
+    if (!isFocused) {
+      setActiveId(null);
+    }
+  }, [isFocused]);
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {

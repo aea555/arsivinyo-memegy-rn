@@ -1,7 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 import { SecureStorage } from '../storage/SecureStorage';
-import { notifyLogout } from './authEvents';
+import { notifyLogout, notifyTokenRefresh } from './authEvents';
 import { API_BASE_URL } from '@/src/shared/utils/env';
 
 export const apiClient = axios.create({
@@ -94,6 +94,7 @@ apiClient.interceptors.response.use(
         };
 
         await SecureStorage.setTokens(access_token, refresh_token);
+        notifyTokenRefresh();
         apiClient.defaults.headers.common.Authorization = `Bearer ${access_token}`;
         originalRequest.headers.Authorization = `Bearer ${access_token}`;
         processQueue(null, access_token);
