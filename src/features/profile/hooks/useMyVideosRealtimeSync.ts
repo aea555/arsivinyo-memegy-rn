@@ -21,6 +21,10 @@ const LIVE_EVENT_TYPES = new Set([
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const BASE_RECONNECT_DELAY_MS = 1_000;
 const RECONNECT_JITTER_MS = 500;
+const WS_UNAUTHORIZED_BASE_DELAY_MS = 5_000;
+const WS_RATE_LIMIT_BASE_DELAY_MS = 30_000;
+const WS_RATE_LIMIT_MAX_DELAY_MS = 5 * 60_000;
+const WS_TOKEN_MIN_VALIDITY_MS = 15_000;
 const MAX_SEEN_EVENT_IDS = 250;
 const BACKGROUND_CLOSE_GRACE_MS = 3_000;
 const STABLE_CONNECTION_MS = 12_000;
@@ -46,6 +50,8 @@ type LiveStatusEvent = {
   previous_status: string | null;
   video: UserVideoDto;
 };
+
+type WsCloseReasonClass = 'unauthorized' | 'rate_limited' | 'abnormal' | 'other';
 
 function buildMyVideosWsUrl() {
   try {
@@ -110,6 +116,14 @@ function upsertByUpdatedAt(items: MyVideoItem[], incoming: MyVideoItem) {
 function truncateForLog(payload: string) {
   if (payload.length <= 220) return payload;
   return `${payload.slice(0, 220)}...`;
+}
+
+function classifyCloseReason(code: number, reason: string): WsCloseReasonClass {
+  const lowerReason = reason.toLowerCase();
+  if (lowerReason.includes('401')) return 'unauthorized';
+  if (lowerReason.includes('429')) return 'rate_limited';
+  if (code === 1006) return 'abnormal';
+  return 'other';
 }
 
 export function useMyVideosRealtimeSync() {
@@ -241,7 +255,13 @@ export function useMyVideosRealtimeSync() {
   const scheduleReconnect = useCallback((
     trigger: string,
     connectFn: (reason: string) => Promise<void>,
-    options?: { attemptFloor?: number; minDelayMs?: number }
+    options?: {
+      attemptFloor?: number;
+      minDelayMs?: number;
+      maxDelayMs?: number;
+      closeReasonClass?: WsCloseReasonClass;
+      deferredByAuthBlock?: boolean;
+    }
   ) => {
     if (!shouldConnect()) return;
 
@@ -251,7 +271,8 @@ export function useMyVideosRealtimeSync() {
 
     reconnectAttemptsRef.current += 1;
     const exponential = BASE_RECONNECT_DELAY_MS * 2 ** (reconnectAttemptsRef.current - 1);
-    const withJitter = Math.min(MAX_RECONNECT_DELAY_MS, exponential) + Math.floor(Math.random() * RECONNECT_JITTER_MS);
+    const maxDelayMs = options?.maxDelayMs ?? MAX_RECONNECT_DELAY_MS;
+    const withJitter = Math.min(maxDelayMs, exponential) + Math.floor(Math.random() * RECONNECT_JITTER_MS);
     const delay = Math.max(options?.minDelayMs ?? 0, withJitter);
 
     if (__DEV__) {
@@ -259,6 +280,8 @@ export function useMyVideosRealtimeSync() {
         trigger,
         attempt: reconnectAttemptsRef.current,
         delayMs: delay,
+        closeReasonClass: options?.closeReasonClass,
+        deferredByAuthBlock: options?.deferredByAuthBlock ?? false,
       });
     }
 
@@ -276,19 +299,58 @@ export function useMyVideosRealtimeSync() {
       return;
     }
 
-    let token: string | null = null;
-    try {
-      token = await authSessionManager.ensureFreshToken({
-        force: false,
-        minValidityMs: 90_000,
-        reason: 'websocket',
+    sawSnapshotRef.current = false;
+    sawLiveEventRef.current = false;
+    openedAtRef.current = 0;
+
+    const refreshBlockState = authSessionManager.getRefreshBlockState();
+    const hasUsableAccess = authSessionManager.hasValidAccessToken(0);
+    if (refreshBlockState.blocked && !hasUsableAccess) {
+      const minDelayMs = Math.max(
+        WS_UNAUTHORIZED_BASE_DELAY_MS,
+        (refreshBlockState.blockedUntilMs ?? Date.now()) - Date.now()
+      );
+      scheduleReconnect('refresh_blocked', connect, {
+        minDelayMs,
+        closeReasonClass: refreshBlockState.reason === 'rate_limited' ? 'rate_limited' : 'abnormal',
+        deferredByAuthBlock: true,
       });
-    } catch {
-      const fallbackToken = authSessionManager.getAccessToken();
-      if (!fallbackToken || !authSessionManager.hasValidAccessToken()) {
-        return;
+      return;
+    }
+
+    let token: string | null = null;
+    const existingToken = authSessionManager.getAccessToken();
+    if (existingToken && authSessionManager.hasValidAccessToken(WS_TOKEN_MIN_VALIDITY_MS)) {
+      token = existingToken;
+    } else {
+      try {
+        token = await authSessionManager.ensureFreshToken({
+          force: false,
+          minValidityMs: WS_TOKEN_MIN_VALIDITY_MS,
+          reason: 'websocket',
+        });
+      } catch (error) {
+        if (authSessionManager.isTerminalRefreshFailure(error)) {
+          void useAuthStore.getState().logout();
+          return;
+        }
+
+        const fallbackToken = authSessionManager.getAccessToken();
+        if (!fallbackToken || !authSessionManager.hasValidAccessToken(0)) {
+          const blockState = authSessionManager.getRefreshBlockState();
+          const minDelayMs = Math.max(
+            WS_UNAUTHORIZED_BASE_DELAY_MS,
+            (blockState.blockedUntilMs ?? Date.now() + WS_UNAUTHORIZED_BASE_DELAY_MS) - Date.now()
+          );
+          scheduleReconnect('refresh_unavailable', connect, {
+            minDelayMs,
+            closeReasonClass: blockState.reason === 'rate_limited' ? 'rate_limited' : 'abnormal',
+            deferredByAuthBlock: true,
+          });
+          return;
+        }
+        token = fallbackToken;
       }
-      token = fallbackToken;
     }
 
     if (!token) {
@@ -388,9 +450,11 @@ export function useMyVideosRealtimeSync() {
       }
 
       if (__DEV__) {
+        const closeReasonClass = classifyCloseReason(event.code, event.reason ?? '');
         console.debug('[myVideos.ws] close', {
           code: event.code,
           reason: event.reason,
+          closeReasonClass,
         });
       }
 
@@ -401,8 +465,9 @@ export function useMyVideosRealtimeSync() {
 
       const lifetimeMs = openedAtRef.current ? Date.now() - openedAtRef.current : 0;
       const isStable = lifetimeMs >= STABLE_CONNECTION_MS;
+      const closeReasonClass = classifyCloseReason(event.code, event.reason ?? '');
 
-      if (isStable || sawLiveEventRef.current) {
+      if (isStable) {
         reconnectAttemptsRef.current = 0;
       }
 
@@ -416,11 +481,60 @@ export function useMyVideosRealtimeSync() {
         scheduleReconnect('socket_close_snapshot_only', connect, {
           attemptFloor: SNAPSHOT_CLOSE_ATTEMPT_FLOOR,
           minDelayMs: SNAPSHOT_CLOSE_MIN_DELAY_MS,
+          closeReasonClass,
         });
         return;
       }
 
-      scheduleReconnect('socket_close', connect);
+      if (closeReasonClass === 'rate_limited') {
+        scheduleReconnect('socket_close_rate_limited', connect, {
+          minDelayMs: WS_RATE_LIMIT_BASE_DELAY_MS,
+          maxDelayMs: WS_RATE_LIMIT_MAX_DELAY_MS,
+          closeReasonClass,
+        });
+        return;
+      }
+
+      if (closeReasonClass === 'unauthorized') {
+        void (async () => {
+          try {
+            await authSessionManager.ensureFreshToken({
+              force: true,
+              reason: 'websocket',
+            });
+            scheduleReconnect('socket_close_unauthorized_refreshed', connect, {
+              minDelayMs: WS_UNAUTHORIZED_BASE_DELAY_MS,
+              closeReasonClass,
+            });
+          } catch (error) {
+            if (authSessionManager.isTerminalRefreshFailure(error)) {
+              void useAuthStore.getState().logout();
+              return;
+            }
+            const blockState = authSessionManager.getRefreshBlockState();
+            const minDelayMs = Math.max(
+              WS_UNAUTHORIZED_BASE_DELAY_MS,
+              (blockState.blockedUntilMs ?? Date.now() + WS_UNAUTHORIZED_BASE_DELAY_MS) - Date.now()
+            );
+            scheduleReconnect('socket_close_unauthorized_refresh_failed', connect, {
+              minDelayMs,
+              closeReasonClass: blockState.reason === 'rate_limited' ? 'rate_limited' : closeReasonClass,
+              deferredByAuthBlock: true,
+            });
+          }
+        })();
+        return;
+      }
+
+      if (closeReasonClass === 'abnormal') {
+        scheduleReconnect('socket_close_abnormal', connect, {
+          minDelayMs: WS_UNAUTHORIZED_BASE_DELAY_MS,
+          closeReasonClass,
+        });
+        return;
+      }
+
+      scheduleReconnect('socket_close', connect, { closeReasonClass });
     };
   }, [rememberEventId, replaceFromSnapshot, scheduleReconnect, shouldConnect, upsertFromLiveEvent, wsUrl]);
 
@@ -482,6 +596,19 @@ export function useMyVideosRealtimeSync() {
         console.debug('[myVideos.ws] token refresh restart');
       }
       closeSocket('token_refresh', true);
+      const blockState = authSessionManager.getRefreshBlockState();
+      if (blockState.blocked) {
+        const minDelayMs = Math.max(
+          WS_UNAUTHORIZED_BASE_DELAY_MS,
+          (blockState.blockedUntilMs ?? Date.now() + WS_UNAUTHORIZED_BASE_DELAY_MS) - Date.now()
+        );
+        scheduleReconnect('token_refresh_blocked', connect, {
+          minDelayMs,
+          closeReasonClass: blockState.reason === 'rate_limited' ? 'rate_limited' : 'abnormal',
+          deferredByAuthBlock: true,
+        });
+        return;
+      }
       void connect('token_refresh');
     });
 
@@ -492,5 +619,5 @@ export function useMyVideosRealtimeSync() {
       clearBackgroundCloseTimer();
       closeSocket('unmount', true);
     };
-  }, [clearBackgroundCloseTimer, closeSocket, connect, shouldConnect]);
+  }, [clearBackgroundCloseTimer, closeSocket, connect, scheduleReconnect, shouldConnect]);
 }

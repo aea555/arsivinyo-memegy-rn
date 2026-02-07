@@ -22,6 +22,7 @@ export function ShareButton({ url, title, variant = 'default', iconOnly = false 
   const showToast = useToastStore((state) => state.showToast);
   const isOverlay = variant === 'overlay';
   const baseColor = palette.accent;
+  const iconColor = iconOnly ? palette.text.primary : isOverlay ? palette.onAccent : baseColor;
   const buttonStyle = isOverlay
     ? iconOnly
       ? styles.overlayIconButton
@@ -53,16 +54,26 @@ export function ShareButton({ url, title, variant = 'default', iconOnly = false 
       style={({ pressed }) => [
         buttonStyle,
         {
-          borderColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.48),
-          backgroundColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.14),
+          borderColor: iconOnly
+            ? withAlpha(palette.border, 0.85)
+            : isOverlay
+              ? withAlpha(baseColor, 0.9)
+              : withAlpha(baseColor, 0.48),
+          backgroundColor: iconOnly
+            ? withAlpha(palette.overlay, 0.9)
+            : isOverlay
+              ? withAlpha(baseColor, 0.9)
+              : withAlpha(baseColor, 0.14),
         },
         pressed
           ? [
               styles.pressed,
               {
-                backgroundColor: isOverlay
-                  ? withAlpha(baseColor, 0.84)
-                  : withAlpha(baseColor, 0.22),
+                backgroundColor: iconOnly
+                  ? withAlpha(palette.overlay, 0.82)
+                  : isOverlay
+                    ? withAlpha(baseColor, 0.84)
+                    : withAlpha(baseColor, 0.22),
               },
             ]
           : null,
@@ -74,14 +85,14 @@ export function ShareButton({ url, title, variant = 'default', iconOnly = false 
         <Ionicons
           name="share-social-outline"
           size={isOverlay ? 24 : 20}
-          color={isOverlay ? palette.onAccent : baseColor}
+          color={iconColor}
         />
       ) : (
         <View style={isOverlay ? styles.overlayIconWrap : styles.iconWrap}>
           <Ionicons
             name="share-social-outline"
             size={isOverlay ? 18 : 16}
-            color={isOverlay ? palette.onAccent : baseColor}
+            color={iconColor}
           />
         </View>
       )}

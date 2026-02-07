@@ -353,18 +353,16 @@ export function MyVideosScreen() {
   );
 
   useEffect(() => {
-    if (!isFocused) {
+    if (!isFocused) return;
+    if (displayVideos.length === 0) {
       setActiveId(null);
+      return;
     }
-  }, [isFocused]);
-
-  useEffect(() => {
-    if (!activeId) return;
-    const exists = displayVideos.some((item) => item.id === activeId);
-    if (!exists) {
-      setActiveId(null);
-    }
-  }, [activeId, displayVideos]);
+    const hasActive = activeId ? displayVideos.some((item) => item.id === activeId) : false;
+    if (hasActive) return;
+    const firstPlayable = displayVideos.find((item) => isPlayable(item));
+    setActiveId(firstPlayable?.id ?? null);
+  }, [activeId, displayVideos, isFocused, isPlayable]);
 
   useEffect(() => {
     const wasSearching = wasSearchingRef.current;

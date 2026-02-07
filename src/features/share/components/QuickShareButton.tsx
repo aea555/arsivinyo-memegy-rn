@@ -27,6 +27,7 @@ export function QuickShareButton({
   const { isBusy, onQuickShare } = useQuickShareVideo(videoId, suggestedName);
   const isOverlay = variant === 'overlay';
   const baseColor = palette.success;
+  const iconColor = iconOnly ? palette.text.primary : isOverlay ? palette.onAccent : baseColor;
   const buttonStyle = isOverlay
     ? iconOnly
       ? styles.overlayIconButton
@@ -42,17 +43,27 @@ export function QuickShareButton({
       style={({ pressed }) => [
         buttonStyle,
         {
-          borderColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.48),
-          backgroundColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.14),
+          borderColor: iconOnly
+            ? withAlpha(palette.border, 0.85)
+            : isOverlay
+              ? withAlpha(baseColor, 0.9)
+              : withAlpha(baseColor, 0.48),
+          backgroundColor: iconOnly
+            ? withAlpha(palette.overlay, 0.9)
+            : isOverlay
+              ? withAlpha(baseColor, 0.9)
+              : withAlpha(baseColor, 0.14),
           opacity: isBusy ? 0.85 : 1,
         },
         pressed && !isBusy
           ? [
               styles.pressed,
               {
-                backgroundColor: isOverlay
-                  ? withAlpha(baseColor, 0.84)
-                  : withAlpha(baseColor, 0.22),
+                backgroundColor: iconOnly
+                  ? withAlpha(palette.overlay, 0.82)
+                  : isOverlay
+                    ? withAlpha(baseColor, 0.84)
+                    : withAlpha(baseColor, 0.22),
               },
             ]
           : null,
@@ -62,12 +73,12 @@ export function QuickShareButton({
     >
       {iconOnly ? (
         isBusy ? (
-          <ActivityIndicator size="small" color={isOverlay ? palette.onAccent : baseColor} />
+          <ActivityIndicator size="small" color={iconColor} />
         ) : (
           <Ionicons
             name="logo-whatsapp"
             size={isOverlay ? 24 : 20}
-            color={isOverlay ? palette.onAccent : baseColor}
+            color={iconColor}
           />
         )
       ) : (
@@ -75,7 +86,7 @@ export function QuickShareButton({
           <Ionicons
             name={isBusy ? 'time-outline' : 'logo-whatsapp'}
             size={isOverlay ? 18 : 16}
-            color={isOverlay ? palette.onAccent : baseColor}
+            color={iconColor}
           />
           <AppText
             variant="caption"

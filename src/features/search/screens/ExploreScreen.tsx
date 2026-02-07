@@ -166,10 +166,15 @@ export function ExploreScreen() {
   );
 
   useEffect(() => {
-    if (!isFocused) {
+    if (!isFocused) return;
+    if (videos.length === 0) {
       setActiveId(null);
+      return;
     }
-  }, [isFocused]);
+    const hasActive = activeId ? videos.some((video) => video.id === activeId) : false;
+    if (hasActive) return;
+    setActiveId(videos[0].id);
+  }, [activeId, isFocused, videos]);
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {

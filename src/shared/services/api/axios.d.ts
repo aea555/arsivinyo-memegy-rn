@@ -8,5 +8,6 @@ declare module 'axios' {
   interface InternalAxiosRequestConfig {
     _retry?: boolean;
     skipAuthRefresh?: boolean;
+    _skipProactiveRefreshOnce?: boolean;
   }
 }

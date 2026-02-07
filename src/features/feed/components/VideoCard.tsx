@@ -47,7 +47,12 @@ function VideoCardBase({
 
   return (
     <Card style={styles.card}>
-      <VideoPlayer uri={video.url} isActive={isActive} isScreenActive={isScreenActive} />
+      <VideoPlayer
+        uri={video.url}
+        isActive={isActive}
+        isScreenActive={isScreenActive}
+        showMinimalControls
+      />
       <View style={styles.meta}>
         <View style={styles.metaText}>
           <View style={styles.titleRow}>

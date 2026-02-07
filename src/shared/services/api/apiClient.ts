@@ -1,6 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-import { authSessionManager } from '@/src/shared/services/auth/authSessionManager';
+import { AuthTemporaryUnavailableError, authSessionManager } from '@/src/shared/services/auth/authSessionManager';
 import { notifyLogout } from './authEvents';
 import { API_BASE_URL } from '@/src/shared/utils/env';
 
@@ -22,31 +22,81 @@ async function clearSessionAndLogout() {
   }
 }
 
-apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
-  if (!config.skipAuthRefresh) {
-    try {
-      await authSessionManager.ensureFreshToken({
-        force: false,
-        minValidityMs: REQUEST_TOKEN_SKEW_MS,
-        reason: 'proactive',
-      });
-    } catch (error) {
-      if (__DEV__) {
-        console.debug('[api] proactive refresh failed', {
-          url: `${config.baseURL ?? ''}${config.url ?? ''}`,
-        });
-      }
+function toTemporaryAuthError(error: unknown) {
+  if (error instanceof AuthTemporaryUnavailableError) {
+    return error;
+  }
+  const blockState = authSessionManager.getRefreshBlockState();
+  return new AuthTemporaryUnavailableError(
+    authSessionManager.isRateLimitedRefreshFailure(error)
+      ? 'refresh_rate_limited'
+      : 'refresh_transient_unavailable',
+    'Authentication temporarily unavailable.',
+    undefined,
+    blockState.blockedUntilMs
+  );
+}
 
-      if (!authSessionManager.hasValidAccessToken()) {
-        await clearSessionAndLogout();
-        return Promise.reject(error);
+apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  const skipProactiveRefreshOnce = config._skipProactiveRefreshOnce === true;
+  if (skipProactiveRefreshOnce) {
+    config._skipProactiveRefreshOnce = false;
+  }
+
+  if (!config.skipAuthRefresh) {
+    const existingToken = authSessionManager.getAccessToken();
+    let proactiveDecision: 'skipped' | 'ok' | 'failed_use_stale' | 'blocked_unusable' = 'skipped';
+
+    if (!skipProactiveRefreshOnce) {
+      try {
+        await authSessionManager.ensureFreshToken({
+          force: false,
+          minValidityMs: REQUEST_TOKEN_SKEW_MS,
+          reason: 'proactive',
+        });
+        proactiveDecision = 'ok';
+      } catch (error) {
+        const hasUsableAccess = authSessionManager.hasValidAccessToken(0);
+        if (hasUsableAccess) {
+          proactiveDecision = 'failed_use_stale';
+        } else if (authSessionManager.isTerminalRefreshFailure(error)) {
+          if (__DEV__) {
+            console.debug('[api] proactive refresh failed', {
+              url: `${config.baseURL ?? ''}${config.url ?? ''}`,
+              decision: 'terminal_logout',
+              retryable: authSessionManager.isRetryableRefreshFailure(error),
+              clearSession: true,
+            });
+          }
+          await clearSessionAndLogout();
+          return Promise.reject(error);
+        } else {
+          proactiveDecision = 'blocked_unusable';
+          if (__DEV__) {
+            console.debug('[api] proactive refresh failed', {
+              url: `${config.baseURL ?? ''}${config.url ?? ''}`,
+              decision: proactiveDecision,
+              retryable: authSessionManager.isRetryableRefreshFailure(error),
+              clearSession: false,
+              blockedUntilMs: authSessionManager.getRefreshBlockState().blockedUntilMs,
+            });
+          }
+          return Promise.reject(toTemporaryAuthError(error));
+        }
       }
     }
 
     const token = authSessionManager.getAccessToken();
-    if (token) {
+    if (token ?? existingToken) {
       config.headers = config.headers ?? {};
-      config.headers.Authorization = `Bearer ${token}`;
+      config.headers.Authorization = `Bearer ${token ?? existingToken}`;
+    }
+
+    if (__DEV__ && !skipProactiveRefreshOnce) {
+      console.debug('[api] auth decision', {
+        url: `${config.baseURL ?? ''}${config.url ?? ''}`,
+        decision: proactiveDecision,
+      });
     }
   }
 
@@ -83,12 +133,22 @@ apiClient.interceptors.response.use(
             force: true,
             reason: 'reactive_401',
           });
+          originalRequest._skipProactiveRefreshOnce = true;
           originalRequest.headers = originalRequest.headers ?? {};
           originalRequest.headers.Authorization = `Bearer ${token}`;
           return apiClient(originalRequest);
         } catch (refreshError) {
-          await clearSessionAndLogout();
-          return Promise.reject(refreshError);
+          if (authSessionManager.shouldClearSessionAfterRefreshFailure(refreshError)) {
+            await clearSessionAndLogout();
+          } else if (__DEV__) {
+            console.debug('[api] reactive refresh failed (session preserved)', {
+              url: `${originalRequest.baseURL ?? ''}${originalRequest.url ?? ''}`,
+              retryable: authSessionManager.isRetryableRefreshFailure(refreshError),
+              clearSession: false,
+              blockedUntilMs: authSessionManager.getRefreshBlockState().blockedUntilMs,
+            });
+          }
+          return Promise.reject(toTemporaryAuthError(refreshError));
         }
       }
 

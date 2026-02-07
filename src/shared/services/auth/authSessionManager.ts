@@ -27,7 +27,8 @@ type AuthSessionErrorCode =
   | 'invalid_refresh_response'
   | 'session_cleared'
   | 'stale_refresh_response'
-  | 'refresh_failed';
+  | 'refresh_failed'
+  | 'refresh_unrecoverable';
 
 export class AuthSessionError extends Error {
   constructor(public code: AuthSessionErrorCode, message: string) {
@@ -36,11 +37,29 @@ export class AuthSessionError extends Error {
   }
 }
 
+type RefreshBlockReason = 'rate_limited' | 'transient';
+
+export class AuthTemporaryUnavailableError extends Error {
+  constructor(
+    public code: 'refresh_rate_limited' | 'refresh_transient_unavailable',
+    message: string,
+    public status?: number,
+    public blockedUntilMs: number | null = null
+  ) {
+    super(message);
+    this.name = 'AuthTemporaryUnavailableError';
+  }
+}
+
 const REFRESH_TIMEOUT_MS = 15_000;
 const DEFAULT_MIN_VALIDITY_MS = 90_000;
 const REFRESH_MAX_RETRIES = 2;
 const REFRESH_BACKOFF_BASE_MS = 300;
 const REFRESH_BACKOFF_JITTER_MS = 220;
+const RETRYABLE_REFRESH_COOLDOWN_MS = 8_000;
+const TRANSIENT_REFRESH_BLOCK_MS = 12_000;
+const RATE_LIMIT_DEFAULT_BLOCK_MS = 60_000;
+const MAX_REFRESH_FAILURES_WITHOUT_USABLE_ACCESS = 3;
 
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
@@ -50,6 +69,13 @@ let refreshDeferred: RefreshDeferred | null = null;
 let bootstrapPromise: Promise<void> | null = null;
 let hasBootstrapped = false;
 let writeQueue: Promise<void> = Promise.resolve();
+let lastRefreshFailure: { at: number; retryable: boolean; error: unknown } | null = null;
+let refreshConsecutiveFailures = 0;
+let refreshLastFailureAt: number | null = null;
+let refreshBlockedUntilMs: number | null = null;
+let refreshLastFailureStatus: number | null = null;
+let refreshLastFailureRetryable = false;
+let refreshBlockReason: RefreshBlockReason | null = null;
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -125,6 +151,122 @@ function getRetryDelay(attempt: number) {
   const exponential = REFRESH_BACKOFF_BASE_MS * 2 ** (attempt - 1);
   const jitter = Math.floor(Math.random() * REFRESH_BACKOFF_JITTER_MS);
   return exponential + jitter;
+}
+
+function getAxiosStatus(error: unknown) {
+  if (!isAxiosError(error)) return undefined;
+  return error.response?.status;
+}
+
+function getAxiosRetryAfter(error: unknown) {
+  if (!isAxiosError(error) || !error.response) return null;
+
+  const rawHeader = error.response.headers?.['retry-after'];
+  const headerValue = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+  if (headerValue == null) return null;
+
+  if (typeof headerValue === 'number' && Number.isFinite(headerValue) && headerValue >= 0) {
+    return headerValue * 1000;
+  }
+  if (typeof headerValue !== 'string') return null;
+
+  const numericSeconds = Number.parseInt(headerValue, 10);
+  if (Number.isFinite(numericSeconds) && numericSeconds >= 0) {
+    return numericSeconds * 1000;
+  }
+
+  const retryAtMs = Date.parse(headerValue);
+  if (!Number.isFinite(retryAtMs)) return null;
+  const delta = retryAtMs - Date.now();
+  return delta > 0 ? delta : null;
+}
+
+function clearRefreshHealthState() {
+  refreshConsecutiveFailures = 0;
+  refreshLastFailureAt = null;
+  refreshBlockedUntilMs = null;
+  refreshLastFailureStatus = null;
+  refreshLastFailureRetryable = false;
+  refreshBlockReason = null;
+}
+
+function applyRefreshBlock(reason: RefreshBlockReason, durationMs: number) {
+  const nextBlockedUntil = Date.now() + Math.max(0, durationMs);
+  refreshBlockedUntilMs = Math.max(refreshBlockedUntilMs ?? 0, nextBlockedUntil);
+  refreshBlockReason = reason;
+}
+
+function getRefreshBlockStateInternal() {
+  if (!refreshBlockedUntilMs) {
+    return {
+      blocked: false as const,
+      blockedUntilMs: null,
+      reason: null,
+    };
+  }
+
+  if (Date.now() >= refreshBlockedUntilMs) {
+    refreshBlockedUntilMs = null;
+    refreshBlockReason = null;
+    return {
+      blocked: false as const,
+      blockedUntilMs: null,
+      reason: null,
+    };
+  }
+
+  return {
+    blocked: true as const,
+    blockedUntilMs: refreshBlockedUntilMs,
+    reason: refreshBlockReason,
+  };
+}
+
+function isRateLimitedRefreshFailure(error: unknown) {
+  if (error instanceof AuthTemporaryUnavailableError) {
+    return error.code === 'refresh_rate_limited';
+  }
+  return getAxiosStatus(error) === 429;
+}
+
+function isTransientRefreshFailure(error: unknown) {
+  if (error instanceof AuthTemporaryUnavailableError) {
+    return error.code === 'refresh_transient_unavailable';
+  }
+
+  if (!isAxiosError(error)) {
+    return false;
+  }
+
+  if (!error.response) return true;
+  const status = error.response.status;
+  return status === 408 || status >= 500;
+}
+
+function isTerminalRefreshFailure(error: unknown) {
+  if (error instanceof AuthSessionError) {
+    return (
+      error.code === 'missing_refresh_token' ||
+      error.code === 'invalid_refresh_response' ||
+      error.code === 'session_cleared' ||
+      error.code === 'refresh_unrecoverable'
+    );
+  }
+
+  if (!isAxiosError(error) || !error.response) {
+    return false;
+  }
+
+  const status = error.response.status;
+  return status === 400 || status === 401 || status === 403;
+}
+
+function isAuthTemporaryUnavailableError(error: unknown): error is AuthTemporaryUnavailableError {
+  return error instanceof AuthTemporaryUnavailableError;
+}
+
+function shouldClearSessionAfterRefreshFailure(error: unknown) {
+  return isTerminalRefreshFailure(error);
 }
 
 async function refreshRequestWithRetry(currentAccessToken: string | null, currentRefreshToken: string, reason: EnsureFreshTokenOptions['reason']) {
@@ -218,6 +360,8 @@ export const authSessionManager = {
       await SecureStorage.setSession(tokens);
       sessionVersion += 1;
       setInMemorySession(tokens);
+      lastRefreshFailure = null;
+      clearRefreshHealthState();
       hasBootstrapped = true;
     });
   },
@@ -235,6 +379,8 @@ export const authSessionManager = {
       await SecureStorage.clearSession();
       sessionVersion += 1;
       setInMemorySession(null);
+      lastRefreshFailure = null;
+      clearRefreshHealthState();
       hasBootstrapped = true;
     });
   },
@@ -243,20 +389,109 @@ export const authSessionManager = {
     return accessToken;
   },
 
+  hasRefreshToken() {
+    return Boolean(refreshToken);
+  },
+
   hasValidAccessToken(minValidityMs = 0) {
     if (!accessToken) return false;
     if (!accessExpMs) return true;
     return Date.now() < accessExpMs - minValidityMs;
   },
 
+  isRetryableRefreshFailure(error: unknown) {
+    return isTransientRefreshFailure(error);
+  },
+
+  shouldClearSessionAfterRefreshFailure(error: unknown) {
+    return shouldClearSessionAfterRefreshFailure(error);
+  },
+
+  isTerminalRefreshFailure(error: unknown) {
+    return isTerminalRefreshFailure(error);
+  },
+
+  isRateLimitedRefreshFailure(error: unknown) {
+    return isRateLimitedRefreshFailure(error);
+  },
+
+  isTransientRefreshFailure(error: unknown) {
+    return isTransientRefreshFailure(error);
+  },
+
+  isAuthTemporaryUnavailableError(error: unknown): error is AuthTemporaryUnavailableError {
+    return isAuthTemporaryUnavailableError(error);
+  },
+
+  getRefreshBlockState() {
+    const blockState = getRefreshBlockStateInternal();
+    return {
+      ...blockState,
+      failureCount: refreshConsecutiveFailures,
+      lastFailureAt: refreshLastFailureAt,
+      lastFailureStatus: refreshLastFailureStatus,
+      lastFailureRetryable: refreshLastFailureRetryable,
+    };
+  },
+
   async ensureFreshToken(options: EnsureFreshTokenOptions = {}) {
     await ensureBootstrapped();
 
     const force = Boolean(options.force);
+    const bypassTransientBackoff = force && options.reason === 'reactive_401';
     const minValidityMs = options.minValidityMs ?? DEFAULT_MIN_VALIDITY_MS;
 
     if (!force && accessToken && !isNearExpiry(minValidityMs)) {
+      if (__DEV__) {
+        console.debug('[auth.refresh] skip', {
+          reason: options.reason ?? 'manual',
+          force,
+          decision: 'access_valid',
+        });
+      }
       return accessToken;
+    }
+
+    const blockState = getRefreshBlockStateInternal();
+    if (blockState.blocked) {
+      const isRateLimitBlock = blockState.reason === 'rate_limited';
+      // Only protected-request 401 recovery may bypass transient blocks; all other flows should respect backoff.
+      if (!bypassTransientBackoff || isRateLimitBlock) {
+        const blockedError = new AuthTemporaryUnavailableError(
+          isRateLimitBlock ? 'refresh_rate_limited' : 'refresh_transient_unavailable',
+          isRateLimitBlock ? 'Refresh temporarily rate limited.' : 'Refresh temporarily unavailable.',
+          isRateLimitBlock ? 429 : refreshLastFailureStatus ?? undefined,
+          blockState.blockedUntilMs
+        );
+        if (__DEV__) {
+          console.debug('[auth.refresh] blocked', {
+            reason: options.reason ?? 'manual',
+            force,
+            blockedUntilMs: blockState.blockedUntilMs,
+            blockReason: blockState.reason,
+          });
+        }
+        if (!force && accessToken) {
+          return accessToken;
+        }
+        throw blockedError;
+      }
+    }
+
+    if (
+      !bypassTransientBackoff &&
+      lastRefreshFailure?.retryable &&
+      Date.now() - lastRefreshFailure.at < RETRYABLE_REFRESH_COOLDOWN_MS
+    ) {
+      if (accessToken) {
+        return accessToken;
+      }
+      throw new AuthTemporaryUnavailableError(
+        'refresh_transient_unavailable',
+        'Refresh temporarily unavailable.',
+        refreshLastFailureStatus ?? undefined,
+        refreshBlockedUntilMs
+      );
     }
 
     if (!refreshToken) {
@@ -292,15 +527,77 @@ export const authSessionManager = {
         }
 
         notifyTokenRefresh();
+        lastRefreshFailure = null;
+        clearRefreshHealthState();
         deferred.resolve(nextTokens.accessToken);
       } catch (error) {
+        const status = getAxiosStatus(error) ?? null;
+        const retryable = isRetryableRefreshError(error);
+        const rateLimited = isRateLimitedRefreshFailure(error);
+        const terminal = isTerminalRefreshFailure(error);
+
+        lastRefreshFailure = {
+          at: Date.now(),
+          retryable,
+          error,
+        };
+        refreshConsecutiveFailures += 1;
+        refreshLastFailureAt = lastRefreshFailure.at;
+        refreshLastFailureStatus = status;
+        refreshLastFailureRetryable = retryable;
+
+        if (rateLimited) {
+          applyRefreshBlock('rate_limited', getAxiosRetryAfter(error) ?? RATE_LIMIT_DEFAULT_BLOCK_MS);
+        } else if (retryable) {
+          const transientBlockDurationMs = Math.min(
+            RATE_LIMIT_DEFAULT_BLOCK_MS,
+            TRANSIENT_REFRESH_BLOCK_MS * Math.max(1, refreshConsecutiveFailures)
+          );
+          applyRefreshBlock('transient', transientBlockDurationMs);
+        }
+
+        const hasUsableAccessToken = Boolean(accessToken) && !isNearExpiry(0);
+        const shouldEscalateToUnrecoverable = force && options.reason === 'reactive_401';
+        const exceededUnrecoverableThreshold =
+          shouldEscalateToUnrecoverable &&
+          !hasUsableAccessToken &&
+          refreshConsecutiveFailures >= MAX_REFRESH_FAILURES_WITHOUT_USABLE_ACCESS;
+
+        const blockState = getRefreshBlockStateInternal();
+        const rejectError = terminal || exceededUnrecoverableThreshold
+          ? new AuthSessionError(
+            'refresh_unrecoverable',
+            terminal
+              ? 'Refresh failed with terminal auth error.'
+              : 'Refresh repeatedly failed without a usable access token.'
+          )
+          : rateLimited
+            ? new AuthTemporaryUnavailableError(
+              'refresh_rate_limited',
+              'Refresh temporarily rate limited.',
+              status ?? 429,
+              blockState.blockedUntilMs
+            )
+            : new AuthTemporaryUnavailableError(
+              'refresh_transient_unavailable',
+              'Refresh temporarily unavailable.',
+              status ?? undefined,
+              blockState.blockedUntilMs
+            );
+
         if (__DEV__) {
           console.debug('[auth.refresh] failed', {
             reason: options.reason ?? 'manual',
-            retryable: isRetryableRefreshError(error),
+            force,
+            retryable,
+            terminal,
+            status,
+            blockedUntilMs: blockState.blockedUntilMs,
+            failureCount: refreshConsecutiveFailures,
+            clearSession: shouldClearSessionAfterRefreshFailure(rejectError),
           });
         }
-        deferred.reject(error);
+        deferred.reject(rejectError);
       } finally {
         if (refreshDeferred === deferred) {
           refreshDeferred = null;

@@ -36,10 +36,14 @@ export function useAuthSessionLifecycle() {
             minValidityMs: RESUME_TOKEN_SKEW_MS,
             reason: 'app_resume',
           });
-        } catch {
-          if (!authSessionManager.hasValidAccessToken()) {
+        } catch (error) {
+          if (authSessionManager.shouldClearSessionAfterRefreshFailure(error)) {
             await authSessionManager.clearSession();
             await notifyLogout();
+          } else if (__DEV__) {
+            console.debug('[auth.lifecycle] resume refresh failed (session preserved)', {
+              retryable: authSessionManager.isRetryableRefreshFailure(error),
+            });
           }
         }
       })();

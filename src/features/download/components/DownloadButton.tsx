@@ -36,7 +36,7 @@ export function DownloadButton({
       : state.status === 'error'
         ? palette.error
         : palette.accent;
-  const iconColor = palette.onAccent;
+  const iconColor = iconOnly ? palette.text.primary : palette.onAccent;
   const defaultIconColor = baseColor;
   const buttonStyle = isOverlay
     ? iconOnly
@@ -63,16 +63,26 @@ export function DownloadButton({
         style={({ pressed }) => [
           buttonStyle,
           {
-            borderColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.48),
-            backgroundColor: isOverlay ? withAlpha(baseColor, 0.9) : withAlpha(baseColor, 0.14),
+            borderColor: iconOnly
+              ? withAlpha(palette.border, 0.85)
+              : isOverlay
+                ? withAlpha(baseColor, 0.9)
+                : withAlpha(baseColor, 0.48),
+            backgroundColor: iconOnly
+              ? withAlpha(palette.overlay, 0.9)
+              : isOverlay
+                ? withAlpha(baseColor, 0.9)
+                : withAlpha(baseColor, 0.14),
           },
           pressed
             ? [
                 styles.pressed,
                 {
-                  backgroundColor: isOverlay
-                    ? withAlpha(baseColor, 0.86)
-                    : withAlpha(baseColor, 0.22),
+                  backgroundColor: iconOnly
+                    ? withAlpha(palette.overlay, 0.82)
+                    : isOverlay
+                      ? withAlpha(baseColor, 0.86)
+                      : withAlpha(baseColor, 0.22),
                 },
               ]
             : null,
@@ -82,12 +92,12 @@ export function DownloadButton({
       >
         {iconOnly ? (
           isBusy ? (
-            <ActivityIndicator size="small" color={isOverlay ? palette.onAccent : defaultIconColor} />
+            <ActivityIndicator size="small" color={iconColor} />
           ) : (
             <Ionicons
               name={iconName}
               size={isOverlay ? 24 : 20}
-              color={isOverlay ? iconColor : defaultIconColor}
+              color={iconColor}
             />
           )
         ) : (
