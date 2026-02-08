@@ -5,7 +5,9 @@ import * as Linking from 'expo-linking';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import * as Updates from 'expo-updates';
 import React, { useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { I18nextProvider } from 'react-i18next';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -25,10 +27,30 @@ configureConsoleForEnvironment();
 
 SplashScreen.preventAutoHideAsync();
 const MIN_ANIMATED_SPLASH_MS = 1200;
+const OTA_UPDATE_CHECK_TIMEOUT_MS = 10000;
+const OTA_UPDATE_FETCH_TIMEOUT_MS = 20000;
 
 export const unstable_settings = {
   anchor: '(tabs)',
 };
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`timeout_after_${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
 
 function RootNavigator() {
   const { navigationTheme, effectiveMode } = useTheme();
@@ -65,6 +87,58 @@ export default function RootLayout() {
   const splashStartedAtRef = useRef(Date.now());
   const [isNativeSplashHidden, setIsNativeSplashHidden] = useState(false);
   const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
+  const [isOtaReady, setIsOtaReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const applyLaunchUpdate = async () => {
+      if (__DEV__ || Platform.OS === 'web') {
+        if (!cancelled) setIsOtaReady(true);
+        return;
+      }
+
+      if (!Updates.isEnabled) {
+        if (!cancelled) setIsOtaReady(true);
+        return;
+      }
+
+      try {
+        const checkResult = await withTimeout(
+          Updates.checkForUpdateAsync(),
+          OTA_UPDATE_CHECK_TIMEOUT_MS
+        );
+
+        if (checkResult.isAvailable) {
+          const fetchResult = await withTimeout(
+            Updates.fetchUpdateAsync(),
+            OTA_UPDATE_FETCH_TIMEOUT_MS
+          );
+
+          if (fetchResult.isNew) {
+            await Updates.reloadAsync();
+            return;
+          }
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.debug('[ota] launch update check failed', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      if (!cancelled) {
+        setIsOtaReady(true);
+      }
+    };
+
+    void applyLaunchUpdate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     void hydrate();
@@ -146,7 +220,7 @@ export default function RootLayout() {
     }
   }, [status, segments, router]);
 
-  if (showAnimatedSplash || !fontsLoaded || status === 'loading') {
+  if (showAnimatedSplash || !fontsLoaded || status === 'loading' || !isOtaReady) {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <ThemeProvider>

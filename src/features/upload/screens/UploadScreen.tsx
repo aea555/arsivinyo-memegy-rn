@@ -201,7 +201,6 @@ export function UploadScreen() {
           title: clampUtf8Bytes(title.trim(), VIDEO_TITLE_MAX_BYTES) || null,
           description:
             clampUtf8Bytes(description.trim(), VIDEO_DESCRIPTION_MAX_BYTES) || null,
-          is_anonymous: isAnonymous,
         },
       });
 

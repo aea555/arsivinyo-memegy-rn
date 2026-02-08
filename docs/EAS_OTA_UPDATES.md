@@ -66,12 +66,14 @@ This blocks incompatible OTA updates from loading on older binaries.
 
 ## Startup behavior
 
-Configured as non-blocking:
+Configured to force-apply OTA updates at app launch:
 
-- `updates.checkAutomatically = "ON_LOAD"`
+- `updates.checkOnLaunch = "ALWAYS"`
 - `updates.fallbackToCacheTimeout = 0`
+- app bootstrap runs explicit `checkForUpdateAsync -> fetchUpdateAsync -> reloadAsync`
+  before entering the main navigator
 
-App starts with cached bundle, then applies new OTA on next cold start.
+If an update is available, it is downloaded and the app reloads immediately on launch.
 
 ## Security hardening (recommended)
 
