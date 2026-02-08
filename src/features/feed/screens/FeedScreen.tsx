@@ -38,6 +38,7 @@ export function FeedScreen() {
   const insets = useSafeAreaInsets();
   const { palette } = useTheme();
   const autoPlayFeedVideos = useAppSettingsStore((state) => state.autoPlayFeedVideos);
+  const autoSwipeFeedVideos = useAppSettingsStore((state) => state.autoSwipeFeedVideos);
   const feedPreserveAspectRatio = useAppSettingsStore((state) => state.feedPreserveAspectRatio);
   const { isConnected } = useNetworkStatus();
   const [sort, setSort] = useState<'random' | 'latest' | 'popular'>('random');
@@ -48,6 +49,7 @@ export function FeedScreen() {
   const renderCountRef = useRef(0);
   const activeIndexRef = useRef(activeIndex);
   const pausedIndexRef = useRef(0);
+  const lastAutoAdvanceRef = useRef<{ videoId: string; at: number } | null>(null);
 
   const { data, isFetchingNextPage, fetchNextPage, hasNextPage, isLoading, refetch } = useFeed(sort);
 
@@ -138,9 +140,48 @@ export function FeedScreen() {
         autoPlayEnabled={autoPlayFeedVideos}
         preserveAspectRatio={feedPreserveAspectRatio}
         onOpenSortPicker={openSortPicker}
+        onVideoEnd={() => {
+          if (!autoSwipeFeedVideos) return;
+          if (activeId !== item.id) return;
+
+          const now = Date.now();
+          const lastAutoAdvance = lastAutoAdvanceRef.current;
+          if (
+            lastAutoAdvance &&
+            lastAutoAdvance.videoId === item.id &&
+            now - lastAutoAdvance.at < 900
+          ) {
+            return;
+          }
+          lastAutoAdvanceRef.current = { videoId: item.id, at: now };
+
+          const currentIndex = activeIndexRef.current;
+          const nextIndex = currentIndex + 1;
+          if (nextIndex >= videos.length) {
+            if (hasNextPage && !isFetchingNextPage) {
+              void fetchNextPage();
+            }
+            return;
+          }
+
+          listRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+          applyActiveIndexRef.current(nextIndex, 'viewability');
+        }}
       />
     ),
-    [activeId, autoPlayFeedVideos, feedPreserveAspectRatio, isFocused, openSortPicker, viewportHeight]
+    [
+      activeId,
+      autoPlayFeedVideos,
+      autoSwipeFeedVideos,
+      feedPreserveAspectRatio,
+      fetchNextPage,
+      hasNextPage,
+      isFetchingNextPage,
+      isFocused,
+      openSortPicker,
+      videos.length,
+      viewportHeight,
+    ]
   );
 
   useEffect(() => {

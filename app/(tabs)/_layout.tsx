@@ -15,11 +15,15 @@ import Animated, {
 
 import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { ConfirmModal } from '@/src/shared/components/ui/ConfirmModal';
+import { queryClient } from '@/src/shared/services/api/queryClient';
 import { LocalStorage } from '@/src/shared/services/storage/LocalStorage';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { withAlpha } from '@/src/shared/theme/colorUtils';
 import { useShadows } from '@/src/shared/theme/shadows';
 import { useAuthStore } from '@/src/store/authStore';
+
+const FEED_RAPID_TAP_WINDOW_MS = 900;
+const FEED_RAPID_TAP_RESET_COUNT = 3;
 
 function TabItemButton({
   accessibilityLabel,
@@ -198,6 +202,7 @@ export default function TabLayout() {
   const authStatus = useAuthStore((state) => state.status);
   const [showOtaSuccessModal, setShowOtaSuccessModal] = React.useState(false);
   const hasCheckedOtaSuccessModalRef = React.useRef(false);
+  const feedRapidTapTimestampsRef = React.useRef<number[]>([]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -299,6 +304,24 @@ export default function TabLayout() {
                 shadows={shadows}
               />
             ),
+          }}
+          listeners={{
+            tabPress: () => {
+              const now = Date.now();
+              const tapsInWindow = feedRapidTapTimestampsRef.current.filter(
+                (timestamp) => now - timestamp <= FEED_RAPID_TAP_WINDOW_MS
+              );
+              tapsInWindow.push(now);
+              feedRapidTapTimestampsRef.current = tapsInWindow;
+
+              if (tapsInWindow.length < FEED_RAPID_TAP_RESET_COUNT) return;
+              feedRapidTapTimestampsRef.current = [];
+
+              void queryClient.invalidateQueries({
+                queryKey: ['feed'],
+                refetchType: 'active',
+              });
+            },
           }}
         />
         <Tabs.Screen

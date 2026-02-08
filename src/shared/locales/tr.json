@@ -187,6 +187,8 @@
     "languageTr": "T\u00fcrk\u00e7e",
     "autoPlayFeedVideos": "Ak\u0131\u015f videolar\u0131n\u0131 otomatik oynat",
     "autoPlayFeedVideosHint": "Ak\u0131\u015f ekran\u0131ndaki videolar\u0131 otomatik ba\u015flat\u0131r.",
+    "autoSwipeFeedVideos": "Sonraki videoya otomatik ge\u00e7",
+    "autoSwipeFeedVideosHint": "Mevcut video bitti\u011finde ak\u0131\u015fta bir sonraki videoya otomatik ge\u00e7er.",
     "preserveFeedAspectRatio": "Video en-boy oran\u0131n\u0131 koru",
     "preserveFeedAspectRatioHint": "Gerekirse kenarl\u0131k b\u0131rakarak t\u00fcm kareyi g\u00f6sterir. Kapat\u0131rsan k\u0131rp\u0131p ekran\u0131 doldurur.",
     "autoPlayVideos": "Videolar\u0131 otomatik oynat (di\u011fer sayfalar)",

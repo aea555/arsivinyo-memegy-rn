@@ -19,6 +19,7 @@ type VideoPlayerProps = {
   showMinimalControls?: boolean;
   autoPlayEnabled?: boolean;
   allowTapToToggle?: boolean;
+  onPlaybackEnd?: () => void;
 };
 
 const SCREEN_LOSS_PAUSE_DELAY_MS = 250;
@@ -81,6 +82,7 @@ export function VideoPlayer({
   showMinimalControls,
   autoPlayEnabled,
   allowTapToToggle = false,
+  onPlaybackEnd,
 }: VideoPlayerProps) {
   const canMountNativePlayer = typeof uri === 'string' && uri.length > 0;
 
@@ -105,6 +107,7 @@ export function VideoPlayer({
       showMinimalControls={showMinimalControls}
       autoPlayEnabled={autoPlayEnabled}
       allowTapToToggle={allowTapToToggle}
+      onPlaybackEnd={onPlaybackEnd}
     />
   );
 }
@@ -139,6 +142,7 @@ function VideoPlayerNative({
   showMinimalControls,
   autoPlayEnabled,
   allowTapToToggle = false,
+  onPlaybackEnd,
 }: VideoPlayerProps) {
   const { palette } = useTheme();
   const defaultAutoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
@@ -221,6 +225,37 @@ function VideoPlayerNative({
       }
     };
   }, [shouldForcePostFullscreenState, uri, videoPlayer]);
+
+  useEffect(() => {
+    if (!onPlaybackEnd) return;
+
+    let subscription: { remove: () => void } | null = null;
+    try {
+      subscription = videoPlayer.addListener('playToEnd', () => {
+        if (!isActiveRef.current || !isScreenActiveRef.current) return;
+        if (appStateRef.current === 'background') return;
+        onPlaybackEnd();
+      });
+    } catch (error) {
+      if (isReleasedPlayerError(error)) {
+        logPlayerError('playToEnd listener setup', uri, error);
+      } else {
+        throw error;
+      }
+    }
+
+    return () => {
+      try {
+        subscription?.remove();
+      } catch (error) {
+        if (isReleasedPlayerError(error)) {
+          logPlayerError('playToEnd listener cleanup', uri, error);
+        } else {
+          throw error;
+        }
+      }
+    };
+  }, [onPlaybackEnd, uri, videoPlayer]);
 
   useEffect(() => {
     return () => {

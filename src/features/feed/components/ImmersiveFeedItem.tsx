@@ -21,6 +21,7 @@ type ImmersiveFeedItemProps = {
   autoPlayEnabled: boolean;
   preserveAspectRatio: boolean;
   onOpenSortPicker: () => void;
+  onVideoEnd?: () => void;
 };
 
 const INFO_AUTO_DISMISS_MS = 2800;
@@ -33,6 +34,7 @@ function ImmersiveFeedItemBase({
   autoPlayEnabled,
   preserveAspectRatio,
   onOpenSortPicker,
+  onVideoEnd,
 }: ImmersiveFeedItemProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
@@ -77,6 +79,7 @@ function ImmersiveFeedItemBase({
           showNativeControls={false}
           autoPlayEnabled={autoPlayEnabled}
           allowTapToToggle
+          onPlaybackEnd={onVideoEnd}
         />
       ) : (
         <View style={[styles.fallback, { backgroundColor: palette.mediaBackground }]}>
@@ -127,6 +130,7 @@ function areImmersiveFeedItemPropsEqual(prev: ImmersiveFeedItemProps, next: Imme
     prev.autoPlayEnabled === next.autoPlayEnabled &&
     prev.preserveAspectRatio === next.preserveAspectRatio &&
     prev.onOpenSortPicker === next.onOpenSortPicker &&
+    prev.onVideoEnd === next.onVideoEnd &&
     prev.video.id === next.video.id &&
     prev.video.url === next.video.url &&
     prev.video.is_liked === next.video.is_liked &&

@@ -14,6 +14,8 @@ export function FeedSettingsScreen() {
   const { palette } = useTheme();
   const autoPlayFeedVideos = useAppSettingsStore((state) => state.autoPlayFeedVideos);
   const setAutoPlayFeedVideos = useAppSettingsStore((state) => state.setAutoPlayFeedVideos);
+  const autoSwipeFeedVideos = useAppSettingsStore((state) => state.autoSwipeFeedVideos);
+  const setAutoSwipeFeedVideos = useAppSettingsStore((state) => state.setAutoSwipeFeedVideos);
   const feedPreserveAspectRatio = useAppSettingsStore((state) => state.feedPreserveAspectRatio);
   const setFeedPreserveAspectRatio = useAppSettingsStore((state) => state.setFeedPreserveAspectRatio);
 
@@ -31,6 +33,23 @@ export function FeedSettingsScreen() {
             value={autoPlayFeedVideos}
             onValueChange={(value) => {
               void setAutoPlayFeedVideos(value);
+            }}
+            trackColor={{ true: palette.accent, false: palette.border }}
+          />
+        </View>
+      </Card>
+      <Card style={styles.sectionCard}>
+        <View style={styles.switchRow}>
+          <View style={styles.switchText}>
+            <AppText variant="bodyBold">{t('settings.autoSwipeFeedVideos')}</AppText>
+            <AppText variant="caption" style={{ color: palette.text.secondary }}>
+              {t('settings.autoSwipeFeedVideosHint')}
+            </AppText>
+          </View>
+          <Switch
+            value={autoSwipeFeedVideos}
+            onValueChange={(value) => {
+              void setAutoSwipeFeedVideos(value);
             }}
             trackColor={{ true: palette.accent, false: palette.border }}
           />
