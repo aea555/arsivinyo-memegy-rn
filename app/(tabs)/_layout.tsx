@@ -15,7 +15,7 @@ import Animated, {
 
 import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { ConfirmModal } from '@/src/shared/components/ui/ConfirmModal';
-import { queryClient } from '@/src/shared/services/api/queryClient';
+import { notifyFeedRandomRefresh } from '@/src/features/feed/services/feedEvents';
 import { LocalStorage } from '@/src/shared/services/storage/LocalStorage';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { withAlpha } from '@/src/shared/theme/colorUtils';
@@ -316,11 +316,7 @@ export default function TabLayout() {
 
               if (tapsInWindow.length < FEED_RAPID_TAP_RESET_COUNT) return;
               feedRapidTapTimestampsRef.current = [];
-
-              void queryClient.invalidateQueries({
-                queryKey: ['feed'],
-                refetchType: 'active',
-              });
+              notifyFeedRandomRefresh();
             },
           }}
         />

@@ -8,15 +8,16 @@ function normalizeFeedSort(sort: FeedSort): 'random' | 'latest' | 'popular' {
   return sort === 'newest' ? 'latest' : sort;
 }
 
-export function useFeed(sort: FeedSort, options?: { enabled?: boolean }) {
+export function useFeed(sort: FeedSort, options?: { enabled?: boolean; randomRefreshNonce?: number }) {
   const normalizedSort = normalizeFeedSort(sort);
+  const randomRefreshNonce = options?.randomRefreshNonce ?? 0;
   const randomSeed = useMemo(() => {
     if (normalizedSort !== 'random') return undefined;
-    return `${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
-  }, [normalizedSort]);
+    return `${randomRefreshNonce}_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+  }, [normalizedSort, randomRefreshNonce]);
   const queryKey =
     normalizedSort === 'random'
-      ? (['feed', normalizedSort, randomSeed] as const)
+      ? (['feed', normalizedSort, randomSeed, randomRefreshNonce] as const)
       : (['feed', normalizedSort] as const);
 
   return useInfiniteQuery({

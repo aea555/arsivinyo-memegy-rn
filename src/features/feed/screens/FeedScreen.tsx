@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ImmersiveFeedItem } from '@/src/features/feed/components/ImmersiveFeedItem';
 import { useFeed } from '@/src/features/feed/hooks/useFeed';
+import { subscribeFeedRandomRefresh } from '@/src/features/feed/services/feedEvents';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
 import { Screen } from '@/src/shared/components/layout/Screen';
@@ -44,6 +45,7 @@ export function FeedScreen() {
   const [sort, setSort] = useState<'random' | 'latest' | 'popular'>('random');
   const [sortPickerVisible, setSortPickerVisible] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [randomRefreshNonce, setRandomRefreshNonce] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const listRef = useRef<FlatList<VideoFeedItem>>(null);
   const renderCountRef = useRef(0);
@@ -51,7 +53,9 @@ export function FeedScreen() {
   const pausedIndexRef = useRef(0);
   const lastAutoAdvanceRef = useRef<{ videoId: string; at: number } | null>(null);
 
-  const { data, isFetchingNextPage, fetchNextPage, hasNextPage, isLoading, refetch } = useFeed(sort);
+  const { data, isFetchingNextPage, fetchNextPage, hasNextPage, isLoading, refetch } = useFeed(sort, {
+    randomRefreshNonce,
+  });
 
   const videos = useMemo(() => {
     const flattened = data?.pages.flatMap((page) => page) ?? [];
@@ -207,6 +211,20 @@ export function FeedScreen() {
     requestAnimationFrame(() => {
       listRef.current?.scrollToOffset({ offset: 0, animated: false });
     });
+  }, [sort]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeFeedRandomRefresh(() => {
+      if (sort !== 'random') return;
+      lastAutoAdvanceRef.current = null;
+      pausedIndexRef.current = 0;
+      setActiveIndex((prev) => (prev === 0 ? prev : 0));
+      setRandomRefreshNonce((prev) => prev + 1);
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToOffset({ offset: 0, animated: false });
+      });
+    });
+    return unsubscribe;
   }, [sort]);
 
   useEffect(() => {
