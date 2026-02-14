@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { ActivityIndicator, Pressable, StyleSheet } from 'react-native';
 
 import { useQuickShareVideo } from '@/src/features/share/hooks/useQuickShareVideo';
 import { AppText } from '@/src/shared/components/ui/AppText';
@@ -76,7 +76,7 @@ export function QuickShareButton({
           <ActivityIndicator size="small" color={iconColor} />
         ) : (
           <Ionicons
-            name="paper-plane-outline"
+            name="flash-outline"
             size={isOverlay ? 24 : 20}
             color={iconColor}
           />
@@ -84,7 +84,7 @@ export function QuickShareButton({
       ) : (
         <>
           <Ionicons
-            name={isBusy ? 'time-outline' : 'paper-plane-outline'}
+            name={isBusy ? 'time-outline' : 'flash-outline'}
             size={isOverlay ? 18 : 16}
             color={iconColor}
           />
