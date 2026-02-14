@@ -18,6 +18,9 @@ const KEYS = {
   FEED_PRESERVE_ASPECT_RATIO: 'feed_preserve_aspect_ratio',
   AUTH_DEBUG_AGGRESSIVE_REFRESH: 'auth_debug_aggressive_refresh',
   OTA_SUCCESS_MODAL_DISMISSED: 'ota_success_modal_dismissed',
+  UPLOAD_ANONYMOUS_DEFAULT: 'upload_anonymous_default',
+  CLIPBOARD_UPLOAD_ASK_METADATA: 'clipboard_upload_ask_metadata',
+  CLIPBOARD_UPLOAD_SAVE_TO_DEVICE: 'clipboard_upload_save_to_device',
 } as const;
 
 function isThemeSettingsShape(value: unknown): value is ThemeSettingsState {
@@ -127,6 +130,30 @@ export const LocalStorage = {
   },
   async getOtaSuccessModalDismissed() {
     const value = await AsyncStorage.getItem(KEYS.OTA_SUCCESS_MODAL_DISMISSED);
+    if (value === null) return null;
+    return value === '1';
+  },
+  async setUploadAnonymousDefault(enabled: boolean) {
+    await AsyncStorage.setItem(KEYS.UPLOAD_ANONYMOUS_DEFAULT, enabled ? '1' : '0');
+  },
+  async getUploadAnonymousDefault() {
+    const value = await AsyncStorage.getItem(KEYS.UPLOAD_ANONYMOUS_DEFAULT);
+    if (value === null) return null;
+    return value === '1';
+  },
+  async setClipboardUploadAskMetadata(enabled: boolean) {
+    await AsyncStorage.setItem(KEYS.CLIPBOARD_UPLOAD_ASK_METADATA, enabled ? '1' : '0');
+  },
+  async getClipboardUploadAskMetadata() {
+    const value = await AsyncStorage.getItem(KEYS.CLIPBOARD_UPLOAD_ASK_METADATA);
+    if (value === null) return null;
+    return value === '1';
+  },
+  async setClipboardUploadSaveToDevice(enabled: boolean) {
+    await AsyncStorage.setItem(KEYS.CLIPBOARD_UPLOAD_SAVE_TO_DEVICE, enabled ? '1' : '0');
+  },
+  async getClipboardUploadSaveToDevice() {
+    const value = await AsyncStorage.getItem(KEYS.CLIPBOARD_UPLOAD_SAVE_TO_DEVICE);
     if (value === null) return null;
     return value === '1';
   },

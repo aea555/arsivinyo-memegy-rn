@@ -8,12 +8,18 @@ type AppSettingsState = {
   autoSwipeFeedVideos: boolean;
   feedPreserveAspectRatio: boolean;
   authDebugAggressiveRefresh: boolean;
+  uploadAnonymousDefault: boolean;
+  clipboardUploadAskMetadata: boolean;
+  clipboardUploadSaveToDevice: boolean;
   hydrate: () => Promise<void>;
   setAutoPlayVideos: (enabled: boolean) => Promise<void>;
   setAutoPlayFeedVideos: (enabled: boolean) => Promise<void>;
   setAutoSwipeFeedVideos: (enabled: boolean) => Promise<void>;
   setFeedPreserveAspectRatio: (enabled: boolean) => Promise<void>;
   setAuthDebugAggressiveRefresh: (enabled: boolean) => Promise<void>;
+  setUploadAnonymousDefault: (enabled: boolean) => Promise<void>;
+  setClipboardUploadAskMetadata: (enabled: boolean) => Promise<void>;
+  setClipboardUploadSaveToDevice: (enabled: boolean) => Promise<void>;
 };
 
 export const useAppSettingsStore = create<AppSettingsState>((set) => ({
@@ -22,6 +28,9 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
   autoSwipeFeedVideos: true,
   feedPreserveAspectRatio: true,
   authDebugAggressiveRefresh: __DEV__,
+  uploadAnonymousDefault: false,
+  clipboardUploadAskMetadata: true,
+  clipboardUploadSaveToDevice: true,
   hydrate: async () => {
     const [
       storedAutoPlayVideos,
@@ -29,12 +38,18 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       storedAutoSwipeFeedVideos,
       storedFeedPreserveAspectRatio,
       storedAuthDebugAggressiveRefresh,
+      storedUploadAnonymousDefault,
+      storedClipboardUploadAskMetadata,
+      storedClipboardUploadSaveToDevice,
     ] = await Promise.all([
       LocalStorage.getAutoPlayVideos(),
       LocalStorage.getAutoPlayFeedVideos(),
       LocalStorage.getAutoSwipeFeedVideos(),
       LocalStorage.getFeedPreserveAspectRatio(),
       LocalStorage.getAuthDebugAggressiveRefresh(),
+      LocalStorage.getUploadAnonymousDefault(),
+      LocalStorage.getClipboardUploadAskMetadata(),
+      LocalStorage.getClipboardUploadSaveToDevice(),
     ]);
 
     set({
@@ -43,6 +58,9 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       autoSwipeFeedVideos: storedAutoSwipeFeedVideos ?? true,
       feedPreserveAspectRatio: storedFeedPreserveAspectRatio ?? true,
       authDebugAggressiveRefresh: __DEV__ ? (storedAuthDebugAggressiveRefresh ?? true) : false,
+      uploadAnonymousDefault: storedUploadAnonymousDefault ?? false,
+      clipboardUploadAskMetadata: storedClipboardUploadAskMetadata ?? true,
+      clipboardUploadSaveToDevice: storedClipboardUploadSaveToDevice ?? true,
     });
   },
   setAutoPlayVideos: async (enabled) => {
@@ -65,5 +83,17 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
     const value = __DEV__ ? enabled : false;
     await LocalStorage.setAuthDebugAggressiveRefresh(value);
     set({ authDebugAggressiveRefresh: value });
+  },
+  setUploadAnonymousDefault: async (enabled) => {
+    await LocalStorage.setUploadAnonymousDefault(enabled);
+    set({ uploadAnonymousDefault: enabled });
+  },
+  setClipboardUploadAskMetadata: async (enabled) => {
+    await LocalStorage.setClipboardUploadAskMetadata(enabled);
+    set({ clipboardUploadAskMetadata: enabled });
+  },
+  setClipboardUploadSaveToDevice: async (enabled) => {
+    await LocalStorage.setClipboardUploadSaveToDevice(enabled);
+    set({ clipboardUploadSaveToDevice: enabled });
   },
 }));

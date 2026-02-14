@@ -250,23 +250,7 @@ export async function downloadVideo({
     cleanup = tempFile.cleanup;
 
     onStageChange?.('saving');
-    try {
-      // Prefer seamless save path first. On modern Android scoped storage, this can
-      // work without a prior runtime permission prompt for app-created media writes.
-      await MediaLibrary.saveToLibraryAsync(downloadedUri);
-    } catch (saveError) {
-      const saveMapped = toDownloadError(saveError);
-      if (saveMapped.code !== 'permission_denied') {
-        throw saveMapped;
-      }
-
-      const permission = await MediaLibrary.requestPermissionsAsync(true, ['video']);
-      if (!permission.granted) {
-        throw new DownloadError('permission_denied', 'Media library permission denied.');
-      }
-
-      await MediaLibrary.saveToLibraryAsync(downloadedUri);
-    }
+    await saveVideoUriToLibrary(downloadedUri);
 
     if (__DEV__) {
       console.debug('[download] success', {
@@ -288,5 +272,25 @@ export async function downloadVideo({
     throw mapped;
   } finally {
     await cleanup();
+  }
+}
+
+export async function saveVideoUriToLibrary(uri: string) {
+  try {
+    // Prefer seamless save path first. On modern Android scoped storage, this can
+    // work without a prior runtime permission prompt for app-created media writes.
+    await MediaLibrary.saveToLibraryAsync(uri);
+  } catch (saveError) {
+    const saveMapped = toDownloadError(saveError);
+    if (saveMapped.code !== 'permission_denied') {
+      throw saveMapped;
+    }
+
+    const permission = await MediaLibrary.requestPermissionsAsync(true, ['video']);
+    if (!permission.granted) {
+      throw new DownloadError('permission_denied', 'Media library permission denied.');
+    }
+
+    await MediaLibrary.saveToLibraryAsync(uri);
   }
 }

@@ -17,3 +17,10 @@ export const MOBILE_SCHEME = requireEnv(
   'EXPO_PUBLIC_MOBILE_SCHEME',
   process.env.EXPO_PUBLIC_MOBILE_SCHEME
 );
+
+export const DOWNLOADER_API_BASE_URL =
+  process.env.EXPO_PUBLIC_DOWNLOADER_API_BASE_URL?.trim() ?? '';
+export const DOWNLOADER_APP_SECRET =
+  process.env.EXPO_PUBLIC_DOWNLOADER_APP_SECRET?.trim() ?? '';
+
+export const isDownloaderConfigured = Boolean(DOWNLOADER_API_BASE_URL);
