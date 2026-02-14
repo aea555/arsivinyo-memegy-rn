@@ -34,6 +34,7 @@ type VideoPlayerProps = {
   autoPlayEnabled?: boolean;
   allowTapToToggle?: boolean;
   resetOnDeactivate?: boolean;
+  muted?: boolean;
   holdFastForwardRate?: number;
   onPlaybackEnd?: () => void;
 };
@@ -47,7 +48,7 @@ const TIME_UPDATE_INTERVAL_SECONDS = 0.25;
 const CONTROLS_AUTO_HIDE_MS = 3000;
 const CONTROLS_FADE_DURATION_MS = 180;
 const RELEASED_PLAYER_LOG_LIMIT = 160;
-const HOLD_FAST_FORWARD_DELAY_MS = 170;
+const HOLD_FAST_FORWARD_DELAY_MS = 75;
 const DEFAULT_HOLD_FAST_FORWARD_RATE = 1.5;
 const HOLD_FAST_FORWARD_RIGHT_SIDE_RATIO = 0.55;
 const releasedPlayerLogKeys = new Set<string>();
@@ -107,6 +108,7 @@ export function VideoPlayer({
   autoPlayEnabled,
   allowTapToToggle = false,
   resetOnDeactivate = false,
+  muted = false,
   holdFastForwardRate,
   onPlaybackEnd,
 }: VideoPlayerProps) {
@@ -137,6 +139,7 @@ export function VideoPlayer({
       autoPlayEnabled={autoPlayEnabled}
       allowTapToToggle={allowTapToToggle}
       resetOnDeactivate={resetOnDeactivate}
+      muted={muted}
       holdFastForwardRate={holdFastForwardRate}
       onPlaybackEnd={onPlaybackEnd}
     />
@@ -177,6 +180,7 @@ function VideoPlayerNative({
   autoPlayEnabled,
   allowTapToToggle = false,
   resetOnDeactivate = false,
+  muted = false,
   holdFastForwardRate = DEFAULT_HOLD_FAST_FORWARD_RATE,
   onPlaybackEnd,
 }: VideoPlayerProps) {
@@ -203,6 +207,8 @@ function VideoPlayerNative({
   const tapFeedbackScale = React.useRef(new Animated.Value(0.84)).current;
   const tapOverlayWidthRef = React.useRef(0);
   const holdFastForwardTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdFastForwardSessionRef = React.useRef(0);
+  const holdFastForwardPressingRef = React.useRef(false);
   const isHoldingFastForwardRef = React.useRef(false);
   const suppressTapToggleRef = React.useRef(false);
   const minimalControlsOpacity = React.useRef(new Animated.Value(0)).current;
@@ -302,8 +308,23 @@ function VideoPlayerNative({
 
   const videoPlayer = useVideoPlayer(uri, (playerInstance) => {
     playerInstance.loop = true;
-    playerInstance.muted = false;
+    playerInstance.muted = Boolean(muted);
   });
+
+  useEffect(() => {
+    try {
+      videoPlayer.muted = Boolean(muted);
+    } catch (error) {
+      if (isReleasedPlayerError(error)) return;
+      if (__DEV__) {
+        console.debug('[video] mute sync skipped for released player', {
+          uri,
+          muted,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }, [muted, uri, videoPlayer]);
 
   useEffect(() => {
     appStateRef.current = appState;
@@ -786,6 +807,8 @@ function VideoPlayerNative({
 
   const stopHoldFastForward = React.useCallback(() => {
     clearHoldFastForwardTimer();
+    holdFastForwardPressingRef.current = false;
+    holdFastForwardSessionRef.current += 1;
     if (!isHoldingFastForwardRef.current) return;
     isHoldingFastForwardRef.current = false;
     try {
@@ -816,12 +839,18 @@ function VideoPlayerNative({
       const overlayWidth = tapOverlayWidthRef.current;
       const locationX = event.nativeEvent.locationX;
       if (overlayWidth <= 0 || locationX < overlayWidth * HOLD_FAST_FORWARD_RIGHT_SIDE_RATIO) {
+        holdFastForwardPressingRef.current = false;
         return;
       }
 
+      holdFastForwardPressingRef.current = true;
+      holdFastForwardSessionRef.current += 1;
+      const sessionId = holdFastForwardSessionRef.current;
       clearHoldFastForwardTimer();
       holdFastForwardTimerRef.current = setTimeout(() => {
         holdFastForwardTimerRef.current = null;
+        if (sessionId !== holdFastForwardSessionRef.current) return;
+        if (!holdFastForwardPressingRef.current) return;
         if (!isActiveRef.current || !isScreenActiveRef.current) return;
         if (appStateRef.current === 'background') return;
         if (manualPausedRef.current === true) return;

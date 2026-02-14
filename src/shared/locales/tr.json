@@ -55,6 +55,8 @@
     "empty": "Hen\u00fcz video yok.",
     "info": "Bilgi",
     "hideInfo": "Gizle",
+    "mute": "Sesi kapat",
+    "unmute": "Sesi a\u00e7",
     "by": "{{uploader}} taraf\u0131ndan",
     "videoMetaUnavailable": "Video \u015fu anda kullan\u0131lam\u0131yor."
   },

@@ -46,6 +46,7 @@ export function FeedScreen() {
   const [sort, setSort] = useState<'random' | 'latest' | 'popular'>('random');
   const [sortPickerVisible, setSortPickerVisible] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
   const [randomRefreshNonce, setRandomRefreshNonce] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const listRef = useRef<FlatList<VideoFeedItem>>(null);
@@ -136,6 +137,10 @@ export function FeedScreen() {
     }
   ).current;
 
+  const handleToggleMute = useCallback(() => {
+    setIsMuted((prev) => !prev);
+  }, []);
+
   const renderItem = useCallback(
     ({ item }: { item: VideoFeedItem }) => (
       <ImmersiveFeedItem
@@ -145,8 +150,10 @@ export function FeedScreen() {
         height={viewportHeight}
         autoPlayEnabled={autoPlayFeedVideos}
         resetOnInactive={resetFeedVideoOnSwipe}
+        muted={isMuted}
         holdFastForwardRate={feedHoldFastForwardSpeed}
         preserveAspectRatio={feedPreserveAspectRatio}
+        onToggleMute={handleToggleMute}
         onVideoEnd={() => {
           if (!autoSwipeFeedVideos) return;
           if (activeId !== item.id) return;
@@ -180,10 +187,12 @@ export function FeedScreen() {
       activeId,
       autoPlayFeedVideos,
       autoSwipeFeedVideos,
+      isMuted,
       feedHoldFastForwardSpeed,
       resetFeedVideoOnSwipe,
       feedPreserveAspectRatio,
       fetchNextPage,
+      handleToggleMute,
       hasNextPage,
       isFetchingNextPage,
       isFocused,

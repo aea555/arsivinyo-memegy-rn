@@ -20,9 +20,11 @@ type ImmersiveFeedItemProps = {
   height: number;
   autoPlayEnabled: boolean;
   resetOnInactive: boolean;
+  muted: boolean;
   holdFastForwardRate: number;
   preserveAspectRatio: boolean;
   onVideoEnd?: () => void;
+  onToggleMute: () => void;
 };
 
 const INFO_AUTO_DISMISS_MS = 2800;
@@ -34,9 +36,11 @@ function ImmersiveFeedItemBase({
   height,
   autoPlayEnabled,
   resetOnInactive,
+  muted,
   holdFastForwardRate,
   preserveAspectRatio,
   onVideoEnd,
+  onToggleMute,
 }: ImmersiveFeedItemProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
@@ -82,6 +86,7 @@ function ImmersiveFeedItemBase({
           autoPlayEnabled={autoPlayEnabled}
           allowTapToToggle
           resetOnDeactivate={resetOnInactive}
+          muted={muted}
           holdFastForwardRate={holdFastForwardRate}
           onPlaybackEnd={onVideoEnd}
         />
@@ -118,6 +123,8 @@ function ImmersiveFeedItemBase({
             video={video}
             infoVisible={infoVisible}
             onToggleInfo={handleToggleInfo}
+            muted={muted}
+            onToggleMute={onToggleMute}
           />
         </View>
       </View>
@@ -132,9 +139,11 @@ function areImmersiveFeedItemPropsEqual(prev: ImmersiveFeedItemProps, next: Imme
     prev.height === next.height &&
     prev.autoPlayEnabled === next.autoPlayEnabled &&
     prev.resetOnInactive === next.resetOnInactive &&
+    prev.muted === next.muted &&
     prev.holdFastForwardRate === next.holdFastForwardRate &&
     prev.preserveAspectRatio === next.preserveAspectRatio &&
     prev.onVideoEnd === next.onVideoEnd &&
+    prev.onToggleMute === next.onToggleMute &&
     prev.video.id === next.video.id &&
     prev.video.url === next.video.url &&
     prev.video.is_liked === next.video.is_liked &&

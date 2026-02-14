@@ -19,12 +19,16 @@ type FeedOverlayActionsProps = {
   video: VideoFeedItem;
   onToggleInfo: () => void;
   infoVisible: boolean;
+  muted: boolean;
+  onToggleMute: () => void;
 };
 
 function FeedOverlayActionsBase({
   video,
   onToggleInfo,
   infoVisible,
+  muted,
+  onToggleMute,
 }: FeedOverlayActionsProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
@@ -36,6 +40,25 @@ function FeedOverlayActionsBase({
 
   return (
     <View style={styles.container} pointerEvents="box-none">
+      <Pressable
+        onPress={onToggleMute}
+        style={({ pressed }) => [
+          styles.iconButton,
+          {
+            backgroundColor: withAlpha(palette.overlay, 0.9),
+            borderColor: withAlpha(palette.border, 0.85),
+          },
+          pressed ? styles.pressed : null,
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={muted ? t('feed.unmute') : t('feed.mute')}
+      >
+        <Ionicons
+          name={muted ? 'volume-mute-outline' : 'volume-high-outline'}
+          size={20}
+          color={palette.text.primary}
+        />
+      </Pressable>
       {video.is_liked !== undefined ? (
         <View style={styles.likeGroup}>
           <View style={styles.scaledActionWrap}>
@@ -128,6 +151,8 @@ function areFeedOverlayActionsPropsEqual(prev: FeedOverlayActionsProps, next: Fe
   return (
     prev.infoVisible === next.infoVisible &&
     prev.onToggleInfo === next.onToggleInfo &&
+    prev.muted === next.muted &&
+    prev.onToggleMute === next.onToggleMute &&
     prev.video.id === next.video.id &&
     prev.video.like_count === next.video.like_count &&
     prev.video.is_liked === next.video.is_liked &&
