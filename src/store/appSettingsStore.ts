@@ -2,11 +2,15 @@ import { create } from 'zustand/react';
 
 import { LocalStorage } from '@/src/shared/services/storage/LocalStorage';
 
+export const FEED_HOLD_FAST_FORWARD_SPEED_OPTIONS = [1.5, 2, 2.5, 3] as const;
+export type FeedHoldFastForwardSpeed = (typeof FEED_HOLD_FAST_FORWARD_SPEED_OPTIONS)[number];
+
 type AppSettingsState = {
   autoPlayVideos: boolean;
   autoPlayFeedVideos: boolean;
   autoSwipeFeedVideos: boolean;
   resetFeedVideoOnSwipe: boolean;
+  feedHoldFastForwardSpeed: FeedHoldFastForwardSpeed;
   feedPreserveAspectRatio: boolean;
   authDebugAggressiveRefresh: boolean;
   uploadAnonymousDefault: boolean;
@@ -17,6 +21,7 @@ type AppSettingsState = {
   setAutoPlayFeedVideos: (enabled: boolean) => Promise<void>;
   setAutoSwipeFeedVideos: (enabled: boolean) => Promise<void>;
   setResetFeedVideoOnSwipe: (enabled: boolean) => Promise<void>;
+  setFeedHoldFastForwardSpeed: (speed: FeedHoldFastForwardSpeed) => Promise<void>;
   setFeedPreserveAspectRatio: (enabled: boolean) => Promise<void>;
   setAuthDebugAggressiveRefresh: (enabled: boolean) => Promise<void>;
   setUploadAnonymousDefault: (enabled: boolean) => Promise<void>;
@@ -29,6 +34,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
   autoPlayFeedVideos: true,
   autoSwipeFeedVideos: true,
   resetFeedVideoOnSwipe: true,
+  feedHoldFastForwardSpeed: 1.5,
   feedPreserveAspectRatio: true,
   authDebugAggressiveRefresh: __DEV__,
   uploadAnonymousDefault: false,
@@ -40,6 +46,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       storedAutoPlayFeedVideos,
       storedAutoSwipeFeedVideos,
       storedResetFeedVideoOnSwipe,
+      storedFeedHoldFastForwardSpeed,
       storedFeedPreserveAspectRatio,
       storedAuthDebugAggressiveRefresh,
       storedUploadAnonymousDefault,
@@ -50,6 +57,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       LocalStorage.getAutoPlayFeedVideos(),
       LocalStorage.getAutoSwipeFeedVideos(),
       LocalStorage.getResetFeedVideoOnSwipe(),
+      LocalStorage.getFeedHoldFastForwardRate(),
       LocalStorage.getFeedPreserveAspectRatio(),
       LocalStorage.getAuthDebugAggressiveRefresh(),
       LocalStorage.getUploadAnonymousDefault(),
@@ -62,6 +70,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       autoPlayFeedVideos: storedAutoPlayFeedVideos ?? true,
       autoSwipeFeedVideos: storedAutoSwipeFeedVideos ?? true,
       resetFeedVideoOnSwipe: storedResetFeedVideoOnSwipe ?? true,
+      feedHoldFastForwardSpeed: storedFeedHoldFastForwardSpeed ?? 1.5,
       feedPreserveAspectRatio: storedFeedPreserveAspectRatio ?? true,
       authDebugAggressiveRefresh: __DEV__ ? (storedAuthDebugAggressiveRefresh ?? true) : false,
       uploadAnonymousDefault: storedUploadAnonymousDefault ?? false,
@@ -84,6 +93,10 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
   setResetFeedVideoOnSwipe: async (enabled) => {
     await LocalStorage.setResetFeedVideoOnSwipe(enabled);
     set({ resetFeedVideoOnSwipe: enabled });
+  },
+  setFeedHoldFastForwardSpeed: async (speed) => {
+    await LocalStorage.setFeedHoldFastForwardRate(speed);
+    set({ feedHoldFastForwardSpeed: speed });
   },
   setFeedPreserveAspectRatio: async (enabled) => {
     await LocalStorage.setFeedPreserveAspectRatio(enabled);

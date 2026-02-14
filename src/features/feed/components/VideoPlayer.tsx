@@ -1,5 +1,16 @@
 import React, { useEffect } from 'react';
-import { AppState, AppStateStatus, Animated, Modal, PanResponder, PanResponderGestureState, Pressable, StyleSheet, View } from 'react-native';
+import {
+  AppState,
+  AppStateStatus,
+  Animated,
+  Modal,
+  PanResponder,
+  PanResponderGestureState,
+  Pressable,
+  PressableProps,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -23,6 +34,7 @@ type VideoPlayerProps = {
   autoPlayEnabled?: boolean;
   allowTapToToggle?: boolean;
   resetOnDeactivate?: boolean;
+  holdFastForwardRate?: number;
   onPlaybackEnd?: () => void;
 };
 
@@ -35,6 +47,9 @@ const TIME_UPDATE_INTERVAL_SECONDS = 0.25;
 const CONTROLS_AUTO_HIDE_MS = 3000;
 const CONTROLS_FADE_DURATION_MS = 180;
 const RELEASED_PLAYER_LOG_LIMIT = 160;
+const HOLD_FAST_FORWARD_DELAY_MS = 170;
+const DEFAULT_HOLD_FAST_FORWARD_RATE = 1.5;
+const HOLD_FAST_FORWARD_RIGHT_SIDE_RATIO = 0.55;
 const releasedPlayerLogKeys = new Set<string>();
 
 function normalizeSeconds(value: number): number {
@@ -92,6 +107,7 @@ export function VideoPlayer({
   autoPlayEnabled,
   allowTapToToggle = false,
   resetOnDeactivate = false,
+  holdFastForwardRate,
   onPlaybackEnd,
 }: VideoPlayerProps) {
   const canMountNativePlayer = typeof uri === 'string' && uri.length > 0;
@@ -121,6 +137,7 @@ export function VideoPlayer({
       autoPlayEnabled={autoPlayEnabled}
       allowTapToToggle={allowTapToToggle}
       resetOnDeactivate={resetOnDeactivate}
+      holdFastForwardRate={holdFastForwardRate}
       onPlaybackEnd={onPlaybackEnd}
     />
   );
@@ -160,6 +177,7 @@ function VideoPlayerNative({
   autoPlayEnabled,
   allowTapToToggle = false,
   resetOnDeactivate = false,
+  holdFastForwardRate = DEFAULT_HOLD_FAST_FORWARD_RATE,
   onPlaybackEnd,
 }: VideoPlayerProps) {
   const { palette } = useTheme();
@@ -183,6 +201,10 @@ function VideoPlayerNative({
   const scrubPreviewSecRef = React.useRef(0);
   const tapFeedbackOpacity = React.useRef(new Animated.Value(0)).current;
   const tapFeedbackScale = React.useRef(new Animated.Value(0.84)).current;
+  const tapOverlayWidthRef = React.useRef(0);
+  const holdFastForwardTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isHoldingFastForwardRef = React.useRef(false);
+  const suppressTapToggleRef = React.useRef(false);
   const minimalControlsOpacity = React.useRef(new Animated.Value(0)).current;
   const minimalControlsHideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const areMinimalControlsVisibleRef = React.useRef(false);
@@ -191,12 +213,18 @@ function VideoPlayerNative({
   const isActiveRef = React.useRef(isActive);
   const isScreenActiveRef = React.useRef(isScreenActive);
   const isFullscreenRef = React.useRef(isFullscreen);
+  const manualPausedRef = React.useRef<boolean | null>(manualPaused);
   const lastKnownPlayingRef = React.useRef(false);
   const postFullscreenStateRef = React.useRef<boolean | null>(null);
   const resumeAfterForcedPauseUntilRef = React.useRef(0);
   const shouldForcePostFullscreenState = isImmersive;
   const shouldShowMinimalControls = !isImmersive && Boolean(showMinimalControls);
   const keepMinimalControlsVisible = shouldShowMinimalControls && Boolean(minimalControlsPersistent);
+  const canUseHoldFastForward = isImmersive && allowTapToToggle;
+  const effectiveHoldFastForwardRate =
+    Number.isFinite(holdFastForwardRate) && holdFastForwardRate > 1
+      ? holdFastForwardRate
+      : DEFAULT_HOLD_FAST_FORWARD_RATE;
 
   const clearMinimalControlsHideTimer = React.useCallback(() => {
     if (minimalControlsHideTimerRef.current) {
@@ -282,7 +310,8 @@ function VideoPlayerNative({
     isActiveRef.current = isActive;
     isScreenActiveRef.current = isScreenActive;
     isFullscreenRef.current = isFullscreen;
-  }, [appState, isActive, isScreenActive, isFullscreen]);
+    manualPausedRef.current = manualPaused;
+  }, [appState, isActive, isScreenActive, isFullscreen, manualPaused]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', setAppState);
@@ -358,6 +387,15 @@ function VideoPlayerNative({
   useEffect(() => {
     return () => {
       clearMinimalControlsHideTimer();
+      if (holdFastForwardTimerRef.current) {
+        clearTimeout(holdFastForwardTimerRef.current);
+        holdFastForwardTimerRef.current = null;
+      }
+      try {
+        videoPlayer.playbackRate = 1;
+      } catch {
+        // no-op on unmount for already released players
+      }
       try {
         videoPlayer.pause();
       } catch {
@@ -740,6 +778,91 @@ function VideoPlayerNative({
     }
   }, [allowTapToToggle, isActive, isScreenActive, manualPaused, videoPlayer, runTapFeedback, uri]);
 
+  const clearHoldFastForwardTimer = React.useCallback(() => {
+    if (!holdFastForwardTimerRef.current) return;
+    clearTimeout(holdFastForwardTimerRef.current);
+    holdFastForwardTimerRef.current = null;
+  }, []);
+
+  const stopHoldFastForward = React.useCallback(() => {
+    clearHoldFastForwardTimer();
+    if (!isHoldingFastForwardRef.current) return;
+    isHoldingFastForwardRef.current = false;
+    try {
+      videoPlayer.playbackRate = 1;
+    } catch (error) {
+      if (isReleasedPlayerError(error)) return;
+      if (__DEV__) {
+        console.debug('[video] hold-fast-forward stop skipped for released player', {
+          uri,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }, [clearHoldFastForwardTimer, uri, videoPlayer]);
+
+  useEffect(() => {
+    if (isActive && isScreenActive && appState !== 'background') return;
+    stopHoldFastForward();
+  }, [appState, isActive, isScreenActive, stopHoldFastForward]);
+
+  const handleTapOverlayPressIn = React.useCallback<NonNullable<PressableProps['onPressIn']>>(
+    (event) => {
+      suppressTapToggleRef.current = false;
+      if (!canUseHoldFastForward) return;
+      if (!isActive || !isScreenActive) return;
+      if (manualPausedRef.current === true) return;
+
+      const overlayWidth = tapOverlayWidthRef.current;
+      const locationX = event.nativeEvent.locationX;
+      if (overlayWidth <= 0 || locationX < overlayWidth * HOLD_FAST_FORWARD_RIGHT_SIDE_RATIO) {
+        return;
+      }
+
+      clearHoldFastForwardTimer();
+      holdFastForwardTimerRef.current = setTimeout(() => {
+        holdFastForwardTimerRef.current = null;
+        if (!isActiveRef.current || !isScreenActiveRef.current) return;
+        if (appStateRef.current === 'background') return;
+        if (manualPausedRef.current === true) return;
+        isHoldingFastForwardRef.current = true;
+        suppressTapToggleRef.current = true;
+        try {
+          videoPlayer.playbackRate = effectiveHoldFastForwardRate;
+        } catch (error) {
+          if (isReleasedPlayerError(error)) return;
+          if (__DEV__) {
+            console.debug('[video] hold-fast-forward start skipped for released player', {
+              uri,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }, HOLD_FAST_FORWARD_DELAY_MS);
+    },
+    [
+      canUseHoldFastForward,
+      clearHoldFastForwardTimer,
+      effectiveHoldFastForwardRate,
+      isActive,
+      isScreenActive,
+      uri,
+      videoPlayer,
+    ]
+  );
+
+  const handleTapOverlayPressOut = React.useCallback(() => {
+    stopHoldFastForward();
+  }, [stopHoldFastForward]);
+
+  const handleTapOverlayPress = React.useCallback(() => {
+    if (isHoldingFastForwardRef.current || suppressTapToggleRef.current) {
+      suppressTapToggleRef.current = false;
+      return;
+    }
+    handleTogglePlayback();
+  }, [handleTogglePlayback]);
+
   const handleControlTogglePlayback = React.useCallback(() => {
     if (!isActive || !isScreenActive) return;
     revealMinimalControls(true);
@@ -1078,7 +1201,15 @@ function VideoPlayerNative({
         </Animated.View>
       ) : null}
       {allowTapToToggle && !isCustomFullscreen ? (
-        <Pressable style={styles.tapOverlay} onPress={handleTogglePlayback} />
+        <Pressable
+          style={styles.tapOverlay}
+          onLayout={(event) => {
+            tapOverlayWidthRef.current = event.nativeEvent.layout.width;
+          }}
+          onPressIn={handleTapOverlayPressIn}
+          onPressOut={handleTapOverlayPressOut}
+          onPress={handleTapOverlayPress}
+        />
       ) : null}
       {allowTapToToggle && !isCustomFullscreen && tapFeedbackIcon ? (
         <Animated.View

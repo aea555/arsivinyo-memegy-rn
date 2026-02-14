@@ -16,6 +16,7 @@ const KEYS = {
   AUTO_PLAY_FEED_VIDEOS: 'auto_play_feed_videos',
   AUTO_SWIPE_FEED_VIDEOS: 'auto_swipe_feed_videos',
   RESET_FEED_VIDEO_ON_SWIPE: 'reset_feed_video_on_swipe',
+  FEED_HOLD_FAST_FORWARD_RATE: 'feed_hold_fast_forward_rate',
   FEED_PRESERVE_ASPECT_RATIO: 'feed_preserve_aspect_ratio',
   AUTH_DEBUG_AGGRESSIVE_REFRESH: 'auth_debug_aggressive_refresh',
   OTA_SUCCESS_MODAL_DISMISSED: 'ota_success_modal_dismissed',
@@ -117,6 +118,17 @@ export const LocalStorage = {
     const value = await AsyncStorage.getItem(KEYS.RESET_FEED_VIDEO_ON_SWIPE);
     if (value === null) return null;
     return value === '1';
+  },
+  async setFeedHoldFastForwardRate(rate: number) {
+    await AsyncStorage.setItem(KEYS.FEED_HOLD_FAST_FORWARD_RATE, String(rate));
+  },
+  async getFeedHoldFastForwardRate(): Promise<1.5 | 2 | 2.5 | 3 | null> {
+    const value = await AsyncStorage.getItem(KEYS.FEED_HOLD_FAST_FORWARD_RATE);
+    if (value === null) return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    if (parsed !== 1.5 && parsed !== 2 && parsed !== 2.5 && parsed !== 3) return null;
+    return parsed;
   },
   async setFeedPreserveAspectRatio(enabled: boolean) {
     await AsyncStorage.setItem(KEYS.FEED_PRESERVE_ASPECT_RATIO, enabled ? '1' : '0');

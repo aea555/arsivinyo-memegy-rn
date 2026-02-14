@@ -40,6 +40,7 @@ export function FeedScreen() {
   const autoPlayFeedVideos = useAppSettingsStore((state) => state.autoPlayFeedVideos);
   const autoSwipeFeedVideos = useAppSettingsStore((state) => state.autoSwipeFeedVideos);
   const resetFeedVideoOnSwipe = useAppSettingsStore((state) => state.resetFeedVideoOnSwipe);
+  const feedHoldFastForwardSpeed = useAppSettingsStore((state) => state.feedHoldFastForwardSpeed);
   const feedPreserveAspectRatio = useAppSettingsStore((state) => state.feedPreserveAspectRatio);
   const { isConnected } = useNetworkStatus();
   const [sort, setSort] = useState<'random' | 'latest' | 'popular'>('random');
@@ -144,6 +145,7 @@ export function FeedScreen() {
         height={viewportHeight}
         autoPlayEnabled={autoPlayFeedVideos}
         resetOnInactive={resetFeedVideoOnSwipe}
+        holdFastForwardRate={feedHoldFastForwardSpeed}
         preserveAspectRatio={feedPreserveAspectRatio}
         onVideoEnd={() => {
           if (!autoSwipeFeedVideos) return;
@@ -178,6 +180,7 @@ export function FeedScreen() {
       activeId,
       autoPlayFeedVideos,
       autoSwipeFeedVideos,
+      feedHoldFastForwardSpeed,
       resetFeedVideoOnSwipe,
       feedPreserveAspectRatio,
       fetchNextPage,

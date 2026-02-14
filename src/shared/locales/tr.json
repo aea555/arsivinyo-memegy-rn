@@ -216,6 +216,8 @@
     "autoSwipeFeedVideosHint": "Mevcut video bitti\u011finde ak\u0131\u015fta bir sonraki videoya otomatik ge\u00e7er.",
     "resetFeedVideoOnSwipe": "Kayd\u0131r\u0131nca videoyu ba\u015fa sar",
     "resetFeedVideoOnSwipeHint": "Videodan ayr\u0131l\u0131p geri d\u00f6nd\u00fc\u011f\u00fcnde ba\u015ftan oynat\u0131r.",
+    "feedHoldFastForwardSpeed": "Bas\u0131l\u0131 tutma h\u0131z\u0131",
+    "feedHoldFastForwardSpeedHint": "Ak\u0131\u015fta videonun sa\u011f taraf\u0131n\u0131 bas\u0131l\u0131 tutunca bu h\u0131zda ileri sarar.",
     "preserveFeedAspectRatio": "Video en-boy oran\u0131n\u0131 koru",
     "preserveFeedAspectRatioHint": "Gerekirse kenarl\u0131k b\u0131rakarak t\u00fcm kareyi g\u00f6sterir. Kapat\u0131rsan k\u0131rp\u0131p ekran\u0131 doldurur.",
     "autoPlayVideos": "Videolar\u0131 otomatik oynat (di\u011fer sayfalar)",
