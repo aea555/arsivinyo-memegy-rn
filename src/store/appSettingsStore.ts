@@ -6,6 +6,7 @@ type AppSettingsState = {
   autoPlayVideos: boolean;
   autoPlayFeedVideos: boolean;
   autoSwipeFeedVideos: boolean;
+  resetFeedVideoOnSwipe: boolean;
   feedPreserveAspectRatio: boolean;
   authDebugAggressiveRefresh: boolean;
   uploadAnonymousDefault: boolean;
@@ -15,6 +16,7 @@ type AppSettingsState = {
   setAutoPlayVideos: (enabled: boolean) => Promise<void>;
   setAutoPlayFeedVideos: (enabled: boolean) => Promise<void>;
   setAutoSwipeFeedVideos: (enabled: boolean) => Promise<void>;
+  setResetFeedVideoOnSwipe: (enabled: boolean) => Promise<void>;
   setFeedPreserveAspectRatio: (enabled: boolean) => Promise<void>;
   setAuthDebugAggressiveRefresh: (enabled: boolean) => Promise<void>;
   setUploadAnonymousDefault: (enabled: boolean) => Promise<void>;
@@ -26,6 +28,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
   autoPlayVideos: false,
   autoPlayFeedVideos: true,
   autoSwipeFeedVideos: true,
+  resetFeedVideoOnSwipe: true,
   feedPreserveAspectRatio: true,
   authDebugAggressiveRefresh: __DEV__,
   uploadAnonymousDefault: false,
@@ -36,6 +39,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       storedAutoPlayVideos,
       storedAutoPlayFeedVideos,
       storedAutoSwipeFeedVideos,
+      storedResetFeedVideoOnSwipe,
       storedFeedPreserveAspectRatio,
       storedAuthDebugAggressiveRefresh,
       storedUploadAnonymousDefault,
@@ -45,6 +49,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       LocalStorage.getAutoPlayVideos(),
       LocalStorage.getAutoPlayFeedVideos(),
       LocalStorage.getAutoSwipeFeedVideos(),
+      LocalStorage.getResetFeedVideoOnSwipe(),
       LocalStorage.getFeedPreserveAspectRatio(),
       LocalStorage.getAuthDebugAggressiveRefresh(),
       LocalStorage.getUploadAnonymousDefault(),
@@ -56,6 +61,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       autoPlayVideos: storedAutoPlayVideos ?? false,
       autoPlayFeedVideos: storedAutoPlayFeedVideos ?? true,
       autoSwipeFeedVideos: storedAutoSwipeFeedVideos ?? true,
+      resetFeedVideoOnSwipe: storedResetFeedVideoOnSwipe ?? true,
       feedPreserveAspectRatio: storedFeedPreserveAspectRatio ?? true,
       authDebugAggressiveRefresh: __DEV__ ? (storedAuthDebugAggressiveRefresh ?? true) : false,
       uploadAnonymousDefault: storedUploadAnonymousDefault ?? false,
@@ -74,6 +80,10 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
   setAutoSwipeFeedVideos: async (enabled) => {
     await LocalStorage.setAutoSwipeFeedVideos(enabled);
     set({ autoSwipeFeedVideos: enabled });
+  },
+  setResetFeedVideoOnSwipe: async (enabled) => {
+    await LocalStorage.setResetFeedVideoOnSwipe(enabled);
+    set({ resetFeedVideoOnSwipe: enabled });
   },
   setFeedPreserveAspectRatio: async (enabled) => {
     await LocalStorage.setFeedPreserveAspectRatio(enabled);

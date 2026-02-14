@@ -19,6 +19,7 @@ type ImmersiveFeedItemProps = {
   isScreenActive: boolean;
   height: number;
   autoPlayEnabled: boolean;
+  resetOnInactive: boolean;
   preserveAspectRatio: boolean;
   onVideoEnd?: () => void;
 };
@@ -31,6 +32,7 @@ function ImmersiveFeedItemBase({
   isScreenActive,
   height,
   autoPlayEnabled,
+  resetOnInactive,
   preserveAspectRatio,
   onVideoEnd,
 }: ImmersiveFeedItemProps) {
@@ -77,6 +79,7 @@ function ImmersiveFeedItemBase({
           showNativeControls={false}
           autoPlayEnabled={autoPlayEnabled}
           allowTapToToggle
+          resetOnDeactivate={resetOnInactive}
           onPlaybackEnd={onVideoEnd}
         />
       ) : (
@@ -125,6 +128,7 @@ function areImmersiveFeedItemPropsEqual(prev: ImmersiveFeedItemProps, next: Imme
     prev.isScreenActive === next.isScreenActive &&
     prev.height === next.height &&
     prev.autoPlayEnabled === next.autoPlayEnabled &&
+    prev.resetOnInactive === next.resetOnInactive &&
     prev.preserveAspectRatio === next.preserveAspectRatio &&
     prev.onVideoEnd === next.onVideoEnd &&
     prev.video.id === next.video.id &&

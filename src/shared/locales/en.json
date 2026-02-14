@@ -214,6 +214,8 @@
     "autoPlayFeedVideosHint": "Automatically play videos in the feed.",
     "autoSwipeFeedVideos": "Auto-swipe to next video",
     "autoSwipeFeedVideosHint": "Automatically move to the next feed video when the current one ends.",
+    "resetFeedVideoOnSwipe": "Reset video when swiping away",
+    "resetFeedVideoOnSwipeHint": "When you return to a video after swiping, it starts from the beginning.",
     "preserveFeedAspectRatio": "Preserve video aspect ratio",
     "preserveFeedAspectRatioHint": "Shows the full frame with bars when needed. Disable to crop and fill.",
     "autoPlayVideos": "Auto-play videos (other pages)",

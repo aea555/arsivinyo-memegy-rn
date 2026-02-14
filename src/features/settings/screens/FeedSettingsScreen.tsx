@@ -16,6 +16,8 @@ export function FeedSettingsScreen() {
   const setAutoPlayFeedVideos = useAppSettingsStore((state) => state.setAutoPlayFeedVideos);
   const autoSwipeFeedVideos = useAppSettingsStore((state) => state.autoSwipeFeedVideos);
   const setAutoSwipeFeedVideos = useAppSettingsStore((state) => state.setAutoSwipeFeedVideos);
+  const resetFeedVideoOnSwipe = useAppSettingsStore((state) => state.resetFeedVideoOnSwipe);
+  const setResetFeedVideoOnSwipe = useAppSettingsStore((state) => state.setResetFeedVideoOnSwipe);
   const feedPreserveAspectRatio = useAppSettingsStore((state) => state.feedPreserveAspectRatio);
   const setFeedPreserveAspectRatio = useAppSettingsStore((state) => state.setFeedPreserveAspectRatio);
 
@@ -50,6 +52,23 @@ export function FeedSettingsScreen() {
             value={autoSwipeFeedVideos}
             onValueChange={(value) => {
               void setAutoSwipeFeedVideos(value);
+            }}
+            trackColor={{ true: palette.accent, false: palette.border }}
+          />
+        </View>
+      </Card>
+      <Card style={styles.sectionCard}>
+        <View style={styles.switchRow}>
+          <View style={styles.switchText}>
+            <AppText variant="bodyBold">{t('settings.resetFeedVideoOnSwipe')}</AppText>
+            <AppText variant="caption" style={{ color: palette.text.secondary }}>
+              {t('settings.resetFeedVideoOnSwipeHint')}
+            </AppText>
+          </View>
+          <Switch
+            value={resetFeedVideoOnSwipe}
+            onValueChange={(value) => {
+              void setResetFeedVideoOnSwipe(value);
             }}
             trackColor={{ true: palette.accent, false: palette.border }}
           />

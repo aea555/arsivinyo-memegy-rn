@@ -15,6 +15,7 @@ const KEYS = {
   AUTO_PLAY_VIDEOS: 'auto_play_videos',
   AUTO_PLAY_FEED_VIDEOS: 'auto_play_feed_videos',
   AUTO_SWIPE_FEED_VIDEOS: 'auto_swipe_feed_videos',
+  RESET_FEED_VIDEO_ON_SWIPE: 'reset_feed_video_on_swipe',
   FEED_PRESERVE_ASPECT_RATIO: 'feed_preserve_aspect_ratio',
   AUTH_DEBUG_AGGRESSIVE_REFRESH: 'auth_debug_aggressive_refresh',
   OTA_SUCCESS_MODAL_DISMISSED: 'ota_success_modal_dismissed',
@@ -106,6 +107,14 @@ export const LocalStorage = {
   },
   async getAutoSwipeFeedVideos() {
     const value = await AsyncStorage.getItem(KEYS.AUTO_SWIPE_FEED_VIDEOS);
+    if (value === null) return null;
+    return value === '1';
+  },
+  async setResetFeedVideoOnSwipe(enabled: boolean) {
+    await AsyncStorage.setItem(KEYS.RESET_FEED_VIDEO_ON_SWIPE, enabled ? '1' : '0');
+  },
+  async getResetFeedVideoOnSwipe() {
+    const value = await AsyncStorage.getItem(KEYS.RESET_FEED_VIDEO_ON_SWIPE);
     if (value === null) return null;
     return value === '1';
   },

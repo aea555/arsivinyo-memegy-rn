@@ -22,6 +22,7 @@ type VideoPlayerProps = {
   inactivePauseDelayMs?: number;
   autoPlayEnabled?: boolean;
   allowTapToToggle?: boolean;
+  resetOnDeactivate?: boolean;
   onPlaybackEnd?: () => void;
 };
 
@@ -90,6 +91,7 @@ export function VideoPlayer({
   inactivePauseDelayMs,
   autoPlayEnabled,
   allowTapToToggle = false,
+  resetOnDeactivate = false,
   onPlaybackEnd,
 }: VideoPlayerProps) {
   const canMountNativePlayer = typeof uri === 'string' && uri.length > 0;
@@ -118,6 +120,7 @@ export function VideoPlayer({
       inactivePauseDelayMs={inactivePauseDelayMs}
       autoPlayEnabled={autoPlayEnabled}
       allowTapToToggle={allowTapToToggle}
+      resetOnDeactivate={resetOnDeactivate}
       onPlaybackEnd={onPlaybackEnd}
     />
   );
@@ -156,6 +159,7 @@ function VideoPlayerNative({
   inactivePauseDelayMs,
   autoPlayEnabled,
   allowTapToToggle = false,
+  resetOnDeactivate = false,
   onPlaybackEnd,
 }: VideoPlayerProps) {
   const { palette } = useTheme();
@@ -381,6 +385,28 @@ function VideoPlayerNative({
     setAreMinimalControlsVisible(false);
     minimalControlsOpacity.setValue(0);
   }, [clearMinimalControlsHideTimer, minimalControlsOpacity, uri]);
+
+  const previousIsActiveRef = React.useRef(isActive);
+  useEffect(() => {
+    const wasActive = previousIsActiveRef.current;
+    previousIsActiveRef.current = isActive;
+    if (!resetOnDeactivate || !wasActive || isActive) return;
+
+    setPositionSec(0);
+    setScrubPreviewSec(0);
+    scrubPreviewSecRef.current = 0;
+    try {
+      videoPlayer.currentTime = 0;
+    } catch (error) {
+      if (isReleasedPlayerError(error)) return;
+      if (__DEV__) {
+        console.debug('[video] reset-on-deactivate skipped for released player', {
+          uri,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }, [isActive, resetOnDeactivate, uri, videoPlayer]);
 
   useEffect(() => {
     if (!shouldShowMinimalControls) {
