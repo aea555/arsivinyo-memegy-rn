@@ -3,7 +3,13 @@ import { isAxiosError } from 'axios';
 import { apiClient } from '@/src/shared/services/api/apiClient';
 import { useAuthStore } from '@/src/store/authStore';
 import { mapUserVideoDtoToMyVideoItem } from '@/src/features/profile/utils/myVideoMapper';
-import { ApiErrorResponse, UpdateUsernameRequest, UserDto, UserVideoDto } from '@/src/shared/types/api';
+import {
+  ApiErrorResponse,
+  UpdateUsernameRequest,
+  UpdateVideoRequest,
+  UserDto,
+  UserVideoDto,
+} from '@/src/shared/types/api';
 import { toDeleteVideoError } from '@/src/features/profile/utils/deleteVideoErrors';
 
 export async function getMyProfile() {
@@ -201,6 +207,52 @@ export async function retryVideoProcessing(videoId: string) {
         data: error?.response?.data,
         message: error?.message,
         videoId,
+      });
+    }
+    throw error;
+  }
+}
+
+export async function updateMyVideoMetadata(videoId: string, payload: UpdateVideoRequest): Promise<void> {
+  const endpoint = `/videos/${videoId}`;
+  const startedAt = Date.now();
+  const changedFields = Object.keys(payload).filter((key) =>
+    ['title', 'description', 'is_anonymous'].includes(key)
+  );
+
+  if (__DEV__) {
+    console.debug('[video.update] request', {
+      method: 'PATCH',
+      endpoint,
+      videoId,
+      changedFields,
+    });
+  }
+
+  try {
+    const response = await apiClient.patch(endpoint, payload);
+    if (__DEV__) {
+      console.debug('[video.update] response', {
+        endpoint,
+        status: response.status,
+        videoId,
+        changedFields,
+        elapsedMs: Date.now() - startedAt,
+      });
+    }
+  } catch (error: any) {
+    if (__DEV__) {
+      const status = error?.response?.status;
+      const statusClass = typeof status === 'number' ? `${Math.floor(status / 100)}xx` : 'none';
+      console.debug('[video.update] error', {
+        endpoint,
+        status,
+        statusClass,
+        videoId,
+        changedFields,
+        elapsedMs: Date.now() - startedAt,
+        data: error?.response?.data,
+        message: error?.message,
       });
     }
     throw error;

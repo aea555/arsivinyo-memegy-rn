@@ -18,9 +18,14 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { VideoCard } from '@/src/features/feed/components/VideoCard';
+import {
+  EditVideoMetadataModal,
+  EditVideoMetadataValues,
+} from '@/src/features/profile/components/EditVideoMetadataModal';
 import { retryVideoProcessing } from '@/src/features/profile/api/profileApi';
 import { useDeleteVideo } from '@/src/features/profile/hooks/useDeleteVideo';
 import { useMyVideos } from '@/src/features/profile/hooks/useMyVideos';
+import { useUpdateVideoMetadata } from '@/src/features/profile/hooks/useUpdateVideoMetadata';
 import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { AppText } from '@/src/shared/components/ui/AppText';
@@ -39,9 +44,12 @@ import { MyVideoItem, VideoFeedItem } from '@/src/shared/types/api';
 import { extractApiErrorMessage } from '@/src/shared/utils/errorParser';
 import { formatDate } from '@/src/shared/utils/formatters';
 import {
+  clampUtf8Bytes,
   clampSearchQueryDraft,
   normalizeSearchQuery,
   SEARCH_MAX_QUERY_CHARS,
+  VIDEO_DESCRIPTION_MAX_BYTES,
+  VIDEO_TITLE_MAX_BYTES,
 } from '@/src/shared/utils/inputLimits';
 import { useToastStore } from '@/src/store/toastStore';
 
@@ -110,10 +118,12 @@ export function MyVideosScreen() {
   const showToast = useToastStore((state) => state.showToast);
   const queryClient = useQueryClient();
   const deleteMutation = useDeleteVideo();
+  const updateMetadataMutation = useUpdateVideoMetadata();
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useMyVideos();
 
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
+  const [editingVideoId, setEditingVideoId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<'date_desc' | 'title_asc'>('date_desc');
   const [controlsHeight, setControlsHeight] = useState(DEFAULT_CONTROLS_HEIGHT);
@@ -263,6 +273,14 @@ export function MyVideosScreen() {
   }, [displayVideos, selectedVideoId]);
 
   useEffect(() => {
+    if (!editingVideoId) return;
+    const stillExists = displayVideos.some((item) => item.id === editingVideoId);
+    if (!stillExists) {
+      setEditingVideoId(null);
+    }
+  }, [displayVideos, editingVideoId]);
+
+  useEffect(() => {
     const wasSearching = wasSearchingRef.current;
     if (wasSearching && !isSearching) {
       requestAnimationFrame(() => {
@@ -275,6 +293,10 @@ export function MyVideosScreen() {
   const selectedVideo = useMemo(
     () => displayVideos.find((item) => item.id === selectedVideoId) ?? null,
     [displayVideos, selectedVideoId]
+  );
+  const editingVideo = useMemo(
+    () => displayVideos.find((item) => item.id === editingVideoId) ?? null,
+    [displayVideos, editingVideoId]
   );
 
   const handleScroll = useCallback(
@@ -314,6 +336,65 @@ export function MyVideosScreen() {
     [deleteMutation.isPending]
   );
 
+  const handleOpenEdit = useCallback((videoId: string) => {
+    setEditingVideoId(videoId);
+  }, []);
+
+  const handleSaveMetadata = useCallback(
+    (values: EditVideoMetadataValues) => {
+      if (!editingVideo) return;
+
+      const nextTitle = clampUtf8Bytes(values.title ?? '', VIDEO_TITLE_MAX_BYTES);
+      const nextDescription = clampUtf8Bytes(values.description ?? '', VIDEO_DESCRIPTION_MAX_BYTES);
+      const nextIsAnonymous = Boolean(values.isAnonymous);
+
+      const originalTitle = editingVideo.title ?? '';
+      const originalDescription = editingVideo.description ?? '';
+      const originalIsAnonymous = Boolean(editingVideo.is_anonymous);
+
+      const payload: {
+        title?: string;
+        description?: string;
+        is_anonymous?: boolean;
+      } = {};
+      const changedFields: ('title' | 'description' | 'is_anonymous')[] = [];
+
+      if (nextTitle !== originalTitle) {
+        payload.title = nextTitle;
+        changedFields.push('title');
+      }
+
+      if (nextDescription !== originalDescription) {
+        payload.description = nextDescription;
+        changedFields.push('description');
+      }
+
+      if (nextIsAnonymous !== originalIsAnonymous) {
+        payload.is_anonymous = nextIsAnonymous;
+        changedFields.push('is_anonymous');
+      }
+
+      if (changedFields.length === 0) {
+        setEditingVideoId(null);
+        return;
+      }
+
+      updateMetadataMutation.mutate(
+        {
+          videoId: editingVideo.id,
+          payload,
+          changedFields,
+        },
+        {
+          onSuccess: () => {
+            setEditingVideoId(null);
+          },
+        }
+      );
+    },
+    [editingVideo, updateMetadataMutation]
+  );
+
   const renderDeleteAction = useCallback(
     (videoId: string) => {
       const isDeletingThisVideo = deleteMutation.isPending && deleteMutation.variables === videoId;
@@ -349,6 +430,55 @@ export function MyVideosScreen() {
       palette.error,
       t,
     ]
+  );
+
+  const renderEditAction = useCallback(
+    (videoId: string) => {
+      const isBusy = updateMetadataMutation.isPending || deleteMutation.isPending;
+      const isEditingThisVideo = editingVideoId === videoId && updateMetadataMutation.isPending;
+
+      return (
+        <Pressable
+          onPress={() => handleOpenEdit(videoId)}
+          disabled={isBusy}
+          style={({ pressed }) => [
+            styles.editAction,
+            {
+              borderColor: withAlpha(palette.accent, 0.45),
+              backgroundColor: withAlpha(palette.accent, 0.15),
+              opacity: isBusy && !isEditingThisVideo ? 0.55 : 1,
+            },
+            pressed && !isBusy ? styles.pressedAction : null,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={t('profile.editMetadataAction')}
+        >
+          <Ionicons
+            name={isEditingThisVideo ? 'time-outline' : 'create-outline'}
+            size={20}
+            color={palette.accent}
+          />
+        </Pressable>
+      );
+    },
+    [
+      deleteMutation.isPending,
+      editingVideoId,
+      handleOpenEdit,
+      palette.accent,
+      t,
+      updateMetadataMutation.isPending,
+    ]
+  );
+
+  const renderCardExtraActions = useCallback(
+    (videoId: string) => (
+      <>
+        {renderEditAction(videoId)}
+        {renderDeleteAction(videoId)}
+      </>
+    ),
+    [renderDeleteAction, renderEditAction]
   );
 
   const renderModalCloseAction = useCallback(() => {
@@ -531,7 +661,7 @@ export function MyVideosScreen() {
           isScreenActive={isFocused}
           showUploader={false}
           showAnonymousBadge={selectedVideo.is_anonymous}
-          renderExtraAction={renderDeleteAction}
+          renderExtraAction={renderCardExtraActions}
           renderFarRightAction={renderModalCloseAction}
         />
       );
@@ -591,18 +721,23 @@ export function MyVideosScreen() {
           />
         ) : null}
         <View style={styles.statusActionsRow}>
-          <View style={styles.statusActionsLeft}>{renderDeleteAction(selectedVideo.id)}</View>
+          <View style={styles.statusActionsLeft}>
+            {renderEditAction(selectedVideo.id)}
+            {renderDeleteAction(selectedVideo.id)}
+          </View>
           {renderModalCloseAction()}
         </View>
       </Card>
     );
   }, [
+    renderCardExtraActions,
     isFocused,
     palette.background,
     palette.border,
     palette.error,
     palette.text.secondary,
     renderDeleteAction,
+    renderEditAction,
     renderModalCloseAction,
     retryMutation,
     selectedVideo,
@@ -680,6 +815,19 @@ export function MyVideosScreen() {
         </View>
       </Modal>
 
+      <EditVideoMetadataModal
+        visible={Boolean(editingVideo)}
+        title={editingVideo?.title ?? ''}
+        description={editingVideo?.description ?? ''}
+        isAnonymous={Boolean(editingVideo?.is_anonymous)}
+        isSaving={updateMetadataMutation.isPending}
+        onCancel={() => {
+          if (updateMetadataMutation.isPending) return;
+          setEditingVideoId(null);
+        }}
+        onSave={handleSaveMetadata}
+      />
+
       <ConfirmModal
         visible={Boolean(pendingDeleteId)}
         title={t('profile.deleteVideoConfirmTitle')}
@@ -698,6 +846,9 @@ export function MyVideosScreen() {
           deleteMutation.mutate(targetVideoId);
           if (selectedVideoId === targetVideoId) {
             setSelectedVideoId(null);
+          }
+          if (editingVideoId === targetVideoId) {
+            setEditingVideoId(null);
           }
         }}
       />
@@ -866,9 +1017,18 @@ const styles = StyleSheet.create({
   },
   deleteAction: {
     alignSelf: 'flex-start',
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editAction: {
+    alignSelf: 'flex-start',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -883,6 +1043,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
   },
   inlineCloseAction: {
     width: 42,
