@@ -18,14 +18,12 @@ import { formatCount } from '@/src/shared/utils/formatters';
 type FeedOverlayActionsProps = {
   video: VideoFeedItem;
   onToggleInfo: () => void;
-  onOpenSortPicker: () => void;
   infoVisible: boolean;
 };
 
 function FeedOverlayActionsBase({
   video,
   onToggleInfo,
-  onOpenSortPicker,
   infoVisible,
 }: FeedOverlayActionsProps) {
   const { t } = useTranslation();
@@ -38,34 +36,31 @@ function FeedOverlayActionsBase({
 
   return (
     <View style={styles.container} pointerEvents="box-none">
-      <Pressable
-        onPress={onOpenSortPicker}
-        style={({ pressed }) => [
-          styles.iconButton,
-          {
-            backgroundColor: withAlpha(palette.overlay, 0.9),
-            borderColor: withAlpha(palette.border, 0.85),
-          },
-          pressed ? styles.pressed : null,
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={t('feed.sort')}
-      >
-        <Ionicons name="options-outline" size={24} color={palette.text.primary} />
-      </Pressable>
       {video.is_liked !== undefined ? (
         <View style={styles.likeGroup}>
-          <LikeButton
-            liked={currentLiked}
-            count={video.like_count}
-            onPress={handleLikePress}
-            disabled={toggleLike.isPending}
-            variant="overlay"
-            iconOnly
-          />
-          <AppText variant="caption" style={[styles.likeCount, { color: '#FFFFFF' }]}>
-            {formatCount(video.like_count)}
-          </AppText>
+          <View style={styles.scaledActionWrap}>
+            <LikeButton
+              liked={currentLiked}
+              count={video.like_count}
+              onPress={handleLikePress}
+              disabled={toggleLike.isPending}
+              variant="overlay"
+              iconOnly
+            />
+          </View>
+          <View
+            style={[
+              styles.likeCountBadge,
+              {
+                backgroundColor: withAlpha('#000000', 0.58),
+                borderColor: withAlpha(palette.border, 0.74),
+              },
+            ]}
+          >
+            <AppText variant="caption" style={[styles.likeCount, { color: '#FFFFFF' }]}>
+              {formatCount(video.like_count)}
+            </AppText>
+          </View>
         </View>
       ) : (
         <View style={styles.likeGroup}>
@@ -80,14 +75,30 @@ function FeedOverlayActionsBase({
           >
             <Ionicons name="heart-outline" size={24} color={palette.text.secondary} />
           </View>
-          <AppText variant="caption" style={[styles.likeCount, { color: '#FFFFFF' }]}>
-            {formatCount(video.like_count)}
-          </AppText>
+          <View
+            style={[
+              styles.likeCountBadge,
+              {
+                backgroundColor: withAlpha('#000000', 0.58),
+                borderColor: withAlpha(palette.border, 0.74),
+              },
+            ]}
+          >
+            <AppText variant="caption" style={[styles.likeCount, { color: '#FFFFFF' }]}>
+              {formatCount(video.like_count)}
+            </AppText>
+          </View>
         </View>
       )}
-      <DownloadButton videoId={video.id} suggestedName={video.title} variant="overlay" iconOnly />
-      <QuickShareButton videoId={video.id} suggestedName={video.title} variant="overlay" iconOnly />
-      <ShareButton url={video.url} title={video.title} variant="overlay" iconOnly />
+      <View style={styles.scaledActionWrap}>
+        <DownloadButton videoId={video.id} suggestedName={video.title} variant="overlay" iconOnly />
+      </View>
+      <View style={styles.scaledActionWrap}>
+        <QuickShareButton videoId={video.id} suggestedName={video.title} variant="overlay" iconOnly />
+      </View>
+      <View style={styles.scaledActionWrap}>
+        <ShareButton url={video.url} title={video.title} variant="overlay" iconOnly />
+      </View>
       <Pressable
         onPress={onToggleInfo}
         style={({ pressed }) => [
@@ -105,7 +116,7 @@ function FeedOverlayActionsBase({
       >
         <Ionicons
           name="information-circle-outline"
-          size={24}
+          size={20}
           color={infoVisible ? palette.onAccent : palette.text.primary}
         />
       </Pressable>
@@ -117,7 +128,6 @@ function areFeedOverlayActionsPropsEqual(prev: FeedOverlayActionsProps, next: Fe
   return (
     prev.infoVisible === next.infoVisible &&
     prev.onToggleInfo === next.onToggleInfo &&
-    prev.onOpenSortPicker === next.onOpenSortPicker &&
     prev.video.id === next.video.id &&
     prev.video.like_count === next.video.like_count &&
     prev.video.is_liked === next.video.is_liked &&
@@ -129,34 +139,49 @@ export const FeedOverlayActions = React.memo(FeedOverlayActionsBase, areFeedOver
 
 const styles = StyleSheet.create({
   container: {
-    width: 56,
+    width: 48,
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   counterFallback: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   likeGroup: {
     alignItems: 'center',
-    gap: 2,
+    gap: 3,
+  },
+  likeCountBadge: {
+    minWidth: 30,
+    minHeight: 18,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   likeCount: {
     textAlign: 'center',
-    minWidth: 38,
-    opacity: 0.95,
+    minWidth: 0,
+    opacity: 0.98,
+    textShadowColor: 'rgba(0, 0, 0, 0.72)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   iconButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  scaledActionWrap: {
+    transform: [{ scale: 0.88 }],
   },
   pressed: {
     transform: [{ scale: 0.98 }],

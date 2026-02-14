@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   FlatList,
-  Modal,
   Pressable,
   StyleSheet,
   View,
@@ -71,9 +70,6 @@ export function FeedScreen() {
   }, [data]);
 
   const activeId = videos[activeIndex]?.id ?? null;
-  const openSortPicker = useCallback(() => {
-    setSortPickerVisible(true);
-  }, []);
   const sortOptions = useMemo(
     () => [
       { label: t('feed.sortRandom'), value: 'random' as const },
@@ -81,6 +77,10 @@ export function FeedScreen() {
       { label: t('feed.sortPopular'), value: 'popular' as const },
     ],
     [t]
+  );
+  const selectedSortLabel = useMemo(
+    () => sortOptions.find((option) => option.value === sort)?.label ?? t('feed.sortRandom'),
+    [sort, sortOptions, t]
   );
 
   renderCountRef.current += 1;
@@ -143,7 +143,6 @@ export function FeedScreen() {
         height={viewportHeight}
         autoPlayEnabled={autoPlayFeedVideos}
         preserveAspectRatio={feedPreserveAspectRatio}
-        onOpenSortPicker={openSortPicker}
         onVideoEnd={() => {
           if (!autoSwipeFeedVideos) return;
           if (activeId !== item.id) return;
@@ -182,7 +181,6 @@ export function FeedScreen() {
       hasNextPage,
       isFetchingNextPage,
       isFocused,
-      openSortPicker,
       videos.length,
       viewportHeight,
     ]
@@ -272,7 +270,80 @@ export function FeedScreen() {
         onLayout={(event) => {
           handleLayout(event.nativeEvent.layout.height);
         }}
-      >
+        >
+        {sortPickerVisible ? (
+          <Pressable
+            style={styles.sortBackdropTouch}
+            onPress={() => setSortPickerVisible(false)}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.cancel')}
+          />
+        ) : null}
+        <View pointerEvents="box-none" style={[styles.sortControlWrap, { top: insets.top + spacing.sm }]}>
+          <Pressable
+            onPress={() => setSortPickerVisible((prev) => !prev)}
+            style={({ pressed }) => [
+              styles.sortTrigger,
+              {
+                backgroundColor: withAlpha(palette.overlay, 0.9),
+                borderColor: withAlpha(palette.border, 0.85),
+              },
+              pressed ? styles.pressedOption : null,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={t('feed.sort')}
+          >
+            <Ionicons name="options-outline" size={16} color={palette.text.primary} />
+            <AppText variant="caption" numberOfLines={1} style={styles.sortTriggerLabel}>
+              {selectedSortLabel}
+            </AppText>
+            <Ionicons
+              name={sortPickerVisible ? 'chevron-up' : 'chevron-down'}
+              size={14}
+              color={palette.text.secondary}
+            />
+          </Pressable>
+          {sortPickerVisible ? (
+            <View
+              style={[
+                styles.sortDropdown,
+                {
+                  backgroundColor: withAlpha(palette.surface, 0.98),
+                  borderColor: withAlpha(palette.border, 0.78),
+                },
+              ]}
+            >
+              {sortOptions.map((option) => {
+                const selected = sort === option.value;
+                return (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => {
+                      setSort(option.value);
+                      setSortPickerVisible(false);
+                    }}
+                    style={({ pressed }) => [
+                      styles.sortDropdownOption,
+                      {
+                        backgroundColor: selected
+                          ? withAlpha(palette.accent, 0.16)
+                          : 'transparent',
+                      },
+                      pressed ? styles.pressedOption : null,
+                    ]}
+                  >
+                    <AppText style={{ color: palette.text.primary }}>{option.label}</AppText>
+                    {selected ? (
+                      <Ionicons name="checkmark-circle" size={16} color={palette.accent} />
+                    ) : (
+                      <Ionicons name="ellipse-outline" size={16} color={palette.text.secondary} />
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
         <FlatList
           key={`feed-${sort}`}
           ref={listRef}
@@ -314,61 +385,6 @@ export function FeedScreen() {
           </View>
         </View>
       ) : null}
-      <Modal
-        transparent
-        animationType="fade"
-        visible={sortPickerVisible}
-        onRequestClose={() => setSortPickerVisible(false)}
-      >
-        <Pressable
-          style={styles.sortBackdrop}
-          onPress={() => setSortPickerVisible(false)}
-          accessibilityRole="button"
-          accessibilityLabel={t('common.cancel')}
-        >
-          <Pressable
-            style={[styles.sortSheet, { backgroundColor: withAlpha(palette.surface, 0.98) }]}
-            onPress={(event) => event.stopPropagation()}
-          >
-            <AppText variant="bodyBold" style={styles.sortTitle}>
-              {t('feed.sort')}
-            </AppText>
-            <View style={styles.sortOptions}>
-              {sortOptions.map((option) => {
-                const selected = sort === option.value;
-                return (
-                  <Pressable
-                    key={option.value}
-                    onPress={() => {
-                      setSort(option.value);
-                      setSortPickerVisible(false);
-                    }}
-                    style={({ pressed }) => [
-                      styles.sortOption,
-                      {
-                        borderColor: selected
-                          ? withAlpha(palette.accent, 0.82)
-                          : withAlpha(palette.border, 0.78),
-                        backgroundColor: selected
-                          ? withAlpha(palette.accent, 0.16)
-                          : withAlpha(palette.background, 0.9),
-                      },
-                      pressed ? styles.pressedOption : null,
-                    ]}
-                  >
-                    <AppText style={{ color: palette.text.primary }}>{option.label}</AppText>
-                    {selected ? (
-                      <Ionicons name="checkmark-circle" size={19} color={palette.accent} />
-                    ) : (
-                      <Ionicons name="ellipse-outline" size={19} color={palette.text.secondary} />
-                    )}
-                  </Pressable>
-                );
-              })}
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </Screen>
   );
 }
@@ -417,30 +433,38 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     backgroundColor: '#CF1E2A',
   },
-  sortBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    justifyContent: 'flex-end',
-    padding: spacing.md,
+  sortBackdropTouch: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9,
   },
-  sortSheet: {
-    borderRadius: 18,
+  sortControlWrap: {
+    position: 'absolute',
+    left: spacing.md,
+    zIndex: 20,
+  },
+  sortTrigger: {
+    minHeight: 36,
+    maxWidth: 210,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  sortTitle: {
-    marginBottom: spacing.xs,
-  },
-  sortOptions: {
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
   },
-  sortOption: {
-    minHeight: 46,
+  sortTriggerLabel: {
+    flexShrink: 1,
+  },
+  sortDropdown: {
+    marginTop: spacing.xs,
     borderRadius: 12,
     borderWidth: 1,
-    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    minWidth: 168,
+  },
+  sortDropdownOption: {
+    minHeight: 38,
+    paddingHorizontal: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

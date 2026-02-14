@@ -20,7 +20,6 @@ type ImmersiveFeedItemProps = {
   height: number;
   autoPlayEnabled: boolean;
   preserveAspectRatio: boolean;
-  onOpenSortPicker: () => void;
   onVideoEnd?: () => void;
 };
 
@@ -33,7 +32,6 @@ function ImmersiveFeedItemBase({
   height,
   autoPlayEnabled,
   preserveAspectRatio,
-  onOpenSortPicker,
   onVideoEnd,
 }: ImmersiveFeedItemProps) {
   const { t } = useTranslation();
@@ -114,7 +112,6 @@ function ImmersiveFeedItemBase({
             video={video}
             infoVisible={infoVisible}
             onToggleInfo={handleToggleInfo}
-            onOpenSortPicker={onOpenSortPicker}
           />
         </View>
       </View>
@@ -129,7 +126,6 @@ function areImmersiveFeedItemPropsEqual(prev: ImmersiveFeedItemProps, next: Imme
     prev.height === next.height &&
     prev.autoPlayEnabled === next.autoPlayEnabled &&
     prev.preserveAspectRatio === next.preserveAspectRatio &&
-    prev.onOpenSortPicker === next.onOpenSortPicker &&
     prev.onVideoEnd === next.onVideoEnd &&
     prev.video.id === next.video.id &&
     prev.video.url === next.video.url &&
