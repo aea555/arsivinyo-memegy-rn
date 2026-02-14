@@ -2,7 +2,7 @@
   "expo": {
     "name": "arsivinyo-memegy-rn",
     "slug": "arsivinyo-memegy-rn",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/arsivinyo_memegy_1024.png",
     "scheme": "memegy",

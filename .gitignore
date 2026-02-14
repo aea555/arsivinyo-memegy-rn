@@ -66,6 +66,7 @@ docs/*
 
 *.md 
 !README.md
+!OTA_CHANNELS.md
 !docs/EAS_OTA_UPDATES.md
 
 
