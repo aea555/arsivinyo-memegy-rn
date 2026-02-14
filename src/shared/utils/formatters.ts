@@ -1,8 +1,14 @@
 import i18n from '@/src/shared/locales/i18n';
 
 const compactFormatterCache = new Map<string, Intl.NumberFormat>();
+const dateFormatterCache = new Map<string, Intl.DateTimeFormat>();
 
 function getNumberLocale() {
+  const language = (i18n.resolvedLanguage || i18n.language || 'en').toLowerCase();
+  return language === 'tr' ? 'tr-TR' : 'en-US';
+}
+
+function getDateLocale() {
   const language = (i18n.resolvedLanguage || i18n.language || 'en').toLowerCase();
   return language === 'tr' ? 'tr-TR' : 'en-US';
 }
@@ -22,6 +28,15 @@ function getCompactFormatter(locale: string) {
   } catch {
     return null;
   }
+}
+
+function getDateFormatter(locale: string, key: string, options: Intl.DateTimeFormatOptions) {
+  const cacheKey = `${locale}:${key}`;
+  const cached = dateFormatterCache.get(cacheKey);
+  if (cached) return cached;
+  const formatter = new Intl.DateTimeFormat(locale, options);
+  dateFormatterCache.set(cacheKey, formatter);
+  return formatter;
 }
 
 export function formatCount(value: number) {
@@ -48,5 +63,28 @@ export function formatDate(iso: string) {
   if (Number.isNaN(date.getTime())) {
     return '';
   }
-  return date.toLocaleDateString();
+
+  const locale = getDateLocale();
+  const now = new Date();
+  const isSameYear = now.getFullYear() === date.getFullYear();
+
+  const timePart = getDateFormatter(locale, 'time', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+
+  if (isSameYear) {
+    const datePart = getDateFormatter(locale, 'sameYearDate', {
+      month: 'long',
+      day: 'numeric',
+    }).format(date);
+    return `${datePart}, ${timePart}`;
+  }
+
+  const pastYearDatePart = getDateFormatter(locale, 'pastYearDate', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+  return `${pastYearDatePart} ${timePart}`;
 }
