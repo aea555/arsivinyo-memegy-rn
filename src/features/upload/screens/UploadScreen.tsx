@@ -35,8 +35,8 @@ import { extractApiErrorMessage } from '@/src/shared/utils/errorParser';
 import { isDownloaderConfigured } from '@/src/shared/utils/env';
 import {
   clampUtf8Bytes,
-  VIDEO_DESCRIPTION_MAX_BYTES,
-  VIDEO_TITLE_MAX_BYTES,
+  UPLOAD_VIDEO_DESCRIPTION_MAX_BYTES,
+  UPLOAD_VIDEO_TITLE_MAX_BYTES,
 } from '@/src/shared/utils/inputLimits';
 import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 import { useToastStore } from '@/src/store/toastStore';
@@ -251,11 +251,11 @@ export function UploadScreen() {
   );
 
   const handleTitleChange = React.useCallback((text: string) => {
-    setTitle(clampUtf8Bytes(text, VIDEO_TITLE_MAX_BYTES));
+    setTitle(clampUtf8Bytes(text, UPLOAD_VIDEO_TITLE_MAX_BYTES));
   }, []);
 
   const handleDescriptionChange = React.useCallback((text: string) => {
-    setDescription(clampUtf8Bytes(text, VIDEO_DESCRIPTION_MAX_BYTES));
+    setDescription(clampUtf8Bytes(text, UPLOAD_VIDEO_DESCRIPTION_MAX_BYTES));
   }, []);
 
   const cleanupClipboardAssetState = React.useCallback(async () => {
@@ -276,11 +276,11 @@ export function UploadScreen() {
     async (asset: NormalizedVideoAsset, options: { fallbackTitle: string; customTitle?: string; customDescription?: string }) => {
       setLoading(true);
       const resolvedTitle =
-        clampUtf8Bytes((options.customTitle ?? '').trim(), VIDEO_TITLE_MAX_BYTES) ||
-        clampUtf8Bytes(options.fallbackTitle.trim(), VIDEO_TITLE_MAX_BYTES) ||
+        clampUtf8Bytes((options.customTitle ?? '').trim(), UPLOAD_VIDEO_TITLE_MAX_BYTES) ||
+        clampUtf8Bytes(options.fallbackTitle.trim(), UPLOAD_VIDEO_TITLE_MAX_BYTES) ||
         'downloaded_video';
       const resolvedDescription =
-        clampUtf8Bytes((options.customDescription ?? '').trim(), VIDEO_DESCRIPTION_MAX_BYTES) || null;
+        clampUtf8Bytes((options.customDescription ?? '').trim(), UPLOAD_VIDEO_DESCRIPTION_MAX_BYTES) || null;
 
       try {
         if (saveToDeviceAlso) {
@@ -390,11 +390,11 @@ export function UploadScreen() {
       await uploadVideo({
         asset: selectedVideo,
         isAnonymous,
-        metadata: {
-          title: clampUtf8Bytes(title.trim(), VIDEO_TITLE_MAX_BYTES) || null,
-          description: clampUtf8Bytes(description.trim(), VIDEO_DESCRIPTION_MAX_BYTES) || null,
-        },
-      });
+          metadata: {
+            title: clampUtf8Bytes(title.trim(), UPLOAD_VIDEO_TITLE_MAX_BYTES) || null,
+            description: clampUtf8Bytes(description.trim(), UPLOAD_VIDEO_DESCRIPTION_MAX_BYTES) || null,
+          },
+        });
 
       await queryClient.invalidateQueries({ queryKey: ['feed'] });
       await queryClient.invalidateQueries({ queryKey: ['myVideos'] });
@@ -463,9 +463,10 @@ export function UploadScreen() {
       });
 
       const fallbackTitle = filenameToFallbackTitle(result.downloadedFilename || result.fallbackTitle);
+      const clampedFallbackTitle = clampUtf8Bytes(fallbackTitle, UPLOAD_VIDEO_TITLE_MAX_BYTES);
       setClipboardDownloadedAsset(result.asset);
-      setClipboardFallbackTitle(fallbackTitle);
-      setClipboardTitle(fallbackTitle);
+      setClipboardFallbackTitle(clampedFallbackTitle);
+      setClipboardTitle(clampedFallbackTitle);
       setClipboardDescription('');
 
       if (askMetadataAfterDownload) {
@@ -477,7 +478,7 @@ export function UploadScreen() {
       }
 
       await uploadAssetToPlatform(result.asset, {
-        fallbackTitle,
+        fallbackTitle: clampedFallbackTitle,
         customTitle: '',
         customDescription: '',
       });
@@ -539,13 +540,13 @@ export function UploadScreen() {
         placeholder={t('upload.videoTitle')}
         value={title}
         onChangeText={handleTitleChange}
-        maxLength={VIDEO_TITLE_MAX_BYTES}
+        maxLength={UPLOAD_VIDEO_TITLE_MAX_BYTES}
       />
       <Input
         placeholder={t('upload.description')}
         value={description}
         onChangeText={handleDescriptionChange}
-        maxLength={VIDEO_DESCRIPTION_MAX_BYTES}
+        maxLength={UPLOAD_VIDEO_DESCRIPTION_MAX_BYTES}
         multiline
         style={styles.textArea}
       />
@@ -769,14 +770,16 @@ export function UploadScreen() {
             <Input
               placeholder={t('upload.videoTitle')}
               value={clipboardTitle}
-              onChangeText={(text) => setClipboardTitle(clampUtf8Bytes(text, VIDEO_TITLE_MAX_BYTES))}
-              maxLength={VIDEO_TITLE_MAX_BYTES}
+              onChangeText={(text) => setClipboardTitle(clampUtf8Bytes(text, UPLOAD_VIDEO_TITLE_MAX_BYTES))}
+              maxLength={UPLOAD_VIDEO_TITLE_MAX_BYTES}
             />
             <Input
               placeholder={t('upload.description')}
               value={clipboardDescription}
-              onChangeText={(text) => setClipboardDescription(clampUtf8Bytes(text, VIDEO_DESCRIPTION_MAX_BYTES))}
-              maxLength={VIDEO_DESCRIPTION_MAX_BYTES}
+              onChangeText={(text) =>
+                setClipboardDescription(clampUtf8Bytes(text, UPLOAD_VIDEO_DESCRIPTION_MAX_BYTES))
+              }
+              maxLength={UPLOAD_VIDEO_DESCRIPTION_MAX_BYTES}
               multiline
               style={styles.textArea}
             />
