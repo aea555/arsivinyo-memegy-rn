@@ -1,4 +1,5 @@
 import { MyVideoItem, UserDto, UserVideoDto } from '@/src/shared/types/api';
+import { CDN_BASE_URL } from '@/src/shared/utils/env';
 
 type MapperOptions = {
   fallbackIsLiked?: boolean;
@@ -36,12 +37,56 @@ function resolveProcessingErrorMessage(raw: UserVideoDto) {
   return null;
 }
 
+function resolveThumbnail(raw: UserVideoDto): {
+  url: string | null;
+  source: 'backend' | 'derived_from_url' | 'derived_from_cdn' | 'none';
+} {
+  const snake = (raw as { thumbnail_url?: unknown }).thumbnail_url;
+  if (typeof snake === 'string' && snake.length > 0) {
+    return {
+      url: snake,
+      source: 'backend',
+    };
+  }
+
+  const camel = (raw as { thumbnailUrl?: unknown }).thumbnailUrl;
+  if (typeof camel === 'string' && camel.length > 0) {
+    return {
+      url: camel,
+      source: 'backend',
+    };
+  }
+
+  if (typeof raw.url === 'string' && raw.url.length > 0) {
+    const slashIndex = raw.url.lastIndexOf('/');
+    if (slashIndex > 0) {
+      return {
+        url: `${raw.url.slice(0, slashIndex + 1)}${raw.id}_thumb.jpg`,
+        source: 'derived_from_url',
+      };
+    }
+  }
+
+  if (raw.status === 'PUBLISHED') {
+    return {
+      url: `${CDN_BASE_URL.replace(/\/$/, '')}/videos-public/${raw.id}_thumb.jpg`,
+      source: 'derived_from_cdn',
+    };
+  }
+
+  return {
+    url: null,
+    source: 'none',
+  };
+}
+
 export function mapUserVideoDtoToMyVideoItem(
   raw: UserVideoDto,
   currentUser: UserDto | null,
   options?: MapperOptions
 ): MyVideoItem {
   const resolvedIsLiked = resolveIsLiked(raw);
+  const resolvedThumbnail = resolveThumbnail(raw);
 
   return {
     id: raw.id,
@@ -54,6 +99,8 @@ export function mapUserVideoDtoToMyVideoItem(
     like_count: raw.like_count ?? 0,
     is_liked: resolvedIsLiked ?? options?.fallbackIsLiked ?? false,
     url: raw.url ?? null,
+    thumbnail_url: resolvedThumbnail.url,
+    thumbnail_source: resolvedThumbnail.source,
     processing_error_code: resolveProcessingErrorCode(raw),
     processing_error_message: resolveProcessingErrorMessage(raw),
     uploader:

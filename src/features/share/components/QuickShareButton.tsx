@@ -26,7 +26,7 @@ export function QuickShareButton({
   const { palette } = useTheme();
   const { isBusy, onQuickShare } = useQuickShareVideo(videoId, suggestedName);
   const isOverlay = variant === 'overlay';
-  const baseColor = palette.success;
+  const baseColor = palette.accent;
   const iconColor = iconOnly ? palette.text.primary : isOverlay ? palette.onAccent : baseColor;
   const buttonStyle = isOverlay
     ? iconOnly
@@ -76,7 +76,7 @@ export function QuickShareButton({
           <ActivityIndicator size="small" color={iconColor} />
         ) : (
           <Ionicons
-            name="logo-whatsapp"
+            name="paper-plane-outline"
             size={isOverlay ? 24 : 20}
             color={iconColor}
           />
@@ -84,7 +84,7 @@ export function QuickShareButton({
       ) : (
         <>
           <Ionicons
-            name={isBusy ? 'time-outline' : 'logo-whatsapp'}
+            name={isBusy ? 'time-outline' : 'paper-plane-outline'}
             size={isOverlay ? 18 : 16}
             color={iconColor}
           />

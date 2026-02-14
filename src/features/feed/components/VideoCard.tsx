@@ -23,6 +23,8 @@ type VideoCardProps = {
   showAnonymousBadge?: boolean;
   extraAction?: React.ReactNode;
   renderExtraAction?: (videoId: string) => React.ReactNode;
+  farRightAction?: React.ReactNode;
+  renderFarRightAction?: (videoId: string) => React.ReactNode;
 };
 
 function VideoCardBase({
@@ -33,6 +35,8 @@ function VideoCardBase({
   showAnonymousBadge = false,
   extraAction,
   renderExtraAction,
+  farRightAction,
+  renderFarRightAction,
 }: VideoCardProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
@@ -44,6 +48,9 @@ function VideoCardBase({
   const resolvedExtraAction = renderExtraAction
     ? renderExtraAction(video.id)
     : extraAction;
+  const resolvedFarRightAction = renderFarRightAction
+    ? renderFarRightAction(video.id)
+    : farRightAction;
 
   return (
     <Card style={styles.card}>
@@ -54,47 +61,54 @@ function VideoCardBase({
         showMinimalControls
       />
       <View style={styles.meta}>
-        <View style={styles.metaText}>
-          <View style={styles.titleRow}>
-            <AppText variant="bodyBold" style={styles.titleText}>
-              {video.title ?? t('video.untitled')}
-            </AppText>
+        <View style={styles.metaTopRow}>
+          <View style={styles.metaText}>
+            <View style={styles.titleRow}>
+              <AppText variant="bodyBold" style={styles.titleText}>
+                {video.title ?? t('video.untitled')}
+              </AppText>
+            </View>
+            <AppText variant="caption">{metaLine}</AppText>
           </View>
-          <AppText variant="caption">{metaLine}</AppText>
-          <View style={styles.actionsRow}>
+          <View style={styles.likes}>
+            {showLike ? (
+              <LikeButton
+                liked={video.is_liked ?? false}
+                count={video.like_count}
+                onPress={() => toggleLike.mutate({ currentLiked: video.is_liked ?? false })}
+                disabled={toggleLike.isPending}
+              />
+            ) : (
+              <AppText variant="caption">{video.like_count}</AppText>
+            )}
+          </View>
+        </View>
+        <View style={styles.actionsRow}>
+          <View style={styles.actionsLeft}>
             <DownloadButton videoId={video.id} suggestedName={video.title} iconOnly />
             <QuickShareButton videoId={video.id} suggestedName={video.title} iconOnly />
             <ShareButton url={video.url} title={video.title} iconOnly />
             {resolvedExtraAction}
           </View>
-          {showAnonymousBadge ? (
-            <View
-              style={[
-                styles.anonymousBadge,
-                {
-                  borderColor: palette.border,
-                  backgroundColor: palette.background,
-                },
-              ]}
-            >
-              <AppText variant="caption" style={styles.anonymousBadgeText}>
-                {t('video.anonymous')}
-              </AppText>
-            </View>
+          {resolvedFarRightAction ? (
+            <View style={styles.actionsRight}>{resolvedFarRightAction}</View>
           ) : null}
         </View>
-        <View style={styles.likes}>
-          {showLike ? (
-            <LikeButton
-              liked={video.is_liked ?? false}
-              count={video.like_count}
-              onPress={() => toggleLike.mutate({ currentLiked: video.is_liked ?? false })}
-              disabled={toggleLike.isPending}
-            />
-          ) : (
-            <AppText variant="caption">{video.like_count}</AppText>
-          )}
-        </View>
+        {showAnonymousBadge ? (
+          <View
+            style={[
+              styles.anonymousBadge,
+              {
+                borderColor: palette.border,
+                backgroundColor: palette.background,
+              },
+            ]}
+          >
+            <AppText variant="caption" style={styles.anonymousBadgeText}>
+              {t('video.anonymous')}
+            </AppText>
+          </View>
+        ) : null}
       </View>
     </Card>
   );
@@ -108,6 +122,8 @@ function areVideoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps) {
     prev.showAnonymousBadge === next.showAnonymousBadge &&
     prev.extraAction === next.extraAction &&
     prev.renderExtraAction === next.renderExtraAction &&
+    prev.farRightAction === next.farRightAction &&
+    prev.renderFarRightAction === next.renderFarRightAction &&
     prev.video.id === next.video.id &&
     prev.video.url === next.video.url &&
     prev.video.title === next.video.title &&
@@ -132,19 +148,34 @@ const styles = StyleSheet.create({
   },
   meta: {
     marginTop: spacing.md,
+    gap: spacing.xs,
+  },
+  metaTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: spacing.lg,
   },
   metaText: {
     flex: 1,
-    gap: spacing.xs,
+    gap: 2,
   },
   actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
     marginTop: spacing.xs,
+    width: '100%',
+  },
+  actionsLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexWrap: 'wrap',
+  },
+  actionsRight: {
+    marginLeft: spacing.sm,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   titleRow: {
     flexDirection: 'row',
@@ -166,7 +197,6 @@ const styles = StyleSheet.create({
   },
   likes: {
     width: 96,
-    marginTop: spacing.sm,
     gap: spacing.xs,
     alignItems: 'flex-end',
     justifyContent: 'flex-start',

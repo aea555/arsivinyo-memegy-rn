@@ -1,9 +1,12 @@
+import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useIsFocused } from '@react-navigation/native';
 import { InfiniteData, useMutation, useQueryClient } from '@tanstack/react-query';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -11,10 +14,8 @@ import {
   StyleSheet,
   TextInput,
   View,
-  ViewToken,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Ionicons } from '@expo/vector-icons';
 
 import { VideoCard } from '@/src/features/feed/components/VideoCard';
 import { retryVideoProcessing } from '@/src/features/profile/api/profileApi';
@@ -44,14 +45,63 @@ import {
 } from '@/src/shared/utils/inputLimits';
 import { useToastStore } from '@/src/store/toastStore';
 
-const viewabilityConfig = {
-  itemVisiblePercentThreshold: 70,
-};
-const LIST_INITIAL_RENDER_COUNT = 3;
-const LIST_BATCH_RENDER_COUNT = 3;
-const LIST_WINDOW_SIZE = 4;
-const LIST_BATCH_UPDATE_MS = 32;
+const GRID_COLUMNS = 2;
+const LIST_INITIAL_RENDER_COUNT = 12;
+const LIST_BATCH_RENDER_COUNT = 8;
+const LIST_WINDOW_SIZE = 5;
+const LIST_BATCH_UPDATE_MS = 40;
 const DEFAULT_CONTROLS_HEIGHT = 138;
+
+function isPlayableVideo(item: MyVideoItem) {
+  return item.status === 'PUBLISHED' && typeof item.url === 'string' && item.url.length > 0;
+}
+
+function getVideoStatusMeta(
+  item: MyVideoItem,
+  t: (key: string) => string
+): {
+  icon: keyof typeof Ionicons.glyphMap;
+  statusText: string;
+  failureDetail: string | null;
+} {
+  const icon: keyof typeof Ionicons.glyphMap =
+    item.status === 'DRAFT'
+      ? 'document-text-outline'
+      : item.status === 'PROCESSING'
+        ? 'time-outline'
+        : item.status === 'FAILED'
+          ? 'alert-circle-outline'
+          : 'videocam-off-outline';
+
+  const statusText =
+    item.status === 'DRAFT'
+      ? t('profile.videoStatusDraft')
+      : item.status === 'PROCESSING'
+        ? t('profile.videoStatusProcessing')
+        : item.status === 'FAILED'
+          ? t('profile.videoStatusFailed')
+          : t('profile.videoStatusUnavailable');
+
+  return {
+    icon,
+    statusText,
+    failureDetail: item.processing_error_message ?? item.processing_error_code ?? null,
+  };
+}
+
+function toFeedItem(item: MyVideoItem): VideoFeedItem {
+  return {
+    id: item.id,
+    title: item.title,
+    description: item.description,
+    url: item.url ?? '',
+    like_count: item.like_count,
+    created_at: item.created_at,
+    is_liked: Boolean(item.is_liked),
+    uploader: item.uploader ?? null,
+    thumbnail_url: item.thumbnail_url ?? null,
+  };
+}
 
 export function MyVideosScreen() {
   const { t } = useTranslation();
@@ -61,12 +111,19 @@ export function MyVideosScreen() {
   const queryClient = useQueryClient();
   const deleteMutation = useDeleteVideo();
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useMyVideos();
-  const [activeId, setActiveId] = useState<string | null>(null);
+
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<'date_desc' | 'title_asc'>('date_desc');
   const [controlsHeight, setControlsHeight] = useState(DEFAULT_CONTROLS_HEIGHT);
+
   const searchInputRef = useRef<TextInput>(null);
+  const listRef = useRef<FlatList<MyVideoItem>>(null);
+  const browseOffsetRef = useRef(0);
+  const wasSearchingRef = useRef(false);
+  const loggedThumbnailTileIdsRef = useRef<Set<string>>(new Set());
+
   const {
     mode: controlsMode,
     onScroll: onControlsScroll,
@@ -80,9 +137,7 @@ export function MyVideosScreen() {
     expandedAnimatedStyle,
     collapsedAnimatedStyle,
   } = useFloatingSearchControls();
-  const listRef = useRef<FlatList<MyVideoItem>>(null);
-  const browseOffsetRef = useRef(0);
-  const wasSearchingRef = useRef(false);
+
   const debouncedQuery = useDebounce(query, 200);
   const handleQueryChange = useCallback((text: string) => {
     setQuery(clampSearchQueryDraft(text));
@@ -92,6 +147,7 @@ export function MyVideosScreen() {
     if (!isFocused) return;
     expandControls();
   }, [expandControls, isFocused]);
+
   const normalizedQuery = useMemo(
     () => normalizeSearchQuery(debouncedQuery).toLocaleLowerCase(),
     [debouncedQuery]
@@ -159,8 +215,8 @@ export function MyVideosScreen() {
     const filtered = !isSearching
       ? indexedVideos.map((entry) => entry.item)
       : indexedVideos
-        .filter((entry) => entry.searchText.includes(normalizedQuery))
-        .map((entry) => entry.item);
+          .filter((entry) => entry.searchText.includes(normalizedQuery))
+          .map((entry) => entry.item);
 
     const sorted = [...filtered];
     if (sortMode === 'title_asc') {
@@ -176,24 +232,79 @@ export function MyVideosScreen() {
     return sorted;
   }, [indexedVideos, isSearching, normalizedQuery, sortMode, t]);
 
-  const isPlayable = useCallback(
-    (item: MyVideoItem) => item.status === 'PUBLISHED' && typeof item.url === 'string' && item.url.length > 0,
-    []
+  useEffect(() => {
+    if (!__DEV__) return;
+
+    displayVideos.slice(0, 2).forEach((video, index) => {
+      if (loggedThumbnailTileIdsRef.current.has(video.id)) return;
+      loggedThumbnailTileIdsRef.current.add(video.id);
+      if (loggedThumbnailTileIdsRef.current.size > 80) {
+        loggedThumbnailTileIdsRef.current.clear();
+      }
+
+      console.debug('[myVideos.thumb] tile thumbnail source', {
+        tile: index + 1,
+        videoId: video.id,
+        status: video.status,
+        source: video.thumbnail_source ?? 'unknown',
+        receivedFromBackend: video.thumbnail_source === 'backend',
+        derivedFallback: Boolean(video.thumbnail_source && video.thumbnail_source !== 'backend'),
+        hasThumbnailUrl: Boolean(video.thumbnail_url),
+      });
+    });
+  }, [displayVideos]);
+
+  useEffect(() => {
+    if (!selectedVideoId) return;
+    const stillExists = displayVideos.some((item) => item.id === selectedVideoId);
+    if (!stillExists) {
+      setSelectedVideoId(null);
+    }
+  }, [displayVideos, selectedVideoId]);
+
+  useEffect(() => {
+    const wasSearching = wasSearchingRef.current;
+    if (wasSearching && !isSearching) {
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToOffset({ offset: browseOffsetRef.current, animated: false });
+      });
+    }
+    wasSearchingRef.current = isSearching;
+  }, [isSearching]);
+
+  const selectedVideo = useMemo(
+    () => displayVideos.find((item) => item.id === selectedVideoId) ?? null,
+    [displayVideos, selectedVideoId]
   );
 
-  const toFeedItem = useCallback(
-    (item: MyVideoItem): VideoFeedItem => ({
-      id: item.id,
-      title: item.title,
-      description: item.description,
-      url: item.url as string,
-      like_count: item.like_count,
-      created_at: item.created_at,
-      is_liked: item.is_liked,
-      uploader: item.uploader,
-    }),
-    []
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (isSearching) return;
+      browseOffsetRef.current = event.nativeEvent.contentOffset.y;
+    },
+    [isSearching]
   );
+
+  const handleListScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      onControlsScroll(event);
+      handleScroll(event);
+    },
+    [handleScroll, onControlsScroll]
+  );
+
+  const handleListTouchStart = useCallback(() => {
+    if (searchInputRef.current?.isFocused()) {
+      searchInputRef.current.blur();
+    }
+  }, []);
+
+  const handleEndReached = useCallback(() => {
+    if (isSearching) return;
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isSearching]);
 
   const handleRequestDelete = useCallback(
     (videoId: string) => {
@@ -205,8 +316,7 @@ export function MyVideosScreen() {
 
   const renderDeleteAction = useCallback(
     (videoId: string) => {
-      const isDeletingThisVideo =
-        deleteMutation.isPending && deleteMutation.variables === videoId;
+      const isDeletingThisVideo = deleteMutation.isPending && deleteMutation.variables === videoId;
 
       return (
         <Pressable
@@ -241,165 +351,25 @@ export function MyVideosScreen() {
     ]
   );
 
-  const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      if (viewableItems.length === 0) return;
-      const firstPlayable = viewableItems
-        .map((token) => token.item as MyVideoItem | undefined)
-        .find((item) => item && isPlayable(item));
-      if (!firstPlayable) return;
-      setActiveId((prev) => (prev === firstPlayable.id ? prev : firstPlayable.id));
-    }
-  ).current;
-
-  const renderItem = useCallback(
-    ({ item }: { item: MyVideoItem }) => {
-      if (isPlayable(item)) {
-        return (
-          <VideoCard
-            video={toFeedItem(item)}
-            isActive={activeId === item.id}
-            isScreenActive={isFocused}
-            showUploader={false}
-            showAnonymousBadge={item.is_anonymous}
-            renderExtraAction={renderDeleteAction}
-          />
-        );
-      }
-
-      const statusIcon: keyof typeof Ionicons.glyphMap =
-        item.status === 'DRAFT'
-          ? 'document-text-outline'
-          : item.status === 'PROCESSING'
-            ? 'time-outline'
-            : item.status === 'FAILED'
-              ? 'alert-circle-outline'
-              : 'videocam-off-outline';
-
-      const statusText =
-        item.status === 'DRAFT'
-          ? t('profile.videoStatusDraft')
-          : item.status === 'PROCESSING'
-            ? t('profile.videoStatusProcessing')
-            : item.status === 'FAILED'
-              ? t('profile.videoStatusFailed')
-              : t('profile.videoStatusUnavailable');
-      const failureDetail = item.processing_error_message ?? item.processing_error_code;
-
-      return (
-        <Card style={styles.statusCard}>
-          <View style={styles.statusHeader}>
-            <View style={styles.statusTitleRow}>
-              <AppText variant="bodyBold" style={styles.statusTitleText}>
-                {item.title ?? t('video.untitled')}
-              </AppText>
-            </View>
-            <Ionicons name={statusIcon} size={18} color={item.status === 'FAILED' ? palette.error : palette.text.secondary} />
-          </View>
-          <AppText variant="caption">{formatDate(item.created_at)}</AppText>
-          {item.is_anonymous ? (
-            <View
-              style={[
-                styles.anonymousBadge,
-                {
-                  borderColor: palette.border,
-                  backgroundColor: palette.background,
-                },
-              ]}
-            >
-              <AppText variant="caption" style={styles.anonymousBadgeText}>
-                {t('video.anonymous')}
-              </AppText>
-            </View>
-          ) : null}
-          <AppText variant="caption" style={styles.statusText}>
-            {statusText}
-          </AppText>
-          {item.status === 'FAILED' && failureDetail ? (
-            <AppText variant="caption" style={[styles.statusText, { color: palette.error }]}>
-              {failureDetail}
-            </AppText>
-          ) : null}
-          {item.status === 'FAILED' ? (
-            <Button
-              label={
-                retryMutation.isPending && retryMutation.variables === item.id
-                  ? t('profile.retrying')
-                  : t('common.retry')
-              }
-              variant="outline"
-              onPress={() => retryMutation.mutate(item.id)}
-              disabled={retryMutation.isPending && retryMutation.variables === item.id}
-              style={styles.retryButton}
-            />
-          ) : null}
-          {renderDeleteAction(item.id)}
-        </Card>
-      );
-    },
-    [
-      activeId,
-      isFocused,
-      isPlayable,
-      palette.background,
-      palette.border,
-      palette.error,
-      palette.text.secondary,
-      retryMutation,
-      renderDeleteAction,
-      t,
-      toFeedItem,
-    ]
-  );
-
-  useEffect(() => {
-    if (!isFocused) return;
-    if (displayVideos.length === 0) {
-      setActiveId(null);
-      return;
-    }
-    const hasActive = activeId ? displayVideos.some((item) => item.id === activeId) : false;
-    if (hasActive) return;
-    const firstPlayable = displayVideos.find((item) => isPlayable(item));
-    setActiveId(firstPlayable?.id ?? null);
-  }, [activeId, displayVideos, isFocused, isPlayable]);
-
-  useEffect(() => {
-    const wasSearching = wasSearchingRef.current;
-    if (wasSearching && !isSearching) {
-      requestAnimationFrame(() => {
-        listRef.current?.scrollToOffset({ offset: browseOffsetRef.current, animated: false });
-      });
-    }
-    wasSearchingRef.current = isSearching;
-  }, [isSearching]);
-
-  const handleScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (isSearching) return;
-      browseOffsetRef.current = event.nativeEvent.contentOffset.y;
-    },
-    [isSearching]
-  );
-  const handleListScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      onControlsScroll(event);
-      handleScroll(event);
-    },
-    [handleScroll, onControlsScroll]
-  );
-  const handleListTouchStart = useCallback(() => {
-    if (searchInputRef.current?.isFocused()) {
-      searchInputRef.current.blur();
-    }
-  }, []);
-
-  const handleEndReached = () => {
-    if (isSearching) return;
-    if (hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
-    }
-  };
+  const renderModalCloseAction = useCallback(() => {
+    return (
+      <Pressable
+        onPress={() => setSelectedVideoId(null)}
+        style={({ pressed }) => [
+          styles.inlineCloseAction,
+          {
+            borderColor: withAlpha(palette.border, 0.85),
+            backgroundColor: withAlpha(palette.overlay, 0.9),
+          },
+          pressed ? styles.pressedAction : null,
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={t('common.cancel')}
+      >
+        <Ionicons name="close" size={20} color={palette.text.primary} />
+      </Pressable>
+    );
+  }, [palette.border, palette.overlay, palette.text.primary, t]);
 
   const collapsedTriggerLabel = isSearching
     ? t('profile.searchResultsForCompact', { query: debouncedQuery.trim() })
@@ -409,7 +379,7 @@ export function MyVideosScreen() {
 
   const expandedControls = (
     <View style={styles.controlsWrap}>
-      <Card style={styles.controlsCard}>
+      <View style={styles.controlsCard}>
         <Input
           ref={searchInputRef}
           placeholder={t('profile.searchPlaceholder')}
@@ -442,13 +412,13 @@ export function MyVideosScreen() {
           </View>
           {isSearching ? (
             <Pressable onPress={() => setQuery('')} hitSlop={8}>
-              <AppText variant="caption" style={[styles.clearSearch, { color: palette.accent }]}>
+              <AppText variant="caption" style={[styles.clearSearch, { color: palette.accent }]}> 
                 {t('profile.searchClear')}
               </AppText>
             </Pressable>
           ) : null}
         </View>
-      </Card>
+      </View>
     </View>
   );
 
@@ -478,6 +448,167 @@ export function MyVideosScreen() {
     </Pressable>
   );
 
+  const renderGridItem = useCallback(
+    ({ item }: { item: MyVideoItem }) => {
+      const playable = isPlayableVideo(item);
+      const statusMeta = getVideoStatusMeta(item, t);
+      const statusColor = item.status === 'FAILED' ? palette.error : palette.text.secondary;
+
+      return (
+        <View style={styles.gridCell}>
+          <Pressable
+            onPress={() => {
+              setSelectedVideoId(item.id);
+            }}
+            style={({ pressed }) => [
+              styles.gridTile,
+              {
+                backgroundColor: withAlpha(palette.overlay, 0.82),
+                borderColor: withAlpha(palette.border, 0.72),
+              },
+              pressed ? styles.pressedAction : null,
+            ]}
+          >
+            {playable && item.thumbnail_url ? (
+              <Image
+                source={{ uri: item.thumbnail_url }}
+                style={styles.gridThumb}
+                contentFit="cover"
+                transition={120}
+                cachePolicy="memory-disk"
+              />
+            ) : null}
+            <View style={styles.gridMedia}>
+              <Ionicons
+                name={playable ? 'play-circle-outline' : statusMeta.icon}
+                size={playable ? 42 : 34}
+                color={playable ? withAlpha('#FFFFFF', 0.94) : statusColor}
+              />
+            </View>
+          </Pressable>
+          <View
+            style={[
+              styles.gridMetaCard,
+              {
+                borderColor: withAlpha(palette.border, 0.75),
+                backgroundColor: withAlpha(palette.surface, 0.9),
+              },
+            ]}
+          >
+            <AppText variant="caption" style={styles.gridMetaTitle} numberOfLines={1}>
+              {item.title?.trim() || t('video.untitled')}
+            </AppText>
+            {item.is_anonymous ? (
+              <View
+                style={[
+                  styles.gridAnonymousBadge,
+                  {
+                    borderColor: withAlpha(palette.border, 0.85),
+                    backgroundColor: withAlpha(palette.overlay, 0.9),
+                  },
+                ]}
+              >
+                <AppText variant="caption" style={styles.gridAnonymousText}>
+                  {t('video.anonymous')}
+                </AppText>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      );
+    },
+    [palette.border, palette.error, palette.overlay, palette.surface, palette.text.secondary, t]
+  );
+
+  const renderSelectedContent = useMemo(() => {
+    if (!selectedVideo) return null;
+
+    if (isPlayableVideo(selectedVideo)) {
+      return (
+        <VideoCard
+          video={toFeedItem(selectedVideo)}
+          isActive={isFocused}
+          isScreenActive={isFocused}
+          showUploader={false}
+          showAnonymousBadge={selectedVideo.is_anonymous}
+          renderExtraAction={renderDeleteAction}
+          renderFarRightAction={renderModalCloseAction}
+        />
+      );
+    }
+
+    const statusMeta = getVideoStatusMeta(selectedVideo, t);
+
+    return (
+      <Card style={styles.statusCard}>
+        <View style={styles.statusHeader}>
+          <View style={styles.statusTitleRow}>
+            <AppText variant="bodyBold" style={styles.statusTitleText}>
+              {selectedVideo.title ?? t('video.untitled')}
+            </AppText>
+          </View>
+          <Ionicons
+            name={statusMeta.icon}
+            size={18}
+            color={selectedVideo.status === 'FAILED' ? palette.error : palette.text.secondary}
+          />
+        </View>
+        <AppText variant="caption">{formatDate(selectedVideo.created_at)}</AppText>
+        {selectedVideo.is_anonymous ? (
+          <View
+            style={[
+              styles.anonymousBadge,
+              {
+                borderColor: palette.border,
+                backgroundColor: palette.background,
+              },
+            ]}
+          >
+            <AppText variant="caption" style={styles.anonymousBadgeText}>
+              {t('video.anonymous')}
+            </AppText>
+          </View>
+        ) : null}
+        <AppText variant="caption" style={styles.statusText}>
+          {statusMeta.statusText}
+        </AppText>
+        {statusMeta.failureDetail ? (
+          <AppText variant="caption" style={[styles.statusText, { color: palette.error }]}> 
+            {statusMeta.failureDetail}
+          </AppText>
+        ) : null}
+        {selectedVideo.status === 'FAILED' ? (
+          <Button
+            label={
+              retryMutation.isPending && retryMutation.variables === selectedVideo.id
+                ? t('profile.retrying')
+                : t('common.retry')
+            }
+            variant="outline"
+            onPress={() => retryMutation.mutate(selectedVideo.id)}
+            disabled={retryMutation.isPending && retryMutation.variables === selectedVideo.id}
+            style={styles.retryButton}
+          />
+        ) : null}
+        <View style={styles.statusActionsRow}>
+          <View style={styles.statusActionsLeft}>{renderDeleteAction(selectedVideo.id)}</View>
+          {renderModalCloseAction()}
+        </View>
+      </Card>
+    );
+  }, [
+    isFocused,
+    palette.background,
+    palette.border,
+    palette.error,
+    palette.text.secondary,
+    renderDeleteAction,
+    renderModalCloseAction,
+    retryMutation,
+    selectedVideo,
+    t,
+  ]);
+
   return (
     <Screen contentStyle={styles.container}>
       <KeyboardAvoidingView
@@ -498,43 +629,57 @@ export function MyVideosScreen() {
             }}
             containerStyle={styles.controlsOverlay}
           />
-        <FlatList
-          ref={listRef}
-          data={displayVideos}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          viewabilityConfig={viewabilityConfig}
-          onViewableItemsChanged={onViewableItemsChanged}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.5}
-          onScroll={handleListScroll}
-          onTouchStart={handleListTouchStart}
-          onScrollBeginDrag={onControlsScrollBeginDrag}
-          onScrollEndDrag={onControlsScrollEndDrag}
-          onMomentumScrollBegin={onControlsMomentumBegin}
-          onMomentumScrollEnd={onControlsMomentumEnd}
-          scrollEventThrottle={32}
-          keyboardShouldPersistTaps="handled"
-          removeClippedSubviews={false}
-          initialNumToRender={LIST_INITIAL_RENDER_COUNT}
-          maxToRenderPerBatch={LIST_BATCH_RENDER_COUNT}
-          windowSize={LIST_WINDOW_SIZE}
-          updateCellsBatchingPeriod={LIST_BATCH_UPDATE_MS}
-          ListEmptyComponent={
-            isLoading ? null : (
-              <View style={styles.empty}>
-                <AppText>{isSearching ? t('profile.searchNoResults') : t('profile.noVideos')}</AppText>
-              </View>
-            )
-          }
-          contentContainerStyle={[
-            styles.listContent,
-            { paddingTop: listTopInset },
-            displayVideos.length === 0 ? styles.listEmptyContainer : null,
-          ]}
-        />
+          <FlatList
+            ref={listRef}
+            data={displayVideos}
+            renderItem={renderGridItem}
+            keyExtractor={(item) => item.id}
+            numColumns={GRID_COLUMNS}
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.65}
+            onScroll={handleListScroll}
+            onTouchStart={handleListTouchStart}
+            onScrollBeginDrag={onControlsScrollBeginDrag}
+            onScrollEndDrag={onControlsScrollEndDrag}
+            onMomentumScrollBegin={onControlsMomentumBegin}
+            onMomentumScrollEnd={onControlsMomentumEnd}
+            scrollEventThrottle={32}
+            keyboardShouldPersistTaps="handled"
+            removeClippedSubviews={Platform.OS === 'android'}
+            initialNumToRender={LIST_INITIAL_RENDER_COUNT}
+            maxToRenderPerBatch={LIST_BATCH_RENDER_COUNT}
+            windowSize={LIST_WINDOW_SIZE}
+            updateCellsBatchingPeriod={LIST_BATCH_UPDATE_MS}
+            ListEmptyComponent={
+              isLoading ? null : (
+                <View style={styles.empty}>
+                  <AppText>{isSearching ? t('profile.searchNoResults') : t('profile.noVideos')}</AppText>
+                </View>
+              )
+            }
+            contentContainerStyle={[
+              styles.listContent,
+              { paddingTop: listTopInset },
+              displayVideos.length === 0 ? styles.listEmptyContainer : null,
+            ]}
+          />
         </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={Boolean(selectedVideo)}
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => setSelectedVideoId(null)}
+      >
+        <View style={[styles.modalBackdrop, { backgroundColor: withAlpha('#000000', 0.86) }]}>
+          <View style={styles.modalContent}>
+            {renderSelectedContent}
+          </View>
+        </View>
+      </Modal>
+
       <ConfirmModal
         visible={Boolean(pendingDeleteId)}
         title={t('profile.deleteVideoConfirmTitle')}
@@ -551,6 +696,9 @@ export function MyVideosScreen() {
           const targetVideoId = pendingDeleteId;
           setPendingDeleteId(null);
           deleteMutation.mutate(targetVideoId);
+          if (selectedVideoId === targetVideoId) {
+            setSelectedVideoId(null);
+          }
         }}
       />
     </Screen>
@@ -598,53 +746,6 @@ const styles = StyleSheet.create({
   clearSearch: {
     fontSize: 12,
   },
-  statusCard: {
-    marginBottom: spacing.lg,
-    gap: spacing.sm,
-  },
-  statusHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  statusTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: spacing.xs,
-  },
-  statusTitleText: {
-    flexShrink: 1,
-  },
-  anonymousBadge: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  anonymousBadgeText: {
-    fontSize: 11,
-  },
-  statusText: {
-    opacity: 0.85,
-  },
-  retryButton: {
-    marginTop: spacing.xs,
-    alignSelf: 'flex-start',
-  },
-  deleteAction: {
-    height: 38,
-    width: 38,
-    borderRadius: 19,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'flex-start',
-  },
-  pressedAction: {
-    transform: [{ scale: 0.98 }],
-  },
   collapsedTrigger: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -668,5 +769,130 @@ const styles = StyleSheet.create({
   },
   empty: {
     alignItems: 'center',
+  },
+  gridCell: {
+    width: `${100 / GRID_COLUMNS}%`,
+    padding: 4,
+  },
+  gridTile: {
+    aspectRatio: 1,
+    borderWidth: 1,
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    overflow: 'hidden',
+  },
+  gridThumb: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  gridMedia: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridMetaCard: {
+    marginTop: 0,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    gap: 4,
+    minHeight: 40,
+    justifyContent: 'center',
+  },
+  gridMetaTitle: {
+    fontSize: 12,
+    lineHeight: 15,
+  },
+  gridAnonymousBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    alignSelf: 'flex-start',
+  },
+  gridAnonymousText: {
+    fontSize: 10,
+    color: '#FFFFFF',
+  },
+  modalBackdrop: {
+    flex: 1,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+    paddingHorizontal: spacing.md,
+  },
+  modalContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  statusCard: {
+    gap: spacing.sm,
+  },
+  statusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  statusTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  statusTitleText: {
+    flexShrink: 1,
+  },
+  anonymousBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  anonymousBadgeText: {
+    fontSize: 11,
+  },
+  statusText: {
+    opacity: 0.85,
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+  },
+  deleteAction: {
+    alignSelf: 'flex-start',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusActionsRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+  },
+  statusActionsLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  inlineCloseAction: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pressedAction: {
+    transform: [{ scale: 0.98 }],
   },
 });

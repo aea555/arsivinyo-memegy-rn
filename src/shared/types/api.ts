@@ -64,6 +64,7 @@ export type VideoFeedItem = {
   id: string;
   title?: string | null;
   url: string;
+  thumbnail_url?: string | null;
   like_count: number;
   created_at: string;
   uploader?: UploaderInfo | null;
@@ -82,6 +83,7 @@ export type UserVideoDto = {
   like_count: number;
   is_liked?: boolean;
   url: string | null;
+  thumbnail_url?: string | null;
   uploader?: UploaderInfo | null;
   processing_error_code?: string | null;
   processing_error_message?: string | null;
@@ -99,6 +101,8 @@ export type MyVideoItem = {
   is_liked: boolean;
   uploader: UploaderInfo | null;
   url: string | null;
+  thumbnail_url?: string | null;
+  thumbnail_source?: 'backend' | 'derived_from_url' | 'derived_from_cdn' | 'none';
   processing_error_code?: string | null;
   processing_error_message?: string | null;
 };

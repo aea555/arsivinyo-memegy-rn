@@ -17,6 +17,9 @@ type VideoPlayerProps = {
   contentFit?: 'cover' | 'contain';
   showNativeControls?: boolean;
   showMinimalControls?: boolean;
+  minimalControlsPersistent?: boolean;
+  minimalControlsBottomInset?: number;
+  inactivePauseDelayMs?: number;
   autoPlayEnabled?: boolean;
   allowTapToToggle?: boolean;
   onPlaybackEnd?: () => void;
@@ -82,6 +85,9 @@ export function VideoPlayer({
   contentFit,
   showNativeControls,
   showMinimalControls,
+  minimalControlsPersistent,
+  minimalControlsBottomInset,
+  inactivePauseDelayMs,
   autoPlayEnabled,
   allowTapToToggle = false,
   onPlaybackEnd,
@@ -107,6 +113,9 @@ export function VideoPlayer({
       contentFit={contentFit}
       showNativeControls={showNativeControls}
       showMinimalControls={showMinimalControls}
+      minimalControlsPersistent={minimalControlsPersistent}
+      minimalControlsBottomInset={minimalControlsBottomInset}
+      inactivePauseDelayMs={inactivePauseDelayMs}
       autoPlayEnabled={autoPlayEnabled}
       allowTapToToggle={allowTapToToggle}
       onPlaybackEnd={onPlaybackEnd}
@@ -142,6 +151,9 @@ function VideoPlayerNative({
   contentFit,
   showNativeControls,
   showMinimalControls,
+  minimalControlsPersistent,
+  minimalControlsBottomInset,
+  inactivePauseDelayMs,
   autoPlayEnabled,
   allowTapToToggle = false,
   onPlaybackEnd,
@@ -180,6 +192,7 @@ function VideoPlayerNative({
   const resumeAfterForcedPauseUntilRef = React.useRef(0);
   const shouldForcePostFullscreenState = isImmersive;
   const shouldShowMinimalControls = !isImmersive && Boolean(showMinimalControls);
+  const keepMinimalControlsVisible = shouldShowMinimalControls && Boolean(minimalControlsPersistent);
 
   const clearMinimalControlsHideTimer = React.useCallback(() => {
     if (minimalControlsHideTimerRef.current) {
@@ -206,7 +219,7 @@ function VideoPlayerNative({
 
   const scheduleMinimalControlsAutoHide = React.useCallback(
     (delayMs: number = CONTROLS_AUTO_HIDE_MS) => {
-      if (!shouldShowMinimalControls) return;
+      if (!shouldShowMinimalControls || keepMinimalControlsVisible) return;
       clearMinimalControlsHideTimer();
       minimalControlsHideTimerRef.current = setTimeout(() => {
         minimalControlsHideTimerRef.current = null;
@@ -217,14 +230,19 @@ function VideoPlayerNative({
         setMinimalControlsVisible(false);
       }, delayMs);
     },
-    [clearMinimalControlsHideTimer, setMinimalControlsVisible, shouldShowMinimalControls]
+    [
+      clearMinimalControlsHideTimer,
+      keepMinimalControlsVisible,
+      setMinimalControlsVisible,
+      shouldShowMinimalControls,
+    ]
   );
 
   const revealMinimalControls = React.useCallback(
     (autoHide: boolean = true) => {
       if (!shouldShowMinimalControls) return;
       setMinimalControlsVisible(true);
-      if (autoHide) {
+      if (autoHide && !keepMinimalControlsVisible) {
         scheduleMinimalControlsAutoHide();
       } else {
         clearMinimalControlsHideTimer();
@@ -232,6 +250,7 @@ function VideoPlayerNative({
     },
     [
       clearMinimalControlsHideTimer,
+      keepMinimalControlsVisible,
       scheduleMinimalControlsAutoHide,
       setMinimalControlsVisible,
       shouldShowMinimalControls,
@@ -239,10 +258,15 @@ function VideoPlayerNative({
   );
 
   const hideMinimalControls = React.useCallback(() => {
-    if (!shouldShowMinimalControls) return;
+    if (!shouldShowMinimalControls || keepMinimalControlsVisible) return;
     clearMinimalControlsHideTimer();
     setMinimalControlsVisible(false);
-  }, [clearMinimalControlsHideTimer, setMinimalControlsVisible, shouldShowMinimalControls]);
+  }, [
+    clearMinimalControlsHideTimer,
+    keepMinimalControlsVisible,
+    setMinimalControlsVisible,
+    shouldShowMinimalControls,
+  ]);
 
   const videoPlayer = useVideoPlayer(uri, (playerInstance) => {
     playerInstance.loop = true;
@@ -453,6 +477,24 @@ function VideoPlayerNative({
 
   useEffect(() => {
     if (!shouldShowMinimalControls) return;
+    if (keepMinimalControlsVisible) {
+      if (!isActive || !isScreenActive || appState === 'background') {
+        clearMinimalControlsHideTimer();
+        areMinimalControlsVisibleRef.current = false;
+        setAreMinimalControlsVisible(false);
+        minimalControlsOpacity.stopAnimation();
+        minimalControlsOpacity.setValue(0);
+        return;
+      }
+
+      clearMinimalControlsHideTimer();
+      areMinimalControlsVisibleRef.current = true;
+      setAreMinimalControlsVisible(true);
+      minimalControlsOpacity.stopAnimation();
+      minimalControlsOpacity.setValue(1);
+      return;
+    }
+
     if (!isActive || !isScreenActive || appState === 'background') {
       hideMinimalControls();
       return;
@@ -462,9 +504,12 @@ function VideoPlayerNative({
     }
   }, [
     appState,
+    clearMinimalControlsHideTimer,
     hideMinimalControls,
     isActive,
     isScreenActive,
+    keepMinimalControlsVisible,
+    minimalControlsOpacity,
     scheduleMinimalControlsAutoHide,
     shouldShowMinimalControls,
   ]);
@@ -545,9 +590,12 @@ function VideoPlayerNative({
       }
       // Losing only viewability (while screen remains focused) can be a fullscreen transition.
       // Keep a longer delay to avoid pausing during the native fullscreen animation.
-      const delayMs = !isActive && isScreenActive
+      const defaultDelayMs = !isActive && isScreenActive
         ? VIEWABILITY_LOSS_PAUSE_DELAY_MS
         : SCREEN_LOSS_PAUSE_DELAY_MS;
+      const delayMs = typeof inactivePauseDelayMs === 'number'
+        ? Math.max(0, inactivePauseDelayMs)
+        : defaultDelayMs;
       schedulePause(delayMs);
       return;
     }
@@ -591,6 +639,7 @@ function VideoPlayerNative({
     appState,
     autoPlayVideos,
     isImmersive,
+    inactivePauseDelayMs,
     manualPaused,
     isActive,
     isScreenActive,
@@ -785,6 +834,8 @@ function VideoPlayerNative({
     : 0;
   const isPlayingNow = manualPaused === null ? lastKnownPlayingRef.current : !manualPaused;
   const shouldUseCustomFullscreen = shouldShowMinimalControls;
+  const videoSurfaceStyle =
+    isImmersive || typeof height === 'number' ? styles.videoImmersive : styles.videoCard;
 
   const enterCustomFullscreen = React.useCallback(() => {
     if (pauseTimerRef.current) {
@@ -834,13 +885,21 @@ function VideoPlayerNative({
   const handleMinimalControlsOverlayPress = React.useCallback(() => {
     if (!shouldShowMinimalControls) return;
     if (!isActive || !isScreenActive) return;
+    if (keepMinimalControlsVisible) return;
 
     if (areMinimalControlsVisibleRef.current) {
       hideMinimalControls();
       return;
     }
     revealMinimalControls(true);
-  }, [hideMinimalControls, isActive, isScreenActive, revealMinimalControls, shouldShowMinimalControls]);
+  }, [
+    hideMinimalControls,
+    isActive,
+    isScreenActive,
+    keepMinimalControlsVisible,
+    revealMinimalControls,
+    shouldShowMinimalControls,
+  ]);
 
   return (
     <View
@@ -851,11 +910,11 @@ function VideoPlayerNative({
       ]}
     >
       {isCustomFullscreen ? (
-        <View style={[isImmersive ? styles.videoImmersive : styles.videoCard, styles.fullscreenPlaceholder]} />
+        <View style={[videoSurfaceStyle, styles.fullscreenPlaceholder]} />
       ) : (
         <VideoView
           ref={videoViewRef}
-          style={isImmersive ? styles.videoImmersive : styles.videoCard}
+          style={videoSurfaceStyle}
           player={videoPlayer}
           contentFit={contentFit ?? (isImmersive ? 'cover' : 'cover')}
           nativeControls={showNativeControls ?? (!isImmersive && !shouldShowMinimalControls)}
@@ -911,6 +970,7 @@ function VideoPlayerNative({
             {
               backgroundColor: withAlpha(palette.overlay, 0.78),
               borderColor: withAlpha(palette.border, 0.45),
+              bottom: typeof minimalControlsBottomInset === 'number' ? minimalControlsBottomInset : 12,
               opacity: minimalControlsOpacity,
             },
           ]}
@@ -1044,6 +1104,7 @@ function VideoPlayerNative({
                 {
                   backgroundColor: withAlpha(palette.overlay, 0.78),
                   borderColor: withAlpha(palette.border, 0.45),
+                  bottom: typeof minimalControlsBottomInset === 'number' ? minimalControlsBottomInset : 20,
                   opacity: minimalControlsOpacity,
                 },
               ]}
