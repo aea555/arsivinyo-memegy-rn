@@ -5,23 +5,52 @@ import * as Linking from 'expo-linking';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect } from 'react';
+import * as Updates from 'expo-updates';
+import React, { useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { I18nextProvider } from 'react-i18next';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { SplashScreen as AppSplashScreen } from '@/src/features/auth/screens/SplashScreen';
+import { useAuthSessionLifecycle } from '@/src/features/auth/hooks/useAuthSessionLifecycle';
+import { useMyVideosRealtimeSync } from '@/src/features/profile/hooks/useMyVideosRealtimeSync';
 import i18n from '@/src/shared/locales/i18n';
+import { AppToastHost } from '@/src/shared/components/ui/AppToastHost';
 import { queryClient } from '@/src/shared/services/api/queryClient';
 import { LocalStorage } from '@/src/shared/services/storage/LocalStorage';
 import { ThemeProvider, useTheme } from '@/src/shared/theme/ThemeProvider';
+import { configureConsoleForEnvironment } from '@/src/shared/utils/logging';
 import { useAuthStore } from '@/src/store/authStore';
 import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 
+configureConsoleForEnvironment();
+
 SplashScreen.preventAutoHideAsync();
+const MIN_ANIMATED_SPLASH_MS = 1200;
+const OTA_UPDATE_CHECK_TIMEOUT_MS = 10000;
+const OTA_UPDATE_FETCH_TIMEOUT_MS = 20000;
 
 export const unstable_settings = {
   anchor: '(tabs)',
 };
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`timeout_after_${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
 
 function RootNavigator() {
   const { navigationTheme, effectiveMode } = useTheme();
@@ -45,6 +74,9 @@ export default function RootLayout() {
   const { status, hydrate } = useAuthStore();
   const hydrateAppSettings = useAppSettingsStore((state) => state.hydrate);
 
+  useMyVideosRealtimeSync();
+  useAuthSessionLifecycle();
+
   const [fontsLoaded] = useFonts({
     Comfortaa_300Light,
     Comfortaa_400Regular,
@@ -52,6 +84,61 @@ export default function RootLayout() {
     Comfortaa_600SemiBold,
     Comfortaa_700Bold,
   });
+  const splashStartedAtRef = useRef(Date.now());
+  const [isNativeSplashHidden, setIsNativeSplashHidden] = useState(false);
+  const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
+  const [isOtaReady, setIsOtaReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const applyLaunchUpdate = async () => {
+      if (__DEV__ || Platform.OS === 'web') {
+        if (!cancelled) setIsOtaReady(true);
+        return;
+      }
+
+      if (!Updates.isEnabled) {
+        if (!cancelled) setIsOtaReady(true);
+        return;
+      }
+
+      try {
+        const checkResult = await withTimeout(
+          Updates.checkForUpdateAsync(),
+          OTA_UPDATE_CHECK_TIMEOUT_MS
+        );
+
+        if (checkResult.isAvailable) {
+          const fetchResult = await withTimeout(
+            Updates.fetchUpdateAsync(),
+            OTA_UPDATE_FETCH_TIMEOUT_MS
+          );
+
+          if (fetchResult.isNew) {
+            await Updates.reloadAsync();
+            return;
+          }
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.debug('[ota] launch update check failed', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      if (!cancelled) {
+        setIsOtaReady(true);
+      }
+    };
+
+    void applyLaunchUpdate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     void hydrate();
@@ -81,7 +168,7 @@ export default function RootLayout() {
       if (!code) return;
       const codeValue = Array.isArray(code) ? code[0] : String(code);
       if (__DEV__) {
-        console.debug('[auth] deep link received', { url, parsed });
+        console.debug('[auth] deep link received', { path: parsed.path });
       }
       router.replace({ pathname: '/(auth)/callback', params: { code: codeValue } });
     };
@@ -97,10 +184,29 @@ export default function RootLayout() {
   }, [router]);
 
   useEffect(() => {
-    if (fontsLoaded && status !== 'loading') {
-      void SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, status]);
+    if (!fontsLoaded || isNativeSplashHidden) return;
+    SplashScreen.hideAsync()
+      .catch(() => {
+        // no-op
+      })
+      .finally(() => {
+        setIsNativeSplashHidden(true);
+      });
+  }, [fontsLoaded, isNativeSplashHidden]);
+
+  useEffect(() => {
+    if (!isNativeSplashHidden || !fontsLoaded || status === 'loading') return;
+
+    const elapsed = Date.now() - splashStartedAtRef.current;
+    const remaining = Math.max(0, MIN_ANIMATED_SPLASH_MS - elapsed);
+    const timer = setTimeout(() => {
+      setShowAnimatedSplash(false);
+    }, remaining);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [fontsLoaded, isNativeSplashHidden, status]);
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -114,7 +220,7 @@ export default function RootLayout() {
     }
   }, [status, segments, router]);
 
-  if (!fontsLoaded || status === 'loading') {
+  if (showAnimatedSplash || !fontsLoaded || status === 'loading' || !isOtaReady) {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <ThemeProvider>
@@ -129,7 +235,10 @@ export default function RootLayout() {
       <ThemeProvider>
         <QueryClientProvider client={queryClient}>
           <I18nextProvider i18n={i18n}>
-            <RootNavigator />
+            <>
+              <RootNavigator />
+              <AppToastHost />
+            </>
           </I18nextProvider>
         </QueryClientProvider>
       </ThemeProvider>

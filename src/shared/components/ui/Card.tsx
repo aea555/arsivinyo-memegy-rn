@@ -1,11 +1,13 @@
 import React from 'react';
 import { StyleSheet, View, ViewProps } from 'react-native';
 
+import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
-import { shadows } from '@/src/shared/theme/shadows';
+import { useShadows } from '@/src/shared/theme/shadows';
 
 export function Card({ style, ...rest }: ViewProps) {
   const { palette } = useTheme();
+  const shadows = useShadows();
 
   return (
     <View
@@ -27,6 +29,6 @@ const styles = StyleSheet.create({
   base: {
     borderRadius: 16,
     borderWidth: 1,
-    padding: 16,
+    padding: layoutConfig.card.padding,
   },
 });

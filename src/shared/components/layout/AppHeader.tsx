@@ -3,10 +3,10 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
+import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
-import { spacing } from '@/src/shared/theme/spacing';
-import { shadows } from '@/src/shared/theme/shadows';
+import { useShadows } from '@/src/shared/theme/shadows';
 
 type AppHeaderProps = {
   title: string;
@@ -17,9 +17,16 @@ type AppHeaderProps = {
 export function AppHeader({ title, showBack = false, rightAction }: AppHeaderProps) {
   const router = useRouter();
   const { palette } = useTheme();
+  const shadows = useShadows();
 
   return (
-    <View style={[styles.container, { borderBottomColor: palette.border, backgroundColor: palette.background }]}>
+    <View
+      style={[
+        styles.container,
+        shadows.subtle,
+        { borderBottomColor: palette.border, backgroundColor: palette.background },
+      ]}
+    >
       <View style={styles.left}>
         {showBack ? (
           <Pressable
@@ -42,14 +49,13 @@ export function AppHeader({ title, showBack = false, rightAction }: AppHeaderPro
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
+    paddingHorizontal: layoutConfig.header.horizontalPadding,
+    paddingTop: layoutConfig.header.topPadding,
+    paddingBottom: layoutConfig.header.bottomPadding,
     borderBottomWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 56,
-    ...shadows.subtle,
+    minHeight: layoutConfig.header.minHeight,
   },
   left: {
     width: 44,

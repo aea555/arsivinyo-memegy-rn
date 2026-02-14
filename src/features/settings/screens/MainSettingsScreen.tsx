@@ -16,7 +16,7 @@ export function MainSettingsScreen() {
   const { palette } = useTheme();
 
   return (
-    <Screen title={t('settings.title')} contentStyle={styles.container}>
+    <Screen contentStyle={styles.container}>
       <Card style={styles.listCard}>
         <SettingsRow
           title={t('settings.profile')}
@@ -27,8 +27,20 @@ export function MainSettingsScreen() {
         <SettingsRow
           title={t('settings.appSettings')}
           subtitle={t('settings.appSettingsSubtitle')}
-          icon={<Ionicons name="color-palette" size={18} color={palette.text.primary} />}
+          icon={<Ionicons name="options-outline" size={18} color={palette.text.primary} />}
           onPress={() => router.push('/settings/app')}
+        />
+        <SettingsRow
+          title={t('settings.feedSettings')}
+          subtitle={t('settings.feedSettingsSubtitle')}
+          icon={<Ionicons name="play-circle-outline" size={18} color={palette.text.primary} />}
+          onPress={() => router.push('/settings/feed')}
+        />
+        <SettingsRow
+          title={t('settings.themeStudio')}
+          subtitle={t('settings.themeStudioSubtitle')}
+          icon={<Ionicons name="sparkles" size={18} color={palette.accent} />}
+          onPress={() => router.push('/settings/theme-studio' as never)}
           isLast
         />
         {/*

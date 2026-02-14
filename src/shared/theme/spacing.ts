@@ -1,9 +1,14 @@
+import { layoutConfig } from '@/src/shared/config/layoutConfig';
+
+const scale = (value: number) =>
+  Math.max(2, Math.round(value * layoutConfig.spacingScale));
+
 export const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 48,
-  xxxl: 64,
+  xs: scale(4),
+  sm: scale(8),
+  md: scale(16),
+  lg: scale(24),
+  xl: scale(32),
+  xxl: scale(48),
+  xxxl: scale(64),
 };

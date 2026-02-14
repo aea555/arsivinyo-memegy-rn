@@ -15,7 +15,7 @@ import VideoTrimmer from 'react-native-video-trim';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
-import { shadows } from '@/src/shared/theme/shadows';
+import { useShadows } from '@/src/shared/theme/shadows';
 import { spacing } from '@/src/shared/theme/spacing';
 
 type VideoTrimModalProps = {
@@ -28,6 +28,7 @@ type VideoTrimModalProps = {
 export function VideoTrimModal({ visible, videoUri, onComplete, onCancel }: VideoTrimModalProps) {
     const { t } = useTranslation();
     const { palette } = useTheme();
+    const shadows = useShadows();
     const [trimming, setTrimming] = useState(false);
     const [startTime, setStartTime] = useState('0');
     const [endTime, setEndTime] = useState('10');
@@ -65,8 +66,11 @@ export function VideoTrimModal({ visible, videoUri, onComplete, onCancel }: Vide
 
     return (
         <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
-            <Pressable style={styles.overlay} onPress={onCancel}>
-                <View style={[styles.modal, { backgroundColor: palette.surface }]} onStartShouldSetResponder={() => true}>
+            <Pressable style={[styles.overlay, { backgroundColor: palette.scrim }]} onPress={onCancel}>
+                <View
+                  style={[styles.modal, shadows.strong, { backgroundColor: palette.surface }]}
+                  onStartShouldSetResponder={() => true}
+                >
                     <View style={styles.header}>
                         <AppText variant="heading2">{t('upload.trim')}</AppText>
                         <Pressable onPress={onCancel} hitSlop={8}>
@@ -127,7 +131,6 @@ export function VideoTrimModal({ visible, videoUri, onComplete, onCancel }: Vide
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
         justifyContent: 'flex-end',
     },
     modal: {
@@ -136,7 +139,6 @@ const styles = StyleSheet.create({
         paddingTop: spacing.lg,
         paddingBottom: spacing.xl,
         paddingHorizontal: spacing.lg,
-        ...shadows.strong,
     },
     header: {
         flexDirection: 'row',

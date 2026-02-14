@@ -1,13 +1,106 @@
 import { apiClient } from '@/src/shared/services/api/apiClient';
 import { VideoFeedItem } from '@/src/shared/types/api';
 
-export async function getFeed(sort: 'random' | 'latest' | 'popular', page: number) {
-  const response = await apiClient.get<VideoFeedItem[]>('/feed', {
-    params: { sort, page },
-  });
-  return response.data;
+export type FeedSort = 'random' | 'latest' | 'newest' | 'popular';
+
+function normalizeFeedSort(sort: FeedSort): 'random' | 'latest' | 'popular' {
+  return sort === 'newest' ? 'latest' : sort;
 }
 
-export async function toggleLike(videoId: string) {
-  await apiClient.post(`/videos/${videoId}/like`);
+export async function getFeed(sort: FeedSort, page: number, randomSeed?: string) {
+  const normalizedSort = normalizeFeedSort(sort);
+  const endpoint = '/feed';
+  const params: Record<string, string | number> = { sort: normalizedSort, page };
+  if (normalizedSort === 'random' && randomSeed) {
+    params.random_seed = randomSeed;
+  }
+  const startedAt = Date.now();
+
+  if (__DEV__) {
+    console.debug('[feed] request', {
+      method: 'GET',
+      endpoint,
+      params,
+    });
+  }
+
+  try {
+    const response = await apiClient.get<VideoFeedItem[]>(endpoint, {
+      params,
+    });
+
+    if (__DEV__) {
+      const data = Array.isArray(response.data) ? response.data : [];
+      console.debug('[feed] response', {
+        endpoint,
+        status: response.status,
+        sort: normalizedSort,
+        page,
+        count: data.length,
+        firstVideoId: data[0]?.id,
+        elapsedMs: Date.now() - startedAt,
+      });
+    }
+
+    return response.data;
+  } catch (error: any) {
+    if (__DEV__) {
+      console.debug('[feed] error', {
+        endpoint,
+        sort: normalizedSort,
+        page,
+        status: error?.response?.status,
+        message: error?.message,
+        elapsedMs: Date.now() - startedAt,
+      });
+    }
+    throw error;
+  }
+}
+
+export type LikeStateResponse = {
+  is_liked: boolean;
+  like_count: number;
+};
+
+export async function setLikeState(videoId: string, shouldLike: boolean) {
+  const endpoint = `/videos/${videoId}/like`;
+  const method = shouldLike ? 'PUT' : 'DELETE';
+
+  if (__DEV__) {
+    console.debug('[like] request', {
+      method,
+      endpoint,
+      videoId,
+    });
+  }
+
+  try {
+    const response = await apiClient.request<LikeStateResponse>({
+      method,
+      url: endpoint,
+    });
+
+    if (__DEV__) {
+      console.debug('[like] response', {
+        method,
+        endpoint,
+        status: response.status,
+        data: response.data,
+      });
+    }
+
+    return response.data ?? null;
+  } catch (error: any) {
+    if (__DEV__) {
+      console.debug('[like] error', {
+        method,
+        endpoint,
+        status: error?.response?.status,
+        data: error?.response?.data,
+        message: error?.message,
+      });
+    }
+    throw error;
+  }
 }

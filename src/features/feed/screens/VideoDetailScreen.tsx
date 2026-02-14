@@ -1,3 +1,4 @@
+import { useIsFocused } from '@react-navigation/native';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
@@ -7,13 +8,14 @@ import { VideoPlayer } from '@/src/features/feed/components/VideoPlayer';
 import { useCachedVideo } from '@/src/features/feed/hooks/useCachedVideo';
 import { useToggleLike } from '@/src/features/feed/hooks/useToggleLike';
 import { AppText } from '@/src/shared/components/ui/AppText';
-import { Button } from '@/src/shared/components/ui/Button';
+import { LikeButton } from '@/src/shared/components/ui/LikeButton';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { spacing } from '@/src/shared/theme/spacing';
-import { formatDate, formatCount } from '@/src/shared/utils/formatters';
+import { formatDate } from '@/src/shared/utils/formatters';
 
 export function VideoDetailScreen() {
   const { t } = useTranslation();
+  const isFocused = useIsFocused();
   const params = useLocalSearchParams();
   const videoId = Array.isArray(params.id) ? params.id[0] : params.id;
   const video = useCachedVideo(videoId);
@@ -30,23 +32,23 @@ export function VideoDetailScreen() {
 
   return (
     <Screen title={video.title ?? t('video.title')} showBack contentStyle={styles.container}>
-      <VideoPlayer uri={video.url} isActive={true} />
+      <VideoPlayer uri={video.url} isActive={isFocused} isScreenActive={isFocused} />
       <View style={styles.meta}>
         <AppText variant="heading2">{video.title ?? t('video.untitled')}</AppText>
         <AppText variant="caption">
-          {video.uploader ? `@${video.uploader.username}` : 'Anonymous'} - {formatDate(video.created_at)}
+          {video.uploader ? `@${video.uploader.username}` : t('video.anonymous')} - {formatDate(video.created_at)}
         </AppText>
         <View style={styles.likes}>
-          <AppText variant="caption">{t('video.likes')}</AppText>
-          <AppText variant="bodyBold">{formatCount(video.like_count)}</AppText>
           {video.is_liked !== undefined ? (
-            <Button
-              label={video.is_liked ? t('video.unlike') : t('video.like')}
-              onPress={() => toggleLike.mutate()}
+            <LikeButton
+              liked={video.is_liked}
+              count={video.like_count}
+              onPress={() => toggleLike.mutate({ currentLiked: video.is_liked ?? false })}
               disabled={toggleLike.isPending}
-              variant={video.is_liked ? 'secondary' : 'primary'}
             />
-          ) : null}
+          ) : (
+            <AppText variant="caption">{video.like_count}</AppText>
+          )}
         </View>
       </View>
     </Screen>
@@ -62,6 +64,6 @@ const styles = StyleSheet.create({
   },
   likes: {
     marginTop: spacing.md,
-    gap: spacing.xs,
+    alignItems: 'flex-start',
   },
 });

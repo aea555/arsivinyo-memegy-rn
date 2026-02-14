@@ -43,9 +43,6 @@ export function useGoogleLogin() {
     if (__DEV__) {
       console.debug('[auth] start login', {
         redirectUri,
-        authUrl,
-        codeVerifier,
-        codeChallenge,
       });
     }
 
@@ -54,7 +51,8 @@ export function useGoogleLogin() {
 
     const urlListener = __DEV__
       ? Linking.addEventListener('url', (event) => {
-          console.debug('[auth] linking url event', event);
+          const parsed = Linking.parse(event.url);
+          console.debug('[auth] linking url event', { path: parsed.path });
         })
       : null;
 
@@ -82,7 +80,7 @@ export function useGoogleLogin() {
     }
 
     if (__DEV__) {
-      console.debug('[auth] auth session result', result);
+      console.debug('[auth] auth session result', { type: result.type });
     }
     if (result.type !== 'success') {
       return { type: result.type } as AuthSessionResult;
@@ -110,8 +108,7 @@ export function useGoogleLogin() {
 
     if (__DEV__) {
       console.debug('[auth] auth session success', {
-        url: result.url,
-        params,
+        hasParams: Object.keys(params).length > 0,
       });
     }
 

@@ -23,7 +23,7 @@ export function ProfileSummaryCard({ username, email, avatarUrl }: ProfileSummar
           <Image source={{ uri: avatarUrl }} style={[styles.avatar, { borderColor: palette.border }]} />
         ) : (
           <View style={[styles.placeholder, { backgroundColor: palette.accent }]}>
-            <AppText variant="bodyBold" style={styles.initials}>
+            <AppText variant="bodyBold" style={{ color: palette.onAccent }}>
               {initials}
             </AppText>
           </View>
@@ -65,8 +65,5 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  initials: {
-    color: '#FFFFFF',
   },
 });

@@ -5,7 +5,7 @@ import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { spacing } from '@/src/shared/theme/spacing';
-import { shadows } from '@/src/shared/theme/shadows';
+import { useShadows } from '@/src/shared/theme/shadows';
 
 type ConfirmModalProps = {
   visible: boolean;
@@ -29,6 +29,7 @@ export function ConfirmModal({
   onCancel,
 }: ConfirmModalProps) {
   const { palette } = useTheme();
+  const shadows = useShadows();
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.96)).current;
 
@@ -48,7 +49,7 @@ export function ConfirmModal({
 
   return (
     <Modal transparent visible={visible} animationType="none" onRequestClose={onCancel}>
-      <Pressable style={styles.overlay} onPress={onCancel}>
+      <Pressable style={[styles.overlay, { backgroundColor: palette.scrim }]} onPress={onCancel}>
         <Animated.View
           style={[
             styles.modal,
@@ -82,7 +83,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.lg,
-    backgroundColor: 'rgba(0,0,0,0.4)',
   },
   modal: {
     width: '100%',

@@ -7,7 +7,7 @@ import { exchangeOtc } from '@/src/features/auth/api/authApi';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
-import { SecureStorage } from '@/src/shared/services/storage/SecureStorage';
+import { authSessionManager } from '@/src/shared/services/auth/authSessionManager';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useAuthStore } from '@/src/store/authStore';
 
@@ -16,6 +16,7 @@ export function CallbackScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const setAuthenticated = useAuthStore((state) => state.setAuthenticated);
+  const setPendingSignup = useAuthStore((state) => state.setPendingSignup);
 
   const [error, setError] = useState<string | null>(null);
   const [exchanging, setExchanging] = useState(false);
@@ -35,18 +36,26 @@ export function CallbackScreen() {
       exchangeStartedRef.current = true;
       setExchanging(true);
 
-      if (__DEV__) {
-        console.debug('[auth] callback params', {
-          codeParam: Array.isArray(params.code) ? params.code[0] : params.code,
-          otcParam: Array.isArray(params.otc) ? params.otc[0] : params.otc,
-        });
-      }
-
       try {
-        const data = await exchangeOtc(code);
-        await SecureStorage.setTokens(data.access_token, data.refresh_token);
-        setAuthenticated(data.user);
-        router.replace('/(tabs)/feed');
+        const result = await exchangeOtc(code);
+
+        if (result.kind === 'authenticated') {
+          await authSessionManager.setSession({
+            accessToken: result.data.access_token,
+            refreshToken: result.data.refresh_token,
+          });
+          setAuthenticated(result.data.user);
+          router.replace('/(tabs)/feed');
+          return;
+        }
+
+        setPendingSignup({
+          signupTicket: result.data.signup_ticket,
+          suggestedUsername: result.data.suggested_username,
+          rules: result.data.rules,
+          createdAt: Date.now(),
+        });
+        router.replace('/(auth)/username-setup');
       } catch {
         setError(t('auth.authFailed'));
       } finally {
@@ -55,7 +64,7 @@ export function CallbackScreen() {
     };
 
     void run();
-  }, [code, exchanging, params.code, params.otc, router, setAuthenticated, t]);
+  }, [code, exchanging, router, setAuthenticated, setPendingSignup, t]);
 
   useEffect(() => {
     if (code || exchanging || error) return;

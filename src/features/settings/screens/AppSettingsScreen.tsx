@@ -6,7 +6,7 @@ import i18n from '@/src/shared/locales/i18n';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { LocalStorage } from '@/src/shared/services/storage/LocalStorage';
 import { spacing } from '@/src/shared/theme/spacing';
-import { ThemeMode, useTheme } from '@/src/shared/theme/ThemeProvider';
+import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { Card } from '@/src/shared/components/ui/Card';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
@@ -14,13 +14,11 @@ import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 
 export function AppSettingsScreen() {
   const { t } = useTranslation();
-  const { mode, setMode, palette } = useTheme();
+  const { palette } = useTheme();
   const autoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
   const setAutoPlayVideos = useAppSettingsStore((state) => state.setAutoPlayVideos);
-
-  const updateTheme = async (nextMode: ThemeMode) => {
-    await setMode(nextMode);
-  };
+  const authDebugAggressiveRefresh = useAppSettingsStore((state) => state.authDebugAggressiveRefresh);
+  const setAuthDebugAggressiveRefresh = useAppSettingsStore((state) => state.setAuthDebugAggressiveRefresh);
 
   const updateLanguage = async (language: 'en' | 'tr') => {
     await i18n.changeLanguage(language);
@@ -29,26 +27,6 @@ export function AppSettingsScreen() {
 
   return (
     <Screen title={t('settings.appSettings')} showBack contentStyle={styles.container}>
-      <Card style={styles.sectionCard}>
-        <AppText variant="bodyBold">{t('settings.theme')}</AppText>
-        <View style={styles.row}>
-          <Button
-            label={t('settings.themeAuto')}
-            onPress={() => updateTheme('auto')}
-            variant={mode === 'auto' ? 'primary' : 'secondary'}
-          />
-          <Button
-            label={t('settings.themeLight')}
-            onPress={() => updateTheme('light')}
-            variant={mode === 'light' ? 'primary' : 'secondary'}
-          />
-          <Button
-            label={t('settings.themeDark')}
-            onPress={() => updateTheme('dark')}
-            variant={mode === 'dark' ? 'primary' : 'secondary'}
-          />
-        </View>
-      </Card>
       <Card style={styles.sectionCard}>
         <AppText variant="bodyBold">{t('settings.language')}</AppText>
         <View style={styles.row}>
@@ -80,6 +58,24 @@ export function AppSettingsScreen() {
             trackColor={{ true: palette.accent, false: palette.border }}
           />
         </View>
+
+        {__DEV__ ? (
+          <View style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <AppText variant="bodyBold">{t('settings.authDebugAggressiveRefresh')}</AppText>
+              <AppText variant="caption" style={{ color: palette.text.secondary }}>
+                {t('settings.authDebugAggressiveRefreshHint')}
+              </AppText>
+            </View>
+            <Switch
+              value={authDebugAggressiveRefresh}
+              onValueChange={(value) => {
+                void setAuthDebugAggressiveRefresh(value);
+              }}
+              trackColor={{ true: palette.accent, false: palette.border }}
+            />
+          </View>
+        ) : null}
       </Card>
     </Screen>
   );

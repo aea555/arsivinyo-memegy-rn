@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
-import { shadows } from '@/src/shared/theme/shadows';
+import { useShadows } from '@/src/shared/theme/shadows';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { typography } from '@/src/shared/theme/typography';
 
@@ -17,6 +17,7 @@ type ButtonProps = {
 
 export function Button({ label, onPress, disabled, variant = 'primary', style }: ButtonProps) {
   const { palette } = useTheme();
+  const shadows = useShadows();
 
   const backgroundColor =
     variant === 'primary'
@@ -37,7 +38,7 @@ export function Button({ label, onPress, disabled, variant = 'primary', style }:
         : 'transparent';
 
   const textColor =
-    variant === 'primary' || variant === 'danger' ? '#FFFFFF' : palette.text.primary;
+    variant === 'primary' || variant === 'danger' ? palette.onAccent : palette.text.primary;
 
   return (
     <Pressable
