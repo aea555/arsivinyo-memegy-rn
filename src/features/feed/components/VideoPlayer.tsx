@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { AppState, AppStateStatus, Animated, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { AppState, AppStateStatus, Animated, Modal, PanResponder, PanResponderGestureState, Pressable, StyleSheet, View } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -28,6 +28,8 @@ const BACKGROUND_PAUSE_DELAY_MS = 1200;
 const FULLSCREEN_RESUME_WINDOW_MS = 2000;
 const TAP_FEEDBACK_TOTAL_MS = 500;
 const TIME_UPDATE_INTERVAL_SECONDS = 0.25;
+const CONTROLS_AUTO_HIDE_MS = 3000;
+const CONTROLS_FADE_DURATION_MS = 180;
 const RELEASED_PLAYER_LOG_LIMIT = 160;
 const releasedPlayerLogKeys = new Set<string>();
 
@@ -153,16 +155,21 @@ function VideoPlayerNative({
   const [isCustomFullscreen, setIsCustomFullscreen] = React.useState(false);
   const [manualPaused, setManualPaused] = React.useState<boolean | null>(null);
   const [tapFeedbackIcon, setTapFeedbackIcon] = React.useState<'pause' | 'play' | null>(null);
+  const [areMinimalControlsVisible, setAreMinimalControlsVisible] = React.useState(false);
   const [durationSec, setDurationSec] = React.useState(0);
   const [positionSec, setPositionSec] = React.useState(0);
   const [isScrubbing, setIsScrubbing] = React.useState(false);
   const [scrubPreviewSec, setScrubPreviewSec] = React.useState(0);
   const pauseTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekTrackWidthRef = React.useRef(0);
+  const seekTrackLeftRef = React.useRef(0);
   const isScrubbingRef = React.useRef(false);
   const scrubPreviewSecRef = React.useRef(0);
   const tapFeedbackOpacity = React.useRef(new Animated.Value(0)).current;
   const tapFeedbackScale = React.useRef(new Animated.Value(0.84)).current;
+  const minimalControlsOpacity = React.useRef(new Animated.Value(0)).current;
+  const minimalControlsHideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const areMinimalControlsVisibleRef = React.useRef(false);
   const videoViewRef = React.useRef<VideoView>(null);
   const appStateRef = React.useRef<AppStateStatus>(appState);
   const isActiveRef = React.useRef(isActive);
@@ -173,6 +180,69 @@ function VideoPlayerNative({
   const resumeAfterForcedPauseUntilRef = React.useRef(0);
   const shouldForcePostFullscreenState = isImmersive;
   const shouldShowMinimalControls = !isImmersive && Boolean(showMinimalControls);
+
+  const clearMinimalControlsHideTimer = React.useCallback(() => {
+    if (minimalControlsHideTimerRef.current) {
+      clearTimeout(minimalControlsHideTimerRef.current);
+      minimalControlsHideTimerRef.current = null;
+    }
+  }, []);
+
+  const setMinimalControlsVisible = React.useCallback(
+    (visible: boolean) => {
+      if (!shouldShowMinimalControls) return;
+
+      areMinimalControlsVisibleRef.current = visible;
+      setAreMinimalControlsVisible((prev) => (prev === visible ? prev : visible));
+      minimalControlsOpacity.stopAnimation();
+      Animated.timing(minimalControlsOpacity, {
+        toValue: visible ? 1 : 0,
+        duration: CONTROLS_FADE_DURATION_MS,
+        useNativeDriver: true,
+      }).start();
+    },
+    [minimalControlsOpacity, shouldShowMinimalControls]
+  );
+
+  const scheduleMinimalControlsAutoHide = React.useCallback(
+    (delayMs: number = CONTROLS_AUTO_HIDE_MS) => {
+      if (!shouldShowMinimalControls) return;
+      clearMinimalControlsHideTimer();
+      minimalControlsHideTimerRef.current = setTimeout(() => {
+        minimalControlsHideTimerRef.current = null;
+        if (isScrubbingRef.current) {
+          scheduleMinimalControlsAutoHide(500);
+          return;
+        }
+        setMinimalControlsVisible(false);
+      }, delayMs);
+    },
+    [clearMinimalControlsHideTimer, setMinimalControlsVisible, shouldShowMinimalControls]
+  );
+
+  const revealMinimalControls = React.useCallback(
+    (autoHide: boolean = true) => {
+      if (!shouldShowMinimalControls) return;
+      setMinimalControlsVisible(true);
+      if (autoHide) {
+        scheduleMinimalControlsAutoHide();
+      } else {
+        clearMinimalControlsHideTimer();
+      }
+    },
+    [
+      clearMinimalControlsHideTimer,
+      scheduleMinimalControlsAutoHide,
+      setMinimalControlsVisible,
+      shouldShowMinimalControls,
+    ]
+  );
+
+  const hideMinimalControls = React.useCallback(() => {
+    if (!shouldShowMinimalControls) return;
+    clearMinimalControlsHideTimer();
+    setMinimalControlsVisible(false);
+  }, [clearMinimalControlsHideTimer, setMinimalControlsVisible, shouldShowMinimalControls]);
 
   const videoPlayer = useVideoPlayer(uri, (playerInstance) => {
     playerInstance.loop = true;
@@ -259,13 +329,14 @@ function VideoPlayerNative({
 
   useEffect(() => {
     return () => {
+      clearMinimalControlsHideTimer();
       try {
         videoPlayer.pause();
       } catch {
         // no-op on unmount for already released players
       }
     };
-  }, [videoPlayer]);
+  }, [clearMinimalControlsHideTimer, videoPlayer]);
 
   useEffect(() => {
     if (pauseTimerRef.current) {
@@ -281,10 +352,18 @@ function VideoPlayerNative({
     setScrubPreviewSec(0);
     isScrubbingRef.current = false;
     scrubPreviewSecRef.current = 0;
-  }, [uri]);
+    clearMinimalControlsHideTimer();
+    areMinimalControlsVisibleRef.current = false;
+    setAreMinimalControlsVisible(false);
+    minimalControlsOpacity.setValue(0);
+  }, [clearMinimalControlsHideTimer, minimalControlsOpacity, uri]);
 
   useEffect(() => {
     if (!shouldShowMinimalControls) {
+      clearMinimalControlsHideTimer();
+      areMinimalControlsVisibleRef.current = false;
+      setAreMinimalControlsVisible(false);
+      minimalControlsOpacity.setValue(0);
       try {
         videoPlayer.timeUpdateEventInterval = 0;
       } catch (error) {
@@ -364,7 +443,38 @@ function VideoPlayerNative({
         }
       }
     };
-  }, [shouldShowMinimalControls, uri, videoPlayer]);
+  }, [
+    clearMinimalControlsHideTimer,
+    minimalControlsOpacity,
+    shouldShowMinimalControls,
+    uri,
+    videoPlayer,
+  ]);
+
+  useEffect(() => {
+    if (!shouldShowMinimalControls) return;
+    if (!isActive || !isScreenActive || appState === 'background') {
+      hideMinimalControls();
+      return;
+    }
+    if (areMinimalControlsVisibleRef.current) {
+      scheduleMinimalControlsAutoHide();
+    }
+  }, [
+    appState,
+    hideMinimalControls,
+    isActive,
+    isScreenActive,
+    scheduleMinimalControlsAutoHide,
+    shouldShowMinimalControls,
+  ]);
+
+  useEffect(() => {
+    if (!shouldShowMinimalControls) return;
+    if (isCustomFullscreen) {
+      revealMinimalControls(true);
+    }
+  }, [isCustomFullscreen, revealMinimalControls, shouldShowMinimalControls]);
 
   useEffect(() => {
     const pauseNow = () => {
@@ -557,6 +667,7 @@ function VideoPlayerNative({
 
   const handleControlTogglePlayback = React.useCallback(() => {
     if (!isActive || !isScreenActive) return;
+    revealMinimalControls(true);
 
     const isPlaying = manualPaused === null ? lastKnownPlayingRef.current : !manualPaused;
     const nextPaused = isPlaying;
@@ -576,7 +687,7 @@ function VideoPlayerNative({
         });
       }
     }
-  }, [isActive, isScreenActive, manualPaused, videoPlayer, uri]);
+  }, [isActive, isScreenActive, manualPaused, revealMinimalControls, videoPlayer, uri]);
 
   const commitSeek = React.useCallback((nextTimeSec: number) => {
     const safeDuration = durationSec;
@@ -614,6 +725,59 @@ function VideoPlayerNative({
     [durationSec]
   );
 
+  const updateSeekPreviewFromAbsoluteX = React.useCallback(
+    (pageX: number) => {
+      const trackLeft = seekTrackLeftRef.current;
+      return updateSeekPreviewFromX(pageX - trackLeft);
+    },
+    [updateSeekPreviewFromX]
+  );
+
+  const seekPanResponder = React.useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: (event) => {
+          seekTrackLeftRef.current = event.nativeEvent.pageX - event.nativeEvent.locationX;
+          isScrubbingRef.current = true;
+          setIsScrubbing(true);
+          revealMinimalControls(false);
+          updateSeekPreviewFromAbsoluteX(event.nativeEvent.pageX);
+        },
+        onPanResponderMove: (_, gestureState: PanResponderGestureState) => {
+          updateSeekPreviewFromAbsoluteX(gestureState.moveX);
+        },
+        onPanResponderRelease: (_, gestureState: PanResponderGestureState) => {
+          const nextTimeSec = updateSeekPreviewFromAbsoluteX(gestureState.moveX);
+          isScrubbingRef.current = false;
+          setIsScrubbing(false);
+          if (typeof nextTimeSec === 'number') {
+            commitSeek(nextTimeSec);
+          }
+          scheduleMinimalControlsAutoHide();
+        },
+        onPanResponderTerminate: (_, gestureState: PanResponderGestureState) => {
+          const nextTimeSec = updateSeekPreviewFromAbsoluteX(gestureState.moveX);
+          isScrubbingRef.current = false;
+          setIsScrubbing(false);
+          if (typeof nextTimeSec === 'number') {
+            commitSeek(nextTimeSec);
+          } else {
+            commitSeek(scrubPreviewSecRef.current);
+          }
+          scheduleMinimalControlsAutoHide();
+        },
+      }),
+    [
+      commitSeek,
+      revealMinimalControls,
+      scheduleMinimalControlsAutoHide,
+      updateSeekPreviewFromAbsoluteX,
+    ]
+  );
+
   const displayedPositionSec = isScrubbing ? scrubPreviewSec : positionSec;
   const displayedDurationSec = durationSec;
   const progressRatio = displayedDurationSec > 0
@@ -630,13 +794,14 @@ function VideoPlayerNative({
     postFullscreenStateRef.current = null;
     setIsFullscreen(true);
     setIsCustomFullscreen(true);
+    revealMinimalControls(true);
     try {
       videoPlayer.play();
       setManualPaused(false);
     } catch {
       // no-op: transient state while mounting fullscreen view
     }
-  }, [videoPlayer]);
+  }, [revealMinimalControls, videoPlayer]);
 
   const exitCustomFullscreen = React.useCallback(() => {
     postFullscreenStateRef.current = shouldForcePostFullscreenState
@@ -644,9 +809,11 @@ function VideoPlayerNative({
       : null;
     setIsCustomFullscreen(false);
     setIsFullscreen(false);
-  }, [shouldForcePostFullscreenState]);
+    revealMinimalControls(true);
+  }, [revealMinimalControls, shouldForcePostFullscreenState]);
 
   const handleFullscreenToggle = React.useCallback(() => {
+    revealMinimalControls(true);
     if (shouldUseCustomFullscreen) {
       if (isCustomFullscreen) {
         exitCustomFullscreen();
@@ -656,7 +823,24 @@ function VideoPlayerNative({
       return;
     }
     void videoViewRef.current?.enterFullscreen();
-  }, [enterCustomFullscreen, exitCustomFullscreen, isCustomFullscreen, shouldUseCustomFullscreen]);
+  }, [
+    enterCustomFullscreen,
+    exitCustomFullscreen,
+    isCustomFullscreen,
+    revealMinimalControls,
+    shouldUseCustomFullscreen,
+  ]);
+
+  const handleMinimalControlsOverlayPress = React.useCallback(() => {
+    if (!shouldShowMinimalControls) return;
+    if (!isActive || !isScreenActive) return;
+
+    if (areMinimalControlsVisibleRef.current) {
+      hideMinimalControls();
+      return;
+    }
+    revealMinimalControls(true);
+  }, [hideMinimalControls, isActive, isScreenActive, revealMinimalControls, shouldShowMinimalControls]);
 
   return (
     <View
@@ -712,12 +896,22 @@ function VideoPlayerNative({
         />
       )}
       {shouldShowMinimalControls && !isCustomFullscreen ? (
-        <View
+        <Pressable
+          style={styles.minimalControlsTapArea}
+          onPress={handleMinimalControlsOverlayPress}
+          accessibilityRole="button"
+          accessibilityLabel="Toggle video controls"
+        />
+      ) : null}
+      {shouldShowMinimalControls && !isCustomFullscreen ? (
+        <Animated.View
+          pointerEvents={areMinimalControlsVisible ? 'auto' : 'none'}
           style={[
             styles.minimalControls,
             {
               backgroundColor: withAlpha(palette.overlay, 0.78),
               borderColor: withAlpha(palette.border, 0.45),
+              opacity: minimalControlsOpacity,
             },
           ]}
         >
@@ -739,57 +933,41 @@ function VideoPlayerNative({
             </Pressable>
             <View style={styles.seekWrap}>
               <View
-                style={[
-                  styles.seekTrack,
-                  {
-                    backgroundColor: withAlpha(palette.mediaControlText, 0.28),
-                  },
-                ]}
+                style={styles.seekTrackTouchArea}
                 onLayout={(event) => {
                   seekTrackWidthRef.current = event.nativeEvent.layout.width;
                 }}
-                onStartShouldSetResponder={() => true}
-                onMoveShouldSetResponder={() => true}
-                onResponderGrant={(event) => {
-                  isScrubbingRef.current = true;
-                  setIsScrubbing(true);
-                  updateSeekPreviewFromX(event.nativeEvent.locationX);
-                }}
-                onResponderMove={(event) => {
-                  updateSeekPreviewFromX(event.nativeEvent.locationX);
-                }}
-                onResponderRelease={(event) => {
-                  const nextTimeSec = updateSeekPreviewFromX(event.nativeEvent.locationX);
-                  isScrubbingRef.current = false;
-                  setIsScrubbing(false);
-                  if (typeof nextTimeSec === 'number') {
-                    commitSeek(nextTimeSec);
-                  }
-                }}
-                onResponderTerminate={() => {
-                  isScrubbingRef.current = false;
-                  setIsScrubbing(false);
-                  commitSeek(scrubPreviewSecRef.current);
-                }}
+                {...seekPanResponder.panHandlers}
               >
                 <View
                   style={[
-                    styles.seekFill,
+                    styles.seekTrack,
                     {
-                      width: `${progressRatio * 100}%`,
-                      backgroundColor: palette.accent,
+                      backgroundColor: withAlpha(palette.mediaControlText, 0.28),
                     },
                   ]}
-                />
-                <View
-                  style={[
-                    styles.seekThumb,
-                    {
-                      left: `${progressRatio * 100}%`,
-                      backgroundColor: palette.mediaControlText,
-                    },
-                  ]}
-                />
+                >
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      styles.seekFill,
+                      {
+                        width: `${progressRatio * 100}%`,
+                        backgroundColor: palette.accent,
+                      },
+                    ]}
+                  />
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      styles.seekThumb,
+                      {
+                        left: `${progressRatio * 100}%`,
+                        backgroundColor: palette.mediaControlText,
+                      },
+                    ]}
+                  />
+                </View>
               </View>
               <AppText variant="caption" style={styles.seekTimeText}>
                 {`${formatVideoTime(displayedPositionSec)} / ${formatVideoTime(displayedDurationSec)}`}
@@ -811,7 +989,7 @@ function VideoPlayerNative({
               />
             </Pressable>
           </View>
-        </View>
+        </Animated.View>
       ) : null}
       {allowTapToToggle && !isCustomFullscreen ? (
         <Pressable style={styles.tapOverlay} onPress={handleTogglePlayback} />
@@ -852,13 +1030,21 @@ function VideoPlayerNative({
               contentFit={contentFit ?? 'contain'}
               nativeControls={false}
             />
-            <View
+            <Pressable
+              style={styles.minimalControlsTapArea}
+              onPress={handleMinimalControlsOverlayPress}
+              accessibilityRole="button"
+              accessibilityLabel="Toggle video controls"
+            />
+            <Animated.View
+              pointerEvents={areMinimalControlsVisible ? 'auto' : 'none'}
               style={[
                 styles.minimalControls,
                 styles.minimalControlsFullscreen,
                 {
                   backgroundColor: withAlpha(palette.overlay, 0.78),
                   borderColor: withAlpha(palette.border, 0.45),
+                  opacity: minimalControlsOpacity,
                 },
               ]}
             >
@@ -880,57 +1066,41 @@ function VideoPlayerNative({
                 </Pressable>
                 <View style={styles.seekWrap}>
                   <View
-                    style={[
-                      styles.seekTrack,
-                      {
-                        backgroundColor: withAlpha(palette.mediaControlText, 0.28),
-                      },
-                    ]}
+                    style={styles.seekTrackTouchArea}
                     onLayout={(event) => {
                       seekTrackWidthRef.current = event.nativeEvent.layout.width;
                     }}
-                    onStartShouldSetResponder={() => true}
-                    onMoveShouldSetResponder={() => true}
-                    onResponderGrant={(event) => {
-                      isScrubbingRef.current = true;
-                      setIsScrubbing(true);
-                      updateSeekPreviewFromX(event.nativeEvent.locationX);
-                    }}
-                    onResponderMove={(event) => {
-                      updateSeekPreviewFromX(event.nativeEvent.locationX);
-                    }}
-                    onResponderRelease={(event) => {
-                      const nextTimeSec = updateSeekPreviewFromX(event.nativeEvent.locationX);
-                      isScrubbingRef.current = false;
-                      setIsScrubbing(false);
-                      if (typeof nextTimeSec === 'number') {
-                        commitSeek(nextTimeSec);
-                      }
-                    }}
-                    onResponderTerminate={() => {
-                      isScrubbingRef.current = false;
-                      setIsScrubbing(false);
-                      commitSeek(scrubPreviewSecRef.current);
-                    }}
+                    {...seekPanResponder.panHandlers}
                   >
                     <View
                       style={[
-                        styles.seekFill,
+                        styles.seekTrack,
                         {
-                          width: `${progressRatio * 100}%`,
-                          backgroundColor: palette.accent,
+                          backgroundColor: withAlpha(palette.mediaControlText, 0.28),
                         },
                       ]}
-                    />
-                    <View
-                      style={[
-                        styles.seekThumb,
-                        {
-                          left: `${progressRatio * 100}%`,
-                          backgroundColor: palette.mediaControlText,
-                        },
-                      ]}
-                    />
+                    >
+                      <View
+                        pointerEvents="none"
+                        style={[
+                          styles.seekFill,
+                          {
+                            width: `${progressRatio * 100}%`,
+                            backgroundColor: palette.accent,
+                          },
+                        ]}
+                      />
+                      <View
+                        pointerEvents="none"
+                        style={[
+                          styles.seekThumb,
+                          {
+                            left: `${progressRatio * 100}%`,
+                            backgroundColor: palette.mediaControlText,
+                          },
+                        ]}
+                      />
+                    </View>
                   </View>
                   <AppText variant="caption" style={styles.seekTimeText}>
                     {`${formatVideoTime(displayedPositionSec)} / ${formatVideoTime(displayedDurationSec)}`}
@@ -952,7 +1122,7 @@ function VideoPlayerNative({
                   />
                 </Pressable>
               </View>
-            </View>
+            </Animated.View>
           </View>
         </Modal>
       ) : null}
@@ -1015,6 +1185,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 9,
   },
+  minimalControlsTapArea: {
+    ...StyleSheet.absoluteFillObject,
+  },
   minimalControlsFullscreen: {
     bottom: 20,
   },
@@ -1033,6 +1206,10 @@ const styles = StyleSheet.create({
   seekWrap: {
     flex: 1,
     gap: 4,
+  },
+  seekTrackTouchArea: {
+    height: 24,
+    justifyContent: 'center',
   },
   seekTrack: {
     height: 6,
