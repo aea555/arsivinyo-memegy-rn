@@ -1,12 +1,13 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Switch, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import {
   completeSignup,
   SignupCompleteError,
 } from '@/src/features/auth/api/authApi';
+import { getTerms } from '@/src/features/settings/api/systemApi';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
@@ -33,10 +34,14 @@ export function UsernameSetupScreen() {
   const clearPendingSignup = useAuthStore((state) => state.clearPendingSignup);
 
   const [username, setUsername] = useState('');
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsVersion, setTermsVersion] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
 
   const rules = pendingSignup?.rules ?? DEFAULT_USERNAME_RULES;
+  const requiredTermsVersion = pendingSignup?.requiredTermsVersion ?? termsVersion ?? 'v1';
   const validation = useMemo(
     () => validateUsername(username, rules),
     [rules, username]
@@ -47,6 +52,24 @@ export function UsernameSetupScreen() {
     if (!pendingSignup) return;
     setUsername(normalizeUsernameDraft(pendingSignup.suggestedUsername));
   }, [pendingSignup]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const terms = await getTerms();
+        if (!cancelled) {
+          setTermsVersion(terms.version);
+        }
+      } catch {
+        // Best effort for UI context.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const validationMessage = useMemo(() => {
     if (validation.isValid || !username.length) return null;
@@ -66,6 +89,14 @@ export function UsernameSetupScreen() {
       setInlineError(validationMessage ?? t('auth.usernameInvalid'));
       return;
     }
+    if (!ageConfirmed) {
+      setInlineError(t('auth.ageConfirmationRequired'));
+      return;
+    }
+    if (!termsAccepted) {
+      setInlineError(t('auth.termsConsentRequired'));
+      return;
+    }
 
     setSubmitting(true);
     setInlineError(null);
@@ -74,6 +105,8 @@ export function UsernameSetupScreen() {
       const auth = await completeSignup({
         signup_ticket: pendingSignup.signupTicket,
         username: validation.normalized,
+        age_confirmed: true,
+        terms_version: requiredTermsVersion,
       });
       await authSessionManager.setSession({
         accessToken: auth.access_token,
@@ -149,6 +182,46 @@ export function UsernameSetupScreen() {
                 max: rules.max_length,
               })}
             </AppText>
+
+            <View style={[styles.toggleRow, { borderColor: palette.border, backgroundColor: palette.background }]}> 
+              <View style={styles.toggleText}>
+                <AppText variant="bodyBold">{t('auth.ageConfirmLabel')}</AppText>
+                <AppText variant="caption" style={{ color: palette.text.secondary }}>
+                  {t('auth.ageConfirmHint')}
+                </AppText>
+              </View>
+              <Switch
+                value={ageConfirmed}
+                onValueChange={setAgeConfirmed}
+                trackColor={{ true: palette.accent, false: palette.border }}
+                disabled={submitting}
+              />
+            </View>
+
+            <View style={[styles.toggleRow, { borderColor: palette.border, backgroundColor: palette.background }]}> 
+              <View style={styles.toggleText}>
+                <AppText variant="bodyBold">
+                  {t('auth.termsConsentLabel', { version: requiredTermsVersion })}
+                </AppText>
+                <AppText variant="caption" style={{ color: palette.text.secondary }}>
+                  {t('auth.termsConsentHint')}
+                </AppText>
+              </View>
+              <Switch
+                value={termsAccepted}
+                onValueChange={setTermsAccepted}
+                trackColor={{ true: palette.accent, false: palette.border }}
+                disabled={submitting}
+              />
+            </View>
+
+            <Button
+              label={t('auth.readTerms')}
+              variant="secondary"
+              onPress={() => router.push('/(auth)/terms' as never)}
+              disabled={submitting}
+            />
+
             {inlineError ? (
               <AppText variant="caption" style={{ color: palette.error }}>
                 {inlineError}
@@ -161,7 +234,7 @@ export function UsernameSetupScreen() {
             <Button
               label={submitting ? t('auth.usernameSubmitting') : t('auth.usernameContinue')}
               onPress={handleSubmit}
-              disabled={submitting || !validation.isValid}
+              disabled={submitting || !validation.isValid || !ageConfirmed || !termsAccepted}
             />
           </View>
         )}
@@ -185,5 +258,19 @@ const styles = StyleSheet.create({
   },
   expiredWrap: {
     gap: spacing.sm,
+  },
+  toggleRow: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  toggleText: {
+    flex: 1,
+    gap: spacing.xs,
   },
 });

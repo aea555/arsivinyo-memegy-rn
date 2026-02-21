@@ -7,10 +7,14 @@ function normalizeFeedSort(sort: FeedSort): 'random' | 'latest' | 'popular' {
   return sort === 'newest' ? 'latest' : sort;
 }
 
-export async function getFeed(sort: FeedSort, page: number, randomSeed?: string) {
+export async function getFeed(sort: FeedSort, page: number, includeNsfw: boolean, randomSeed?: string) {
   const normalizedSort = normalizeFeedSort(sort);
   const endpoint = '/feed';
-  const params: Record<string, string | number> = { sort: normalizedSort, page };
+  const params: Record<string, string | number | boolean> = {
+    sort: normalizedSort,
+    page,
+    include_nsfw: includeNsfw,
+  };
   if (normalizedSort === 'random' && randomSeed) {
     params.random_seed = randomSeed;
   }

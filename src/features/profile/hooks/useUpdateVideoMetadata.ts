@@ -14,12 +14,12 @@ type QuerySnapshot<T extends { id: string }> = [QueryKey, InfiniteData<T[]> | un
 type UpdateVideoMetadataInput = {
   videoId: string;
   payload: UpdateVideoRequest;
-  changedFields: ('title' | 'description' | 'is_anonymous')[];
+  changedFields: ('title' | 'description' | 'is_anonymous' | 'is_nsfw')[];
 };
 
 type MutationContext = {
   startedAt: number;
-  changedFields: ('title' | 'description' | 'is_anonymous')[];
+  changedFields: ('title' | 'description' | 'is_anonymous' | 'is_nsfw')[];
   myVideosSnapshots: QuerySnapshot<MyVideoItem>[];
   feedSnapshots: QuerySnapshot<VideoFeedItem>[];
   searchSnapshots: QuerySnapshot<VideoFeedItem>[];
@@ -70,6 +70,7 @@ export function useUpdateVideoMetadata() {
               title: payload.title !== undefined ? payload.title : item.title,
               description: payload.description !== undefined ? payload.description : item.description,
               is_anonymous: anonymousPatch ?? item.is_anonymous,
+              is_nsfw: payload.is_nsfw !== undefined ? payload.is_nsfw : item.is_nsfw,
               uploader: nextUploader,
             };
           });
@@ -93,6 +94,7 @@ export function useUpdateVideoMetadata() {
               ...item,
               title: payload.title !== undefined ? payload.title : item.title,
               description: payload.description !== undefined ? payload.description : item.description,
+              is_nsfw: payload.is_nsfw !== undefined ? Boolean(payload.is_nsfw) : item.is_nsfw,
               uploader: nextUploader,
             };
           });

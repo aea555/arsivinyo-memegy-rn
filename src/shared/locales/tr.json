@@ -32,7 +32,14 @@
     "usernameRateLimited": "\u00c7ok fazla deneme. L\u00fctfen sonra tekrar dene.",
     "usernameNetworkError": "A\u011f hatas\u0131. Ba\u011flant\u0131n\u0131 kontrol edip tekrar dene.",
     "usernameSessionExpired": "Kay\u0131t oturumun art\u0131k ge\u00e7erli de\u011fil.",
-    "restartLogin": "Giri\u015fi yeniden ba\u015flat"
+    "restartLogin": "Giri\u015fi yeniden ba\u015flat",
+    "ageConfirmLabel": "18 ya\u015f\u0131ndan b\u00fcy\u00fck oldu\u011fumu onayl\u0131yorum",
+    "ageConfirmHint": "Memegy kullanmak i\u00e7in en az 18 ya\u015f\u0131nda olmal\u0131s\u0131n.",
+    "ageConfirmationRequired": "Ya\u015f onay\u0131 gerekli.",
+    "termsConsentLabel": "\u015eartlar\u0131 kabul ediyorum ({{version}})",
+    "termsConsentHint": "Devam etmek i\u00e7in g\u00fcncel \u015fartlar\u0131 kabul etmelisin.",
+    "termsConsentRequired": "\u015eart onay\u0131 gerekli.",
+    "readTerms": "\u015eartlar\u0131 oku"
   },
   "tabs": {
     "feed": "Ak\u0131\u015f",
@@ -117,7 +124,14 @@
     "pickError": "Medya k\u00fct\u00fcphanesine eri\u015femedik.",
     "emptyFile": "Se\u00e7ilen dosya bo\u015f g\u00f6r\u00fcn\u00fcyor. Ba\u015fka bir video deneyin.",
     "unsupportedSource": "Bu dosya kayna\u011f\u0131 desteklenmiyor. Videoyu tekrar se\u00e7in.",
-    "fileUnreadable": "Bu video dosyas\u0131 okunamad\u0131. L\u00fctfen tekrar se\u00e7in."
+    "fileUnreadable": "Bu video dosyas\u0131 okunamad\u0131. L\u00fctfen tekrar se\u00e7in.",
+    "isNsfwLabel": "NSFW etiketi",
+    "isNsfwHint": "Bu y\u00fcklemenin NSFW i\u00e7erik i\u00e7erip i\u00e7ermedi\u011fini se\u00e7.",
+    "isNsfwYes": "NSFW",
+    "isNsfwNo": "SFW",
+    "isNsfwRequired": "Y\u00fcklemeden \u00f6nce NSFW etiketi se\u00e7melisin.",
+    "readOnlyEnabled": "Y\u00fcklemeler ge\u00e7ici olarak kapat\u0131ld\u0131 (salt okunur mod).",
+    "readOnlyStatusUnavailable": "Salt okunur durumu do\u011frulanamad\u0131. Tekrar dene."
   },
   "profile": {
     "title": "Profil",
@@ -152,6 +166,8 @@
     "editMetadataDescriptionPlaceholder": "Bir a\u00e7\u0131klama gir",
     "editMetadataAnonymousLabel": "Anonim payla\u015f",
     "editMetadataAnonymousHint": "Bu videoda kullan\u0131c\u0131 ad\u0131n\u0131 gizle.",
+    "editMetadataNsfwLabel": "NSFW olarak i\u015faretle",
+    "editMetadataNsfwHint": "Video NSFW i\u00e7erik bar\u0131nd\u0131r\u0131yorsa a\u00e7.",
     "editMetadataSaving": "Kaydediliyor...",
     "editMetadataSuccess": "Video detaylar\u0131 g\u00fcncellendi.",
     "editMetadataValidationError": "L\u00fctfen ba\u015fl\u0131k/a\u00e7\u0131klama uzunlu\u011funu kontrol et.",
@@ -175,6 +191,13 @@
     "appSettingsSubtitle": "Dil ve oynatma",
     "feedSettings": "Ak\u0131\u015f ayarlar\u0131",
     "feedSettingsSubtitle": "Ak\u0131\u015f videolar\u0131 i\u00e7in oynatma ve kadraj",
+    "termsTitle": "\u015eartlar ve politika",
+    "termsSubtitle": "G\u00fcncel \u015fartlar\u0131 ve i\u00e7erik politikas\u0131n\u0131 oku",
+    "termsVersion": "S\u00fcr\u00fcm: {{version}}",
+    "termsEffectiveAt": "Y\u00fcr\u00fcrl\u00fck: {{date}}",
+    "termsJurisdictions": "Yarg\u0131 alanlar\u0131: {{list}}",
+    "openTermsUrl": "Harici \u015fart URL'ini a\u00e7",
+    "termsUnavailable": "\u015eart i\u00e7eri\u011fi \u015fu anda kullan\u0131lam\u0131yor.",
     "themeStudio": "Tema St\u00fcdyosu",
     "themeStudioSubtitle": "Temalar, vurgu renkleri ve \u00f6zel stil",
     "appearance": "G\u00f6r\u00fcn\u00fcm",
@@ -237,6 +260,8 @@
     "feedHoldFastForwardSpeedHint": "Ak\u0131\u015fta videonun sa\u011f taraf\u0131n\u0131 bas\u0131l\u0131 tutunca bu h\u0131zda ileri sarar.",
     "preserveFeedAspectRatio": "Video en-boy oran\u0131n\u0131 koru",
     "preserveFeedAspectRatioHint": "Gerekirse kenarl\u0131k b\u0131rakarak t\u00fcm kareyi g\u00f6sterir. Kapat\u0131rsan k\u0131rp\u0131p ekran\u0131 doldurur.",
+    "includeNsfw": "Ak\u0131\u015f/aramada NSFW g\u00f6ster",
+    "includeNsfwHint": "Kapat\u0131ld\u0131\u011f\u0131nda NSFW ve eski etiketsiz videolar gizlenir.",
     "autoPlayVideos": "Videolar\u0131 otomatik oynat (di\u011fer sayfalar)",
     "autoPlayVideosHint": "Ke\u015ffet, videolar\u0131m ve y\u00fckleme \u00f6nizlemesinde videolar\u0131 otomatik ba\u015flat\u0131r.",
     "authDebugAggressiveRefresh": "Auth hata ay\u0131klama: 15 sn'de zorla yenile",
@@ -307,8 +332,72 @@
     "downloadConfirmTitle": "Bu video indirilsin mi?",
     "downloadConfirmBody": "Video cihaz galerine kaydedilecek.",
     "likeRateLimited": "\u00c7ok fazla be\u011feni i\u015flemi yapt\u0131n, l\u00fctfen biraz bekle.",
+    "nsfw": "NSFW",
     "anonymous": "Anonim",
     "untitled": "Ba\u015fl\u0131ks\u0131z miim",
     "noDetails": "Video ayr\u0131nt\u0131lar\u0131na ula\u015f\u0131lamad\u0131."
+  },
+  "onboarding": {
+    "title": "Onboarding'i tamamla",
+    "subtitle": "Devam etmek i\u00e7in ya\u015f\u0131n\u0131 onayla ve \u015fartlar\u0131 kabul et.",
+    "continue": "Onboarding'i tamamla",
+    "submitting": "Tamamlan\u0131yor...",
+    "statusUnavailable": "Onboarding durumu al\u0131namad\u0131.",
+    "completeFailed": "Onboarding tamamlanamad\u0131."
+  },
+  "maintenance": {
+    "title": "Bak\u0131m devam ediyor",
+    "body": "Bak\u0131m modu etkin oldu\u011fu i\u00e7in Memegy ge\u00e7ici olarak kullan\u0131lam\u0131yor.",
+    "retry": "Tekrar dene"
+  },
+  "reports": {
+    "title": "Videoyu bildir",
+    "subtitle": "Bu videonun \u015fartlar\u0131 neden ihlal etti\u011fini belirt.",
+    "submit": "G\u00f6nder",
+    "submitting": "G\u00f6nderiliyor...",
+    "submitted": "Bildirim g\u00f6nderildi.",
+    "failed": "Bildirim g\u00f6nderilemedi.",
+    "selectReason": "En az bir neden se\u00e7.",
+    "maxReasons": "En fazla 5 neden se\u00e7ebilirsin.",
+    "detailsPlaceholder": "\u0130ste\u011fe ba\u011fl\u0131 detaylar",
+    "openReport": "Videoyu bildir",
+    "myReportsTitle": "Bildirimlerim",
+    "myReportsSubtitle": "G\u00f6nderdi\u011fin bildirimleri takip et",
+    "reportStatusLabel": "Bildirim durumu: {{status}}",
+    "categoryLabel": "\u0130hlal bildirimi kategorisi: {{category}}",
+    "visibilityLabel": "Video g\u00f6r\u00fcn\u00fcrl\u00fc\u011f\u00fc: {{visibility}}",
+    "moderationState": "Moderasyon: {{state}}",
+    "empty": "Hen\u00fcz bildirim yok.",
+    "status": {
+      "open": "A\u00e7\u0131k",
+      "under_review": "\u0130ncelemede",
+      "auto_quarantined": "Otomatik karantinada",
+      "resolved": "\u00c7\u00f6z\u00fcld\u00fc",
+      "rejected": "Reddedildi"
+    },
+    "moderation": {
+      "VISIBLE": "G\u00f6r\u00fcn\u00fcr",
+      "QUARANTINED": "Karantinada",
+      "REMOVED": "Kald\u0131r\u0131ld\u0131",
+      "UNKNOWN": "Bilinmiyor"
+    },
+    "reason": {
+      "PORNOGRAPHY": "Pornografi",
+      "CHILD_SEXUAL_ABUSE_MATERIAL": "\u00c7ocuk cinsel istismar materyali",
+      "MINOR_SEXUAL_EXPLOITATION": "Re\u015fit olmayan cinsel s\u00f6m\u00fcr\u00fc",
+      "RAPE_GLORIFICATION": "Tecav\u00fcz\u00fc \u00f6vme veya te\u015fvik",
+      "PEDOPHILIC_CONTENT": "Pedofilik i\u00e7erik",
+      "ZOOPHILIA_OR_BESTIALITY": "Zoofili veya hayvanla cinsel i\u00e7erik",
+      "NECROPHILIA": "Nekrofili",
+      "EXPLICIT_SEXUAL_CONTENT": "A\u00e7\u0131k cinsel i\u00e7erik",
+      "ILLEGAL_SUBSTANCE_PROMOTION": "Yasad\u0131\u015f\u0131 madde tan\u0131t\u0131m\u0131",
+      "MALICIOUS_OR_MANIPULATIVE": "K\u00f6t\u00fc niyetli veya manip\u00fclatif i\u00e7erik",
+      "GRAPHIC_OR_DISTURBING": "Grafik veya rahats\u0131z edici i\u00e7erik",
+      "MURDER_OR_SERIOUS_INJURY": "Cinayet veya a\u011f\u0131r yaralanma",
+      "CORPSE_CONTENT": "Ceset i\u00e7eri\u011fi",
+      "NSFW_MISTAGGED": "NSFW yanl\u0131\u015f etiketlenmi\u015f",
+      "HATE_OR_RACISM": "Nefret veya \u0131rk\u00e7\u0131l\u0131k",
+      "OTHER": "Di\u011fer"
+    }
   }
 }

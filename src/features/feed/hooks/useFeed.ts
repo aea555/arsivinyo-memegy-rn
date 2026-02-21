@@ -3,6 +3,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 
 import { FeedSort, getFeed } from '@/src/features/feed/api/feedApi';
 import { FEED_PAGE_SIZE } from '@/src/shared/utils/constants';
+import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 
 function normalizeFeedSort(sort: FeedSort): 'random' | 'latest' | 'popular' {
   return sort === 'newest' ? 'latest' : sort;
@@ -10,6 +11,7 @@ function normalizeFeedSort(sort: FeedSort): 'random' | 'latest' | 'popular' {
 
 export function useFeed(sort: FeedSort, options?: { enabled?: boolean; randomRefreshNonce?: number }) {
   const normalizedSort = normalizeFeedSort(sort);
+  const includeNsfw = useAppSettingsStore((state) => state.includeNsfw);
   const randomRefreshNonce = options?.randomRefreshNonce ?? 0;
   const randomSeed = useMemo(() => {
     if (normalizedSort !== 'random') return undefined;
@@ -17,13 +19,13 @@ export function useFeed(sort: FeedSort, options?: { enabled?: boolean; randomRef
   }, [normalizedSort, randomRefreshNonce]);
   const queryKey =
     normalizedSort === 'random'
-      ? (['feed', normalizedSort, randomSeed, randomRefreshNonce] as const)
-      : (['feed', normalizedSort] as const);
+      ? (['feed', normalizedSort, includeNsfw, randomSeed, randomRefreshNonce] as const)
+      : (['feed', normalizedSort, includeNsfw] as const);
 
   return useInfiniteQuery({
     queryKey,
     queryFn: ({ pageParam = 0 }) =>
-      getFeed(normalizedSort, pageParam, randomSeed),
+      getFeed(normalizedSort, pageParam, includeNsfw, randomSeed),
     getNextPageParam: (lastPage, pages) =>
       lastPage.length === FEED_PAGE_SIZE ? pages.length : undefined,
     initialPageParam: 0,

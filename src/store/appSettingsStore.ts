@@ -12,6 +12,7 @@ type AppSettingsState = {
   resetFeedVideoOnSwipe: boolean;
   feedHoldFastForwardSpeed: FeedHoldFastForwardSpeed;
   feedPreserveAspectRatio: boolean;
+  includeNsfw: boolean;
   authDebugAggressiveRefresh: boolean;
   uploadAnonymousDefault: boolean;
   clipboardUploadAskMetadata: boolean;
@@ -23,6 +24,7 @@ type AppSettingsState = {
   setResetFeedVideoOnSwipe: (enabled: boolean) => Promise<void>;
   setFeedHoldFastForwardSpeed: (speed: FeedHoldFastForwardSpeed) => Promise<void>;
   setFeedPreserveAspectRatio: (enabled: boolean) => Promise<void>;
+  setIncludeNsfw: (enabled: boolean) => Promise<void>;
   setAuthDebugAggressiveRefresh: (enabled: boolean) => Promise<void>;
   setUploadAnonymousDefault: (enabled: boolean) => Promise<void>;
   setClipboardUploadAskMetadata: (enabled: boolean) => Promise<void>;
@@ -36,6 +38,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
   resetFeedVideoOnSwipe: true,
   feedHoldFastForwardSpeed: 1.5,
   feedPreserveAspectRatio: true,
+  includeNsfw: true,
   authDebugAggressiveRefresh: __DEV__,
   uploadAnonymousDefault: false,
   clipboardUploadAskMetadata: true,
@@ -48,6 +51,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       storedResetFeedVideoOnSwipe,
       storedFeedHoldFastForwardSpeed,
       storedFeedPreserveAspectRatio,
+      storedIncludeNsfw,
       storedAuthDebugAggressiveRefresh,
       storedUploadAnonymousDefault,
       storedClipboardUploadAskMetadata,
@@ -59,6 +63,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       LocalStorage.getResetFeedVideoOnSwipe(),
       LocalStorage.getFeedHoldFastForwardRate(),
       LocalStorage.getFeedPreserveAspectRatio(),
+      LocalStorage.getFeedIncludeNsfw(),
       LocalStorage.getAuthDebugAggressiveRefresh(),
       LocalStorage.getUploadAnonymousDefault(),
       LocalStorage.getClipboardUploadAskMetadata(),
@@ -72,6 +77,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       resetFeedVideoOnSwipe: storedResetFeedVideoOnSwipe ?? true,
       feedHoldFastForwardSpeed: storedFeedHoldFastForwardSpeed ?? 1.5,
       feedPreserveAspectRatio: storedFeedPreserveAspectRatio ?? true,
+      includeNsfw: storedIncludeNsfw ?? true,
       authDebugAggressiveRefresh: __DEV__ ? (storedAuthDebugAggressiveRefresh ?? true) : false,
       uploadAnonymousDefault: storedUploadAnonymousDefault ?? false,
       clipboardUploadAskMetadata: storedClipboardUploadAskMetadata ?? true,
@@ -101,6 +107,10 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
   setFeedPreserveAspectRatio: async (enabled) => {
     await LocalStorage.setFeedPreserveAspectRatio(enabled);
     set({ feedPreserveAspectRatio: enabled });
+  },
+  setIncludeNsfw: async (enabled) => {
+    await LocalStorage.setFeedIncludeNsfw(enabled);
+    set({ includeNsfw: enabled });
   },
   setAuthDebugAggressiveRefresh: async (enabled) => {
     const value = __DEV__ ? enabled : false;

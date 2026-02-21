@@ -5,15 +5,17 @@ import { authSessionManager } from '@/src/shared/services/auth/authSessionManage
 import { SEARCH_PAGE_SIZE } from '@/src/shared/utils/constants';
 import { clampSearchQuery } from '@/src/shared/utils/inputLimits';
 import { useAuthStore } from '@/src/store/authStore';
+import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 
 export function useSearch(query: string, sort: 'relevance' | 'recent' | 'popular') {
   const normalizedQuery = clampSearchQuery(query);
   const authStatus = useAuthStore((state) => state.status);
+  const includeNsfw = useAppSettingsStore((state) => state.includeNsfw);
 
   return useInfiniteQuery({
-    queryKey: ['search', normalizedQuery, sort],
+    queryKey: ['search', normalizedQuery, sort, includeNsfw],
     queryFn: ({ pageParam = 0 }) =>
-      searchVideos(normalizedQuery, SEARCH_PAGE_SIZE, pageParam, sort),
+      searchVideos(normalizedQuery, SEARCH_PAGE_SIZE, pageParam, sort, includeNsfw),
     enabled: authStatus === 'authenticated' && normalizedQuery.length > 0,
     retry: (failureCount, error) => {
       if (authSessionManager.isAuthTemporaryUnavailableError(error)) {

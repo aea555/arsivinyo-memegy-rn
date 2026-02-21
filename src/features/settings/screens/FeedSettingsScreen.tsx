@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, Switch, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { Screen } from '@/src/shared/components/layout/Screen';
@@ -27,6 +27,8 @@ export function FeedSettingsScreen() {
   const setFeedHoldFastForwardSpeed = useAppSettingsStore((state) => state.setFeedHoldFastForwardSpeed);
   const feedPreserveAspectRatio = useAppSettingsStore((state) => state.feedPreserveAspectRatio);
   const setFeedPreserveAspectRatio = useAppSettingsStore((state) => state.setFeedPreserveAspectRatio);
+  const includeNsfw = useAppSettingsStore((state) => state.includeNsfw);
+  const setIncludeNsfw = useAppSettingsStore((state) => state.setIncludeNsfw);
   const holdSpeedOptions = useMemo(
     () =>
       FEED_HOLD_FAST_FORWARD_SPEED_OPTIONS.map((speed) => ({
@@ -38,107 +40,133 @@ export function FeedSettingsScreen() {
 
   return (
     <Screen title={t('settings.feedSettings')} showBack contentStyle={styles.container}>
-      <Card style={styles.sectionCard}>
-        <View style={styles.switchRow}>
-          <View style={styles.switchText}>
-            <AppText variant="bodyBold">{t('settings.autoPlayFeedVideos')}</AppText>
-            <AppText variant="caption" style={{ color: palette.text.secondary }}>
-              {t('settings.autoPlayFeedVideosHint')}
-            </AppText>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator>
+        <Card style={styles.sectionCard}>
+          <View style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <AppText variant="bodyBold">{t('settings.autoPlayFeedVideos')}</AppText>
+              <AppText variant="caption" style={{ color: palette.text.secondary }}>
+                {t('settings.autoPlayFeedVideosHint')}
+              </AppText>
+            </View>
+            <Switch
+              value={autoPlayFeedVideos}
+              onValueChange={(value) => {
+                void setAutoPlayFeedVideos(value);
+              }}
+              trackColor={{ true: palette.accent, false: palette.border }}
+            />
           </View>
-          <Switch
-            value={autoPlayFeedVideos}
-            onValueChange={(value) => {
-              void setAutoPlayFeedVideos(value);
+        </Card>
+        <Card style={styles.sectionCard}>
+          <View style={styles.selectorHeader}>
+            <View style={styles.switchText}>
+              <AppText variant="bodyBold">{t('settings.feedHoldFastForwardSpeed')}</AppText>
+              <AppText variant="caption" style={{ color: palette.text.secondary }}>
+                {t('settings.feedHoldFastForwardSpeedHint')}
+              </AppText>
+            </View>
+            <View style={[styles.currentValueBadge, { borderColor: palette.border }]}>
+              <AppText variant="caption" style={styles.currentValueText}>
+                {`${feedHoldFastForwardSpeed}x`}
+              </AppText>
+            </View>
+          </View>
+          <SegmentedControl
+            options={holdSpeedOptions}
+            value={String(feedHoldFastForwardSpeed)}
+            onChange={(value) => {
+              const parsed = Number(value);
+              if (!FEED_HOLD_FAST_FORWARD_SPEED_OPTIONS.includes(parsed as FeedHoldFastForwardSpeed)) {
+                return;
+              }
+              void setFeedHoldFastForwardSpeed(parsed as FeedHoldFastForwardSpeed);
             }}
-            trackColor={{ true: palette.accent, false: palette.border }}
           />
-        </View>
-      </Card>
-      <Card style={styles.sectionCard}>
-        <View style={styles.selectorHeader}>
-          <View style={styles.switchText}>
-            <AppText variant="bodyBold">{t('settings.feedHoldFastForwardSpeed')}</AppText>
-            <AppText variant="caption" style={{ color: palette.text.secondary }}>
-              {t('settings.feedHoldFastForwardSpeedHint')}
-            </AppText>
+        </Card>
+        <Card style={styles.sectionCard}>
+          <View style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <AppText variant="bodyBold">{t('settings.autoSwipeFeedVideos')}</AppText>
+              <AppText variant="caption" style={{ color: palette.text.secondary }}>
+                {t('settings.autoSwipeFeedVideosHint')}
+              </AppText>
+            </View>
+            <Switch
+              value={autoSwipeFeedVideos}
+              onValueChange={(value) => {
+                void setAutoSwipeFeedVideos(value);
+              }}
+              trackColor={{ true: palette.accent, false: palette.border }}
+            />
           </View>
-          <View style={[styles.currentValueBadge, { borderColor: palette.border }]}>
-            <AppText variant="caption" style={styles.currentValueText}>
-              {`${feedHoldFastForwardSpeed}x`}
-            </AppText>
+        </Card>
+        <Card style={styles.sectionCard}>
+          <View style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <AppText variant="bodyBold">{t('settings.resetFeedVideoOnSwipe')}</AppText>
+              <AppText variant="caption" style={{ color: palette.text.secondary }}>
+                {t('settings.resetFeedVideoOnSwipeHint')}
+              </AppText>
+            </View>
+            <Switch
+              value={resetFeedVideoOnSwipe}
+              onValueChange={(value) => {
+                void setResetFeedVideoOnSwipe(value);
+              }}
+              trackColor={{ true: palette.accent, false: palette.border }}
+            />
           </View>
-        </View>
-        <SegmentedControl
-          options={holdSpeedOptions}
-          value={String(feedHoldFastForwardSpeed)}
-          onChange={(value) => {
-            const parsed = Number(value);
-            if (!FEED_HOLD_FAST_FORWARD_SPEED_OPTIONS.includes(parsed as FeedHoldFastForwardSpeed)) {
-              return;
-            }
-            void setFeedHoldFastForwardSpeed(parsed as FeedHoldFastForwardSpeed);
-          }}
-        />
-      </Card>
-      <Card style={styles.sectionCard}>
-        <View style={styles.switchRow}>
-          <View style={styles.switchText}>
-            <AppText variant="bodyBold">{t('settings.autoSwipeFeedVideos')}</AppText>
-            <AppText variant="caption" style={{ color: palette.text.secondary }}>
-              {t('settings.autoSwipeFeedVideosHint')}
-            </AppText>
+        </Card>
+        <Card style={styles.sectionCard}>
+          <View style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <AppText variant="bodyBold">{t('settings.preserveFeedAspectRatio')}</AppText>
+              <AppText variant="caption" style={{ color: palette.text.secondary }}>
+                {t('settings.preserveFeedAspectRatioHint')}
+              </AppText>
+            </View>
+            <Switch
+              value={feedPreserveAspectRatio}
+              onValueChange={(value) => {
+                void setFeedPreserveAspectRatio(value);
+              }}
+              trackColor={{ true: palette.accent, false: palette.border }}
+            />
           </View>
-          <Switch
-            value={autoSwipeFeedVideos}
-            onValueChange={(value) => {
-              void setAutoSwipeFeedVideos(value);
-            }}
-            trackColor={{ true: palette.accent, false: palette.border }}
-          />
-        </View>
-      </Card>
-      <Card style={styles.sectionCard}>
-        <View style={styles.switchRow}>
-          <View style={styles.switchText}>
-            <AppText variant="bodyBold">{t('settings.resetFeedVideoOnSwipe')}</AppText>
-            <AppText variant="caption" style={{ color: palette.text.secondary }}>
-              {t('settings.resetFeedVideoOnSwipeHint')}
-            </AppText>
+        </Card>
+        <Card style={styles.sectionCard}>
+          <View style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <AppText variant="bodyBold">{t('settings.includeNsfw')}</AppText>
+              <AppText variant="caption" style={{ color: palette.text.secondary }}>
+                {t('settings.includeNsfwHint')}
+              </AppText>
+            </View>
+            <Switch
+              value={includeNsfw}
+              onValueChange={(value) => {
+                void setIncludeNsfw(value);
+              }}
+              trackColor={{ true: palette.accent, false: palette.border }}
+            />
           </View>
-          <Switch
-            value={resetFeedVideoOnSwipe}
-            onValueChange={(value) => {
-              void setResetFeedVideoOnSwipe(value);
-            }}
-            trackColor={{ true: palette.accent, false: palette.border }}
-          />
-        </View>
-      </Card>
-      <Card style={styles.sectionCard}>
-        <View style={styles.switchRow}>
-          <View style={styles.switchText}>
-            <AppText variant="bodyBold">{t('settings.preserveFeedAspectRatio')}</AppText>
-            <AppText variant="caption" style={{ color: palette.text.secondary }}>
-              {t('settings.preserveFeedAspectRatioHint')}
-            </AppText>
-          </View>
-          <Switch
-            value={feedPreserveAspectRatio}
-            onValueChange={(value) => {
-              void setFeedPreserveAspectRatio(value);
-            }}
-            trackColor={{ true: palette.accent, false: palette.border }}
-          />
-        </View>
-      </Card>
+        </Card>
+      </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    paddingBottom: spacing.md,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
     gap: spacing.lg,
+    paddingBottom: spacing.xl,
   },
   sectionCard: {
     gap: spacing.md,

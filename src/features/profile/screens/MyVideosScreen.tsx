@@ -106,6 +106,7 @@ function toFeedItem(item: MyVideoItem): VideoFeedItem {
     like_count: item.like_count,
     created_at: item.created_at,
     is_liked: Boolean(item.is_liked),
+    is_nsfw: item.is_nsfw === false ? false : true,
     uploader: item.uploader ?? null,
     thumbnail_url: item.thumbnail_url ?? null,
   };
@@ -347,17 +348,20 @@ export function MyVideosScreen() {
       const nextTitle = clampUtf8Bytes(values.title ?? '', VIDEO_TITLE_MAX_BYTES);
       const nextDescription = clampUtf8Bytes(values.description ?? '', VIDEO_DESCRIPTION_MAX_BYTES);
       const nextIsAnonymous = Boolean(values.isAnonymous);
+      const nextIsNsfw = Boolean(values.isNsfw);
 
       const originalTitle = editingVideo.title ?? '';
       const originalDescription = editingVideo.description ?? '';
       const originalIsAnonymous = Boolean(editingVideo.is_anonymous);
+      const originalIsNsfw = editingVideo.is_nsfw === false ? false : true;
 
       const payload: {
         title?: string;
         description?: string;
         is_anonymous?: boolean;
+        is_nsfw?: boolean;
       } = {};
-      const changedFields: ('title' | 'description' | 'is_anonymous')[] = [];
+      const changedFields: ('title' | 'description' | 'is_anonymous' | 'is_nsfw')[] = [];
 
       if (nextTitle !== originalTitle) {
         payload.title = nextTitle;
@@ -372,6 +376,11 @@ export function MyVideosScreen() {
       if (nextIsAnonymous !== originalIsAnonymous) {
         payload.is_anonymous = nextIsAnonymous;
         changedFields.push('is_anonymous');
+      }
+
+      if (nextIsNsfw !== originalIsNsfw) {
+        payload.is_nsfw = nextIsNsfw;
+        changedFields.push('is_nsfw');
       }
 
       if (changedFields.length === 0) {
@@ -628,6 +637,21 @@ export function MyVideosScreen() {
             <AppText variant="caption" style={styles.gridMetaTitle} numberOfLines={1}>
               {item.title?.trim() || t('video.untitled')}
             </AppText>
+            {(item.is_nsfw === false ? false : true) ? (
+              <View
+                style={[
+                  styles.gridNsfwBadge,
+                  {
+                    borderColor: withAlpha(palette.warning, 0.82),
+                    backgroundColor: withAlpha(palette.warning, 0.14),
+                  },
+                ]}
+              >
+                <AppText variant="caption" style={{ color: palette.warning }}>
+                  {t('video.nsfw')}
+                </AppText>
+              </View>
+            ) : null}
             {item.is_anonymous ? (
               <View
                 style={[
@@ -647,7 +671,7 @@ export function MyVideosScreen() {
         </View>
       );
     },
-    [palette.border, palette.error, palette.overlay, palette.surface, palette.text.secondary, t]
+    [palette.border, palette.error, palette.overlay, palette.surface, palette.text.secondary, palette.warning, t]
   );
 
   const renderSelectedContent = useMemo(() => {
@@ -699,6 +723,21 @@ export function MyVideosScreen() {
             </AppText>
           </View>
         ) : null}
+        {(selectedVideo.is_nsfw === false ? false : true) ? (
+          <View
+            style={[
+              styles.nsfwBadge,
+              {
+                borderColor: withAlpha(palette.warning, 0.82),
+                backgroundColor: withAlpha(palette.warning, 0.14),
+              },
+            ]}
+          >
+            <AppText variant="caption" style={{ color: palette.warning }}>
+              {t('video.nsfw')}
+            </AppText>
+          </View>
+        ) : null}
         <AppText variant="caption" style={styles.statusText}>
           {statusMeta.statusText}
         </AppText>
@@ -736,6 +775,7 @@ export function MyVideosScreen() {
     palette.border,
     palette.error,
     palette.text.secondary,
+    palette.warning,
     renderDeleteAction,
     renderEditAction,
     renderModalCloseAction,
@@ -820,6 +860,7 @@ export function MyVideosScreen() {
         title={editingVideo?.title ?? ''}
         description={editingVideo?.description ?? ''}
         isAnonymous={Boolean(editingVideo?.is_anonymous)}
+        isNsfw={editingVideo?.is_nsfw === false ? false : true}
         isSaving={updateMetadataMutation.isPending}
         onCancel={() => {
           if (updateMetadataMutation.isPending) return;
@@ -960,6 +1001,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 15,
   },
+  gridNsfwBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    alignSelf: 'flex-start',
+  },
   gridAnonymousBadge: {
     borderRadius: 999,
     borderWidth: 1,
@@ -1008,6 +1056,13 @@ const styles = StyleSheet.create({
   },
   anonymousBadgeText: {
     fontSize: 11,
+  },
+  nsfwBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
   statusText: {
     opacity: 0.85,

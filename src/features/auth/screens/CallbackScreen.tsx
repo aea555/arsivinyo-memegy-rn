@@ -52,6 +52,8 @@ export function CallbackScreen() {
         setPendingSignup({
           signupTicket: result.data.signup_ticket,
           suggestedUsername: result.data.suggested_username,
+          requiredTermsVersion: result.data.required_terms_version,
+          termsUrl: result.data.terms_url ?? null,
           rules: result.data.rules,
           createdAt: Date.now(),
         });

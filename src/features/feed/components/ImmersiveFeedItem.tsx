@@ -104,6 +104,13 @@ function ImmersiveFeedItemBase({
             <AppText variant="heading2" style={styles.title} numberOfLines={2}>
               {title}
             </AppText>
+            {video.is_nsfw ? (
+              <View style={[styles.nsfwBadge, { borderColor: withAlpha(palette.warning, 0.9) }]}>
+                <AppText variant="caption" style={{ color: palette.warning }}>
+                  {t('video.nsfw')}
+                </AppText>
+              </View>
+            ) : null}
             {description ? (
               <AppText variant="caption" style={styles.subtitle} numberOfLines={2}>
                 {description}
@@ -150,6 +157,7 @@ function areImmersiveFeedItemPropsEqual(prev: ImmersiveFeedItemProps, next: Imme
     prev.video.like_count === next.video.like_count &&
     prev.video.title === next.video.title &&
     prev.video.description === next.video.description &&
+    prev.video.is_nsfw === next.video.is_nsfw &&
     prev.video.created_at === next.video.created_at &&
     prev.video.uploader?.id === next.video.uploader?.id &&
     prev.video.uploader?.username === next.video.uploader?.username
@@ -205,6 +213,14 @@ const styles = StyleSheet.create({
   subtitle: {
     color: '#FFFFFF',
     opacity: 0.9,
+  },
+  nsfwBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: withAlpha('#000000', 0.45),
   },
   metaStack: {
     gap: 2,

@@ -17,6 +17,7 @@ export type EditVideoMetadataValues = {
   title: string;
   description: string;
   isAnonymous: boolean;
+  isNsfw: boolean;
 };
 
 type EditVideoMetadataModalProps = {
@@ -24,6 +25,7 @@ type EditVideoMetadataModalProps = {
   title: string;
   description: string;
   isAnonymous: boolean;
+  isNsfw: boolean;
   isSaving: boolean;
   onCancel: () => void;
   onSave: (values: EditVideoMetadataValues) => void;
@@ -34,6 +36,7 @@ export function EditVideoMetadataModal({
   title,
   description,
   isAnonymous,
+  isNsfw,
   isSaving,
   onCancel,
   onSave,
@@ -43,13 +46,15 @@ export function EditVideoMetadataModal({
   const [draftTitle, setDraftTitle] = useState('');
   const [draftDescription, setDraftDescription] = useState('');
   const [draftAnonymous, setDraftAnonymous] = useState(false);
+  const [draftNsfw, setDraftNsfw] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
     setDraftTitle(title ?? '');
     setDraftDescription(description ?? '');
     setDraftAnonymous(Boolean(isAnonymous));
-  }, [description, isAnonymous, title, visible]);
+    setDraftNsfw(Boolean(isNsfw));
+  }, [description, isAnonymous, isNsfw, title, visible]);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
@@ -122,6 +127,21 @@ export function EditVideoMetadataModal({
             />
           </View>
 
+          <View style={[styles.toggleRow, { borderColor: palette.border, backgroundColor: palette.background }]}>
+            <View style={styles.toggleText}>
+              <AppText variant="bodyBold">{t('profile.editMetadataNsfwLabel')}</AppText>
+              <AppText variant="caption" style={{ color: palette.text.secondary }}>
+                {t('profile.editMetadataNsfwHint')}
+              </AppText>
+            </View>
+            <Switch
+              value={draftNsfw}
+              onValueChange={setDraftNsfw}
+              trackColor={{ true: palette.accent, false: palette.border }}
+              disabled={isSaving}
+            />
+          </View>
+
           <View style={styles.actions}>
             <Button
               label={t('common.cancel')}
@@ -137,6 +157,7 @@ export function EditVideoMetadataModal({
                   title: draftTitle,
                   description: draftDescription,
                   isAnonymous: draftAnonymous,
+                  isNsfw: draftNsfw,
                 })
               }
               disabled={isSaving}

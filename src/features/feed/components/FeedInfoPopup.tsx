@@ -41,6 +41,11 @@ export function FeedInfoPopup({ video, visible }: FeedInfoPopupProps) {
       <AppText variant="bodyBold" style={styles.title}>
         {title}
       </AppText>
+      {video.is_nsfw ? (
+        <AppText variant="caption" style={[styles.description, { color: palette.warning }]}>
+          {t('video.nsfw')}
+        </AppText>
+      ) : null}
       {description ? (
         <AppText variant="caption" style={styles.description}>
           {description}

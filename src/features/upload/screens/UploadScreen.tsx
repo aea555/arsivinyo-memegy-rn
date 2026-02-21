@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import React, { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +18,7 @@ import {
 
 import { DownloaderApiError } from '@/src/features/upload/api/downloaderApi';
 import { saveVideoUriToLibrary } from '@/src/features/download/services/videoDownloadService';
+import { getReadOnlyStatus } from '@/src/features/settings/api/systemApi';
 import { pickVideo, uploadVideo } from '@/src/features/upload/hooks/useVideoUpload';
 import { downloadFromClipboardToNormalizedAsset } from '@/src/features/upload/services/downloaderUploadBridge';
 import { cleanupNormalizedVideoAsset, normalizePickedVideoAsset } from '@/src/features/upload/services/videoAssetNormalizer';
@@ -143,6 +145,7 @@ function getClipboardStateMessage(t: (key: string) => string, state: ClipboardUp
 export function UploadScreen() {
   const { t } = useTranslation();
   const { palette } = useTheme();
+  const isFocused = useIsFocused();
   const showToast = useToastStore((state) => state.showToast);
   const shadows = useShadows();
   const router = useRouter();
@@ -164,6 +167,9 @@ export function UploadScreen() {
   const [isPreviewLooping, setIsPreviewLooping] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
+  const [isNsfw, setIsNsfw] = useState<boolean | null>(null);
+  const [isReadOnlyEnabled, setIsReadOnlyEnabled] = useState(false);
+  const [isReadOnlyChecking, setIsReadOnlyChecking] = useState(false);
 
   const [clipboardState, setClipboardState] = useState<ClipboardUploadState>('idle');
   const [clipboardStatusMessage, setClipboardStatusMessage] = useState('');
@@ -207,6 +213,30 @@ export function UploadScreen() {
       void cleanupNormalizedVideoAsset(clipboardDownloadedAsset);
     };
   }, [clipboardDownloadedAsset]);
+
+  React.useEffect(() => {
+    if (!isFocused) return;
+    let cancelled = false;
+    setIsReadOnlyChecking(true);
+    void getReadOnlyStatus()
+      .then((status) => {
+        if (cancelled) return;
+        setIsReadOnlyEnabled(Boolean(status.enabled));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          showToast(t('upload.readOnlyStatusUnavailable'), 'error');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsReadOnlyChecking(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isFocused, showToast, t]);
 
   const getNormalizationErrorMessage = React.useCallback(
     (code: UploadValidationError['code']) => {
@@ -274,6 +304,14 @@ export function UploadScreen() {
 
   const uploadAssetToPlatform = React.useCallback(
     async (asset: NormalizedVideoAsset, options: { fallbackTitle: string; customTitle?: string; customDescription?: string }) => {
+      if (isReadOnlyEnabled) {
+        showToast(t('upload.readOnlyEnabled'), 'error');
+        return;
+      }
+      if (typeof isNsfw !== 'boolean') {
+        showToast(t('upload.isNsfwRequired'), 'error');
+        return;
+      }
       setLoading(true);
       const resolvedTitle =
         clampUtf8Bytes((options.customTitle ?? '').trim(), UPLOAD_VIDEO_TITLE_MAX_BYTES) ||
@@ -321,9 +359,11 @@ export function UploadScreen() {
         await uploadVideo({
           asset,
           isAnonymous,
+          isNsfw,
           metadata: {
             title: resolvedTitle,
             description: resolvedDescription,
+            is_nsfw: isNsfw,
           },
         });
 
@@ -353,7 +393,7 @@ export function UploadScreen() {
         await cleanupClipboardAssetState();
       }
     },
-    [cleanupClipboardAssetState, getNormalizationErrorMessage, isAnonymous, router, saveToDeviceAlso, showToast, t]
+    [cleanupClipboardAssetState, getNormalizationErrorMessage, isAnonymous, isNsfw, isReadOnlyEnabled, router, saveToDeviceAlso, showToast, t]
   );
 
   const handleManualPick = async () => {
@@ -384,15 +424,25 @@ export function UploadScreen() {
 
   const handleManualUpload = async () => {
     if (!selectedVideo) return;
+    if (isReadOnlyEnabled) {
+      showToast(t('upload.readOnlyEnabled'), 'error');
+      return;
+    }
+    if (typeof isNsfw !== 'boolean') {
+      showToast(t('upload.isNsfwRequired'), 'error');
+      return;
+    }
     setLoading(true);
 
     try {
       await uploadVideo({
         asset: selectedVideo,
         isAnonymous,
+        isNsfw,
           metadata: {
             title: clampUtf8Bytes(title.trim(), UPLOAD_VIDEO_TITLE_MAX_BYTES) || null,
             description: clampUtf8Bytes(description.trim(), UPLOAD_VIDEO_DESCRIPTION_MAX_BYTES) || null,
+            is_nsfw: isNsfw,
           },
         });
 
@@ -429,6 +479,14 @@ export function UploadScreen() {
 
   const handleClipboardDownloadAndUpload = async () => {
     if (loading) return;
+    if (isReadOnlyEnabled) {
+      showToast(t('upload.readOnlyEnabled'), 'error');
+      return;
+    }
+    if (typeof isNsfw !== 'boolean') {
+      showToast(t('upload.isNsfwRequired'), 'error');
+      return;
+    }
     if (!isDownloaderConfigured) {
       showToast(t('upload.clipboardDownloaderNotConfigured'), 'error');
       return;
@@ -503,9 +561,30 @@ export function UploadScreen() {
     clipboardState === 'saving' ||
     clipboardState === 'uploading';
 
+  const nsfwOptions = useMemo(
+    () => [
+      { label: t('upload.isNsfwNo'), value: 'no' },
+      { label: t('upload.isNsfwYes'), value: 'yes' },
+    ],
+    [t]
+  );
+
   const manualSection = (
     <>
       <Button label={t('upload.selectVideo')} onPress={handleManualPick} />
+      <View style={[styles.nsfwCard, { borderColor: palette.border, backgroundColor: palette.background }]}>
+        <View style={styles.nsfwHeader}>
+          <AppText variant="bodyBold">{t('upload.isNsfwLabel')}</AppText>
+          <AppText variant="caption" style={{ color: palette.text.secondary }}>
+            {t('upload.isNsfwHint')}
+          </AppText>
+        </View>
+        <SegmentedControl
+          options={nsfwOptions}
+          value={isNsfw === null ? '' : isNsfw ? 'yes' : 'no'}
+          onChange={(value) => setIsNsfw(value === 'yes')}
+        />
+      </View>
       {selectedVideo ? (
         <View>
           {!showFullscreen && (
@@ -575,7 +654,17 @@ export function UploadScreen() {
       </View>
       <View style={styles.footer}>
         {loading ? <ActivityIndicator color={palette.accent} /> : null}
-        <Button label={t('upload.title')} onPress={handleManualUpload} disabled={!selectedVideo || loading} />
+        <Button
+          label={t('upload.title')}
+          onPress={handleManualUpload}
+          disabled={
+            !selectedVideo ||
+            loading ||
+            isReadOnlyEnabled ||
+            isReadOnlyChecking ||
+            typeof isNsfw !== 'boolean'
+          }
+        />
       </View>
     </>
   );
@@ -591,7 +680,7 @@ export function UploadScreen() {
             opacity: clipboardActionInFlight ? 0.7 : 1,
           },
         ]}
-        disabled={clipboardActionInFlight}
+        disabled={clipboardActionInFlight || isReadOnlyEnabled || typeof isNsfw !== 'boolean'}
         onPress={handleClipboardDownloadAndUpload}
       >
         {clipboardActionInFlight ? (
@@ -618,6 +707,20 @@ export function UploadScreen() {
           {clipboardStatusMessage}
         </AppText>
       ) : null}
+
+      <View style={[styles.nsfwCard, { borderColor: palette.border, backgroundColor: palette.background }]}>
+        <View style={styles.nsfwHeader}>
+          <AppText variant="bodyBold">{t('upload.isNsfwLabel')}</AppText>
+          <AppText variant="caption" style={{ color: palette.text.secondary }}>
+            {t('upload.isNsfwHint')}
+          </AppText>
+        </View>
+        <SegmentedControl
+          options={nsfwOptions}
+          value={isNsfw === null ? '' : isNsfw ? 'yes' : 'no'}
+          onChange={(value) => setIsNsfw(value === 'yes')}
+        />
+      </View>
 
       <View
         style={[
@@ -703,6 +806,13 @@ export function UploadScreen() {
   return (
     <>
       <Screen title={t('upload.title')} showBack contentStyle={styles.container}>
+        {isReadOnlyEnabled ? (
+          <View style={[styles.readOnlyBanner, { borderColor: palette.warning, backgroundColor: palette.background }]}>
+            <AppText variant="caption" style={{ color: palette.warning }}>
+              {t('upload.readOnlyEnabled')}
+            </AppText>
+          </View>
+        ) : null}
         <KeyboardAvoidingView
           style={styles.keyboard}
           behavior="padding"
@@ -796,13 +906,21 @@ export function UploadScreen() {
                 label={t('upload.clipboardUploadNow')}
                 onPress={async () => {
                   if (!clipboardDownloadedAsset) return;
+                  if (isReadOnlyEnabled) {
+                    showToast(t('upload.readOnlyEnabled'), 'error');
+                    return;
+                  }
+                  if (typeof isNsfw !== 'boolean') {
+                    showToast(t('upload.isNsfwRequired'), 'error');
+                    return;
+                  }
                   await uploadAssetToPlatform(clipboardDownloadedAsset, {
                     fallbackTitle: clipboardFallbackTitle,
                     customTitle: clipboardTitle,
                     customDescription: clipboardDescription,
                   });
                 }}
-                disabled={loading}
+                disabled={loading || isReadOnlyEnabled || isReadOnlyChecking || typeof isNsfw !== 'boolean'}
               />
             </View>
           </Pressable>
@@ -887,6 +1005,22 @@ const styles = StyleSheet.create({
   footer: {
     marginTop: spacing.lg,
     gap: spacing.md,
+  },
+  readOnlyBanner: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  nsfwCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    gap: spacing.xs,
+  },
+  nsfwHeader: {
+    gap: 2,
   },
   removeButton: {
     position: 'absolute',

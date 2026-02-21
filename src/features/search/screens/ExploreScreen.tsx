@@ -228,6 +228,21 @@ export function ExploreScreen() {
             <AppText variant="caption" style={styles.gridMetaTitle} numberOfLines={1}>
               {item.title?.trim() || t('video.untitled')}
             </AppText>
+            {item.is_nsfw ? (
+              <View
+                style={[
+                  styles.gridNsfwBadge,
+                  {
+                    borderColor: withAlpha(palette.warning, 0.82),
+                    backgroundColor: withAlpha(palette.warning, 0.14),
+                  },
+                ]}
+              >
+                <AppText variant="caption" style={{ color: palette.warning }}>
+                  {t('video.nsfw')}
+                </AppText>
+              </View>
+            ) : null}
             {isAnonymous ? (
               <View
                 style={[
@@ -247,7 +262,7 @@ export function ExploreScreen() {
         </View>
       );
     },
-    [palette.border, palette.overlay, palette.surface, t]
+    [palette.border, palette.overlay, palette.surface, palette.warning, t]
   );
 
   const renderModalCloseAction = useCallback(() => {
@@ -475,6 +490,13 @@ const styles = StyleSheet.create({
   gridMetaTitle: {
     fontSize: 12,
     lineHeight: 15,
+  },
+  gridNsfwBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    alignSelf: 'flex-start',
   },
   gridAnonymousBadge: {
     borderRadius: 999,

@@ -217,7 +217,7 @@ export async function updateMyVideoMetadata(videoId: string, payload: UpdateVide
   const endpoint = `/videos/${videoId}`;
   const startedAt = Date.now();
   const changedFields = Object.keys(payload).filter((key) =>
-    ['title', 'description', 'is_anonymous'].includes(key)
+    ['title', 'description', 'is_anonymous', 'is_nsfw'].includes(key)
   );
 
   if (__DEV__) {

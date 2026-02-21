@@ -7,14 +7,18 @@ import { useTranslation } from 'react-i18next';
 import { VideoPlayer } from '@/src/features/feed/components/VideoPlayer';
 import { useCachedVideo } from '@/src/features/feed/hooks/useCachedVideo';
 import { useToggleLike } from '@/src/features/feed/hooks/useToggleLike';
+import { ReportVideoButton } from '@/src/features/reports/components/ReportVideoButton';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { LikeButton } from '@/src/shared/components/ui/LikeButton';
 import { Screen } from '@/src/shared/components/layout/Screen';
+import { withAlpha } from '@/src/shared/theme/colorUtils';
 import { spacing } from '@/src/shared/theme/spacing';
+import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { formatDate } from '@/src/shared/utils/formatters';
 
 export function VideoDetailScreen() {
   const { t } = useTranslation();
+  const { palette } = useTheme();
   const isFocused = useIsFocused();
   const params = useLocalSearchParams();
   const videoId = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -35,9 +39,25 @@ export function VideoDetailScreen() {
       <VideoPlayer uri={video.url} isActive={isFocused} isScreenActive={isFocused} />
       <View style={styles.meta}>
         <AppText variant="heading2">{video.title ?? t('video.untitled')}</AppText>
+        {video.is_nsfw ? (
+          <View
+            style={[
+              styles.nsfwBadge,
+              {
+                borderColor: palette.warning,
+                backgroundColor: withAlpha(palette.warning, 0.12),
+              },
+            ]}
+          >
+            <AppText variant="caption" style={{ color: palette.warning }}>
+              {t('video.nsfw')}
+            </AppText>
+          </View>
+        ) : null}
         <AppText variant="caption">
           {video.uploader ? `@${video.uploader.username}` : t('video.anonymous')} - {formatDate(video.created_at)}
         </AppText>
+        {video.description ? <AppText variant="body">{video.description}</AppText> : null}
         <View style={styles.likes}>
           {video.is_liked !== undefined ? (
             <LikeButton
@@ -49,6 +69,7 @@ export function VideoDetailScreen() {
           ) : (
             <AppText variant="caption">{video.like_count}</AppText>
           )}
+          <ReportVideoButton videoId={video.id} />
         </View>
       </View>
     </Screen>
@@ -65,5 +86,13 @@ const styles = StyleSheet.create({
   likes: {
     marginTop: spacing.md,
     alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  nsfwBadge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
   },
 });

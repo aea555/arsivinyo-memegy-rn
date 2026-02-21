@@ -11,6 +11,7 @@ const DEBUG_INTERVAL_REFRESH_MS = 15_000;
 
 export function useAuthSessionLifecycle() {
   const status = useAuthStore((state) => state.status);
+  const refreshModeStatus = useAuthStore((state) => state.refreshModeStatus);
   const authDebugAggressiveRefresh = useAppSettingsStore((state) => state.authDebugAggressiveRefresh);
   const statusRef = useRef(status);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -45,6 +46,7 @@ export function useAuthSessionLifecycle() {
             minValidityMs: RESUME_TOKEN_SKEW_MS,
             reason: 'app_resume',
           });
+          await refreshModeStatus();
 
           if (__DEV__) {
             console.debug('[auth.lifecycle] resume refresh success', {
@@ -68,7 +70,7 @@ export function useAuthSessionLifecycle() {
     return () => {
       subscription.remove();
     };
-  }, []);
+  }, [refreshModeStatus]);
 
   useEffect(() => {
     if (!__DEV__) return;

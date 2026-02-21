@@ -37,6 +37,18 @@ export function MainSettingsScreen() {
           onPress={() => router.push('/settings/feed')}
         />
         <SettingsRow
+          title={t('settings.termsTitle')}
+          subtitle={t('settings.termsSubtitle')}
+          icon={<Ionicons name="document-text-outline" size={18} color={palette.text.primary} />}
+          onPress={() => router.push('/settings/terms' as never)}
+        />
+        <SettingsRow
+          title={t('reports.myReportsTitle')}
+          subtitle={t('reports.myReportsSubtitle')}
+          icon={<Ionicons name="flag-outline" size={18} color={palette.warning} />}
+          onPress={() => router.push('/settings/reports' as never)}
+        />
+        <SettingsRow
           title={t('settings.themeStudio')}
           subtitle={t('settings.themeStudioSubtitle')}
           icon={<Ionicons name="sparkles" size={18} color={palette.accent} />}

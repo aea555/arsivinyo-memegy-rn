@@ -121,10 +121,12 @@ export async function pickVideo({ allowsEditing = false }: { allowsEditing?: boo
 export async function uploadVideo({
   asset,
   isAnonymous,
+  isNsfw,
   metadata,
 }: {
   asset: NormalizedVideoAsset;
   isAnonymous: boolean;
+  isNsfw: boolean;
   metadata: UpdateVideoRequest;
 }): Promise<UploadResult> {
   validateNormalizedVideoAsset(asset);
@@ -139,7 +141,7 @@ export async function uploadVideo({
     });
   }
 
-  const initPayload = { filename: asset.filename, size_bytes: asset.sizeBytes };
+  const initPayload = { filename: asset.filename, size_bytes: asset.sizeBytes, is_nsfw: isNsfw };
   const initResponse = isAnonymous ? await initAnonymousUpload(initPayload) : await initUpload(initPayload);
 
   await uploadBinaryWithRetry(initResponse.upload_url, asset);
@@ -149,7 +151,12 @@ export async function uploadVideo({
   }
   await confirmUpload(initResponse.video_id);
 
-  if (metadata.title || metadata.description || metadata.is_anonymous !== undefined) {
+  if (
+    metadata.title ||
+    metadata.description ||
+    metadata.is_anonymous !== undefined ||
+    metadata.is_nsfw !== undefined
+  ) {
     await updateVideoMetadata(initResponse.video_id, metadata);
   }
 

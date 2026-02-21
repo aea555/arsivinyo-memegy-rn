@@ -96,6 +96,7 @@ export function mapUserVideoDtoToMyVideoItem(
     created_at: raw.created_at,
     updated_at: resolveUpdatedAt(raw),
     is_anonymous: raw.is_anonymous,
+    is_nsfw: typeof raw.is_nsfw === 'boolean' ? raw.is_nsfw : null,
     like_count: raw.like_count ?? 0,
     is_liked: resolvedIsLiked ?? options?.fallbackIsLiked ?? false,
     url: raw.url ?? null,

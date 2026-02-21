@@ -59,6 +59,8 @@ function RootNavigator() {
     <NavigationThemeProvider value={navigationTheme}>
       <Stack>
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
+        <Stack.Screen name="(maintenance)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="upload-modal" options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen name="video/[id]" options={{ headerShown: false }} />
@@ -71,7 +73,7 @@ function RootNavigator() {
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
-  const { status, hydrate } = useAuthStore();
+  const { status, mode, hydrate } = useAuthStore();
   const hydrateAppSettings = useAppSettingsStore((state) => state.hydrate);
 
   useMyVideosRealtimeSync();
@@ -210,15 +212,35 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (status === 'loading') return;
-    const inAuthGroup = segments[0] === '(auth)';
+    const topSegment = segments[0] as string | undefined;
+    const inAuthGroup = topSegment === '(auth)';
+    const inOnboardingGroup = topSegment === '(onboarding)';
+    const inMaintenanceGroup = topSegment === '(maintenance)';
 
-    if (status === 'authenticated' && inAuthGroup) {
-      router.replace('/(tabs)/feed');
+    if (status === 'authenticated') {
+      if (mode === 'maintenance') {
+        if (!inMaintenanceGroup) {
+          router.replace('/(maintenance)' as never);
+        }
+        return;
+      }
+      if (mode === 'onboarding_required') {
+        if (!inOnboardingGroup) {
+          router.replace('/(onboarding)' as never);
+        }
+        return;
+      }
+
+      if (inAuthGroup || inOnboardingGroup || inMaintenanceGroup) {
+        router.replace('/(tabs)/feed');
+      }
+      return;
     }
+
     if (status === 'unauthenticated' && !inAuthGroup) {
       router.replace('/(auth)/login');
     }
-  }, [status, segments, router]);
+  }, [mode, status, segments, router]);
 
   if (showAnimatedSplash || !fontsLoaded || status === 'loading' || !isOtaReady) {
     return (

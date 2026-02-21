@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
 import { DownloadButton } from '@/src/features/download/components/DownloadButton';
+import { ReportVideoButton } from '@/src/features/reports/components/ReportVideoButton';
 import { QuickShareButton } from '@/src/features/share/components/QuickShareButton';
 import { ShareButton } from '@/src/features/share/components/ShareButton';
 import { VideoPlayer } from './VideoPlayer';
@@ -67,6 +68,21 @@ function VideoCardBase({
               <AppText variant="bodyBold" style={styles.titleText}>
                 {video.title ?? t('video.untitled')}
               </AppText>
+              {video.is_nsfw ? (
+                <View
+                  style={[
+                    styles.nsfwBadge,
+                    {
+                      borderColor: palette.warning,
+                      backgroundColor: palette.background,
+                    },
+                  ]}
+                >
+                  <AppText variant="caption" style={{ color: palette.warning }}>
+                    {t('video.nsfw')}
+                  </AppText>
+                </View>
+              ) : null}
             </View>
             <AppText variant="caption">{metaLine}</AppText>
           </View>
@@ -88,6 +104,7 @@ function VideoCardBase({
             <DownloadButton videoId={video.id} suggestedName={video.title} iconOnly />
             <QuickShareButton videoId={video.id} suggestedName={video.title} iconOnly />
             <ShareButton url={video.url} title={video.title} iconOnly />
+            <ReportVideoButton videoId={video.id} />
             {resolvedExtraAction}
           </View>
           {resolvedFarRightAction ? (
@@ -128,6 +145,7 @@ function areVideoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps) {
     prev.video.url === next.video.url &&
     prev.video.title === next.video.title &&
     prev.video.description === next.video.description &&
+    prev.video.is_nsfw === next.video.is_nsfw &&
     prev.video.created_at === next.video.created_at &&
     prev.video.is_liked === next.video.is_liked &&
     prev.video.like_count === next.video.like_count &&
@@ -184,6 +202,12 @@ const styles = StyleSheet.create({
   },
   titleText: {
     flexShrink: 1,
+  },
+  nsfwBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
   anonymousBadge: {
     alignSelf: 'flex-start',
