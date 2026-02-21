@@ -27,8 +27,6 @@ export function FeedSettingsScreen() {
   const setFeedHoldFastForwardSpeed = useAppSettingsStore((state) => state.setFeedHoldFastForwardSpeed);
   const feedPreserveAspectRatio = useAppSettingsStore((state) => state.feedPreserveAspectRatio);
   const setFeedPreserveAspectRatio = useAppSettingsStore((state) => state.setFeedPreserveAspectRatio);
-  const includeNsfw = useAppSettingsStore((state) => state.includeNsfw);
-  const setIncludeNsfw = useAppSettingsStore((state) => state.setIncludeNsfw);
   const holdSpeedOptions = useMemo(
     () =>
       FEED_HOLD_FAST_FORWARD_SPEED_OPTIONS.map((speed) => ({
@@ -130,23 +128,6 @@ export function FeedSettingsScreen() {
               value={feedPreserveAspectRatio}
               onValueChange={(value) => {
                 void setFeedPreserveAspectRatio(value);
-              }}
-              trackColor={{ true: palette.accent, false: palette.border }}
-            />
-          </View>
-        </Card>
-        <Card style={styles.sectionCard}>
-          <View style={styles.switchRow}>
-            <View style={styles.switchText}>
-              <AppText variant="bodyBold">{t('settings.includeNsfw')}</AppText>
-              <AppText variant="caption" style={{ color: palette.text.secondary }}>
-                {t('settings.includeNsfwHint')}
-              </AppText>
-            </View>
-            <Switch
-              value={includeNsfw}
-              onValueChange={(value) => {
-                void setIncludeNsfw(value);
               }}
               trackColor={{ true: palette.accent, false: palette.border }}
             />

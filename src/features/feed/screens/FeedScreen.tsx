@@ -1,5 +1,4 @@
 import { useIsFocused } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -17,6 +16,7 @@ import { useFeed } from '@/src/features/feed/hooks/useFeed';
 import { subscribeFeedRandomRefresh } from '@/src/features/feed/services/feedEvents';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Button } from '@/src/shared/components/ui/Button';
+import { SortFilterDropdown } from '@/src/shared/components/ui/SortFilterDropdown';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { useNetworkStatus } from '@/src/shared/hooks/useNetworkStatus';
 import { withAlpha } from '@/src/shared/theme/colorUtils';
@@ -42,6 +42,8 @@ export function FeedScreen() {
   const resetFeedVideoOnSwipe = useAppSettingsStore((state) => state.resetFeedVideoOnSwipe);
   const feedHoldFastForwardSpeed = useAppSettingsStore((state) => state.feedHoldFastForwardSpeed);
   const feedPreserveAspectRatio = useAppSettingsStore((state) => state.feedPreserveAspectRatio);
+  const feedIncludeNsfw = useAppSettingsStore((state) => state.feedIncludeNsfw);
+  const setFeedIncludeNsfw = useAppSettingsStore((state) => state.setFeedIncludeNsfw);
   const { isConnected } = useNetworkStatus();
   const [sort, setSort] = useState<'random' | 'latest' | 'popular'>('random');
   const [sortPickerVisible, setSortPickerVisible] = useState(false);
@@ -295,69 +297,26 @@ export function FeedScreen() {
           />
         ) : null}
         <View pointerEvents="box-none" style={[styles.sortControlWrap, { top: insets.top + spacing.sm }]}>
-          <Pressable
-            onPress={() => setSortPickerVisible((prev) => !prev)}
-            style={({ pressed }) => [
-              styles.sortTrigger,
-              {
-                backgroundColor: withAlpha(palette.overlay, 0.9),
-                borderColor: withAlpha(palette.border, 0.85),
-              },
-              pressed ? styles.pressedOption : null,
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={t('feed.sort')}
-          >
-            <Ionicons name="options-outline" size={16} color={palette.text.primary} />
-            <AppText variant="caption" numberOfLines={1} style={styles.sortTriggerLabel}>
-              {selectedSortLabel}
-            </AppText>
-            <Ionicons
-              name={sortPickerVisible ? 'chevron-up' : 'chevron-down'}
-              size={14}
-              color={palette.text.secondary}
-            />
-          </Pressable>
-          {sortPickerVisible ? (
-            <View
-              style={[
-                styles.sortDropdown,
-                {
-                  backgroundColor: withAlpha(palette.surface, 0.98),
-                  borderColor: withAlpha(palette.border, 0.78),
-                },
-              ]}
-            >
-              {sortOptions.map((option) => {
-                const selected = sort === option.value;
-                return (
-                  <Pressable
-                    key={option.value}
-                    onPress={() => {
-                      setSort(option.value);
-                      setSortPickerVisible(false);
-                    }}
-                    style={({ pressed }) => [
-                      styles.sortDropdownOption,
-                      {
-                        backgroundColor: selected
-                          ? withAlpha(palette.accent, 0.16)
-                          : 'transparent',
-                      },
-                      pressed ? styles.pressedOption : null,
-                    ]}
-                  >
-                    <AppText style={{ color: palette.text.primary }}>{option.label}</AppText>
-                    {selected ? (
-                      <Ionicons name="checkmark-circle" size={16} color={palette.accent} />
-                    ) : (
-                      <Ionicons name="ellipse-outline" size={16} color={palette.text.secondary} />
-                    )}
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : null}
+          <SortFilterDropdown
+            triggerLabel={selectedSortLabel}
+            triggerA11yLabel={t('feed.sort')}
+            visible={sortPickerVisible}
+            onToggleVisible={() => setSortPickerVisible((prev) => !prev)}
+            options={sortOptions}
+            selectedValue={sort}
+            onSelect={(value) => {
+              setSort(value);
+              setSortPickerVisible(false);
+            }}
+            quickToggleLabel={t('feed.showNsfw')}
+            quickToggleA11yLabel={t('feed.showNsfw')}
+            quickToggleEnabled={feedIncludeNsfw}
+            onQuickToggle={() => {
+              void setFeedIncludeNsfw(!feedIncludeNsfw);
+            }}
+            triggerMaxWidth={210}
+            dropdownMinWidth={168}
+          />
         </View>
         <FlatList
           key={`feed-${sort}`}
@@ -456,35 +415,5 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: spacing.md,
     zIndex: 20,
-  },
-  sortTrigger: {
-    minHeight: 36,
-    maxWidth: 210,
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  sortTriggerLabel: {
-    flexShrink: 1,
-  },
-  sortDropdown: {
-    marginTop: spacing.xs,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: spacing.xs,
-    minWidth: 168,
-  },
-  sortDropdownOption: {
-    minHeight: 38,
-    paddingHorizontal: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  pressedOption: {
-    transform: [{ scale: 0.99 }],
   },
 });

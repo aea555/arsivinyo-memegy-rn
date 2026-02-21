@@ -19,6 +19,7 @@ const KEYS = {
   FEED_HOLD_FAST_FORWARD_RATE: 'feed_hold_fast_forward_rate',
   FEED_PRESERVE_ASPECT_RATIO: 'feed_preserve_aspect_ratio',
   FEED_INCLUDE_NSFW: 'feed_include_nsfw',
+  SEARCH_INCLUDE_NSFW: 'search_include_nsfw',
   AUTH_DEBUG_AGGRESSIVE_REFRESH: 'auth_debug_aggressive_refresh',
   OTA_SUCCESS_MODAL_DISMISSED: 'ota_success_modal_dismissed',
   UPLOAD_ANONYMOUS_DEFAULT: 'upload_anonymous_default',
@@ -144,6 +145,14 @@ export const LocalStorage = {
   },
   async getFeedIncludeNsfw() {
     const value = await AsyncStorage.getItem(KEYS.FEED_INCLUDE_NSFW);
+    if (value === null) return null;
+    return value === '1';
+  },
+  async setSearchIncludeNsfw(enabled: boolean) {
+    await AsyncStorage.setItem(KEYS.SEARCH_INCLUDE_NSFW, enabled ? '1' : '0');
+  },
+  async getSearchIncludeNsfw() {
+    const value = await AsyncStorage.getItem(KEYS.SEARCH_INCLUDE_NSFW);
     if (value === null) return null;
     return value === '1';
   },

@@ -11,7 +11,7 @@ function normalizeFeedSort(sort: FeedSort): 'random' | 'latest' | 'popular' {
 
 export function useFeed(sort: FeedSort, options?: { enabled?: boolean; randomRefreshNonce?: number }) {
   const normalizedSort = normalizeFeedSort(sort);
-  const includeNsfw = useAppSettingsStore((state) => state.includeNsfw);
+  const feedIncludeNsfw = useAppSettingsStore((state) => state.feedIncludeNsfw);
   const randomRefreshNonce = options?.randomRefreshNonce ?? 0;
   const randomSeed = useMemo(() => {
     if (normalizedSort !== 'random') return undefined;
@@ -19,13 +19,13 @@ export function useFeed(sort: FeedSort, options?: { enabled?: boolean; randomRef
   }, [normalizedSort, randomRefreshNonce]);
   const queryKey =
     normalizedSort === 'random'
-      ? (['feed', normalizedSort, includeNsfw, randomSeed, randomRefreshNonce] as const)
-      : (['feed', normalizedSort, includeNsfw] as const);
+      ? (['feed', normalizedSort, feedIncludeNsfw, randomSeed, randomRefreshNonce] as const)
+      : (['feed', normalizedSort, feedIncludeNsfw] as const);
 
   return useInfiniteQuery({
     queryKey,
     queryFn: ({ pageParam = 0 }) =>
-      getFeed(normalizedSort, pageParam, includeNsfw, randomSeed),
+      getFeed(normalizedSort, pageParam, feedIncludeNsfw, randomSeed),
     getNextPageParam: (lastPage, pages) =>
       lastPage.length === FEED_PAGE_SIZE ? pages.length : undefined,
     initialPageParam: 0,

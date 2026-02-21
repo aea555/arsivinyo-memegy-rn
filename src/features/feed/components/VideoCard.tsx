@@ -46,6 +46,8 @@ function VideoCardBase({
   const metaLine = showUploader
     ? `${video.uploader ? `@${video.uploader.username}` : t('video.anonymous')} - ${formatDate(video.created_at)}`
     : formatDate(video.created_at);
+  const showNsfwBadge = Boolean(video.is_nsfw);
+  const showInlineNsfwBadge = showNsfwBadge && !showAnonymousBadge;
   const resolvedExtraAction = renderExtraAction
     ? renderExtraAction(video.id)
     : extraAction;
@@ -68,17 +70,17 @@ function VideoCardBase({
               <AppText variant="bodyBold" style={styles.titleText}>
                 {video.title ?? t('video.untitled')}
               </AppText>
-              {video.is_nsfw ? (
+              {showInlineNsfwBadge ? (
                 <View
                   style={[
-                    styles.nsfwBadge,
+                    styles.metaBadge,
                     {
                       borderColor: palette.warning,
                       backgroundColor: palette.background,
                     },
                   ]}
                 >
-                  <AppText variant="caption" style={{ color: palette.warning }}>
+                  <AppText variant="caption" style={[styles.metaBadgeText, { color: palette.warning }]}>
                     {t('video.nsfw')}
                   </AppText>
                 </View>
@@ -112,18 +114,35 @@ function VideoCardBase({
           ) : null}
         </View>
         {showAnonymousBadge ? (
-          <View
-            style={[
-              styles.anonymousBadge,
-              {
-                borderColor: palette.border,
-                backgroundColor: palette.background,
-              },
-            ]}
-          >
-            <AppText variant="caption" style={styles.anonymousBadgeText}>
-              {t('video.anonymous')}
-            </AppText>
+          <View style={styles.metaBadgesRow}>
+            <View
+              style={[
+                styles.metaBadge,
+                {
+                  borderColor: palette.border,
+                  backgroundColor: palette.background,
+                },
+              ]}
+            >
+              <AppText variant="caption" style={styles.metaBadgeText}>
+                {t('video.anonymous')}
+              </AppText>
+            </View>
+            {showNsfwBadge ? (
+              <View
+                style={[
+                  styles.metaBadge,
+                  {
+                    borderColor: palette.warning,
+                    backgroundColor: palette.background,
+                  },
+                ]}
+              >
+                <AppText variant="caption" style={[styles.metaBadgeText, { color: palette.warning }]}>
+                  {t('video.nsfw')}
+                </AppText>
+              </View>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -203,20 +222,20 @@ const styles = StyleSheet.create({
   titleText: {
     flexShrink: 1,
   },
-  nsfwBadge: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+  metaBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
   },
-  anonymousBadge: {
-    alignSelf: 'flex-start',
+  metaBadge: {
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical: 2,
+    alignSelf: 'flex-start',
   },
-  anonymousBadgeText: {
+  metaBadgeText: {
     fontSize: 11,
   },
   likes: {

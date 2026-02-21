@@ -31,6 +31,12 @@ export function MainSettingsScreen() {
           onPress={() => router.push('/settings/app')}
         />
         <SettingsRow
+          title={t('settings.preferences')}
+          subtitle={t('settings.preferencesSubtitle')}
+          icon={<Ionicons name="settings-outline" size={18} color={palette.text.primary} />}
+          onPress={() => router.push('/settings/preferences' as never)}
+        />
+        <SettingsRow
           title={t('settings.feedSettings')}
           subtitle={t('settings.feedSettingsSubtitle')}
           icon={<Ionicons name="play-circle-outline" size={18} color={palette.text.primary} />}

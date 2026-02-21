@@ -10,12 +10,12 @@ import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 export function useSearch(query: string, sort: 'relevance' | 'recent' | 'popular') {
   const normalizedQuery = clampSearchQuery(query);
   const authStatus = useAuthStore((state) => state.status);
-  const includeNsfw = useAppSettingsStore((state) => state.includeNsfw);
+  const searchIncludeNsfw = useAppSettingsStore((state) => state.searchIncludeNsfw);
 
   return useInfiniteQuery({
-    queryKey: ['search', normalizedQuery, sort, includeNsfw],
+    queryKey: ['search', normalizedQuery, sort, searchIncludeNsfw],
     queryFn: ({ pageParam = 0 }) =>
-      searchVideos(normalizedQuery, SEARCH_PAGE_SIZE, pageParam, sort, includeNsfw),
+      searchVideos(normalizedQuery, SEARCH_PAGE_SIZE, pageParam, sort, searchIncludeNsfw),
     enabled: authStatus === 'authenticated' && normalizedQuery.length > 0,
     retry: (failureCount, error) => {
       if (authSessionManager.isAuthTemporaryUnavailableError(error)) {

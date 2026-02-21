@@ -23,13 +23,14 @@ import { Screen } from '@/src/shared/components/layout/Screen';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { FloatingSearchControls } from '@/src/shared/components/ui/FloatingSearchControls';
 import { Input } from '@/src/shared/components/ui/Input';
-import { SegmentedControl } from '@/src/shared/components/ui/SegmentedControl';
+import { SortFilterDropdown } from '@/src/shared/components/ui/SortFilterDropdown';
 import { useDebounce } from '@/src/shared/hooks/useDebounce';
 import { useFloatingSearchControls } from '@/src/shared/hooks/useFloatingSearchControls';
 import { withAlpha } from '@/src/shared/theme/colorUtils';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { VideoFeedItem } from '@/src/shared/types/api';
+import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 import {
   clampSearchQueryDraft,
   normalizeSearchQuery,
@@ -49,9 +50,12 @@ export function ExploreScreen() {
   const { palette } = useTheme();
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<'relevance' | 'recent' | 'popular'>('relevance');
+  const [sortPickerVisible, setSortPickerVisible] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [controlsHeight, setControlsHeight] = useState(DEFAULT_CONTROLS_HEIGHT);
   const searchInputRef = useRef<TextInput>(null);
+  const searchIncludeNsfw = useAppSettingsStore((state) => state.searchIncludeNsfw);
+  const setSearchIncludeNsfw = useAppSettingsStore((state) => state.setSearchIncludeNsfw);
 
   const {
     mode: controlsMode,
@@ -75,6 +79,12 @@ export function ExploreScreen() {
     if (!isFocused) return;
     expandControls();
   }, [expandControls, isFocused]);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setSortPickerVisible(false);
+    }
+  }, [isFocused]);
 
   const debouncedQuery = useDebounce(query, 300);
   const normalizedQuery = useMemo(() => normalizeSearchQuery(debouncedQuery), [debouncedQuery]);
@@ -114,6 +124,18 @@ export function ExploreScreen() {
   const collapsedTriggerLabel = isSearching
     ? t('search.resultsForCompact', { query: normalizedQuery })
     : t('search.openControls');
+  const sortOptions = useMemo(
+    () => [
+      { label: t('search.sortRelevance'), value: 'relevance' as const },
+      { label: t('search.sortRecent'), value: 'recent' as const },
+      { label: t('search.sortPopular'), value: 'popular' as const },
+    ],
+    [t]
+  );
+  const selectedSortLabel = useMemo(
+    () => sortOptions.find((option) => option.value === sort)?.label ?? t('search.sortRelevance'),
+    [sort, sortOptions, t]
+  );
 
   const expandedControls = (
     <View style={styles.controlsWrap}>
@@ -128,14 +150,25 @@ export function ExploreScreen() {
           onFocus={onControlsInputFocus}
           onBlur={onControlsInputBlur}
         />
-        <SegmentedControl
-          value={sort}
-          onChange={(value) => setSort(value as 'relevance' | 'recent' | 'popular')}
-          options={[
-            { label: t('search.sortRelevance'), value: 'relevance' },
-            { label: t('search.sortRecent'), value: 'recent' },
-            { label: t('search.sortPopular'), value: 'popular' },
-          ]}
+        <SortFilterDropdown
+          triggerLabel={selectedSortLabel}
+          triggerA11yLabel={t('search.sortAndFilter')}
+          visible={sortPickerVisible}
+          onToggleVisible={() => setSortPickerVisible((prev) => !prev)}
+          options={sortOptions}
+          selectedValue={sort}
+          onSelect={(value) => {
+            setSort(value);
+            setSortPickerVisible(false);
+          }}
+          quickToggleLabel={t('search.showNsfw')}
+          quickToggleA11yLabel={t('search.showNsfw')}
+          quickToggleEnabled={searchIncludeNsfw}
+          onQuickToggle={() => {
+            void setSearchIncludeNsfw(!searchIncludeNsfw);
+          }}
+          triggerMaxWidth={220}
+          dropdownMinWidth={180}
         />
         <View style={styles.metaRow}>
           <View style={styles.metaLabelWrap}>
@@ -228,34 +261,38 @@ export function ExploreScreen() {
             <AppText variant="caption" style={styles.gridMetaTitle} numberOfLines={1}>
               {item.title?.trim() || t('video.untitled')}
             </AppText>
-            {item.is_nsfw ? (
-              <View
-                style={[
-                  styles.gridNsfwBadge,
-                  {
-                    borderColor: withAlpha(palette.warning, 0.82),
-                    backgroundColor: withAlpha(palette.warning, 0.14),
-                  },
-                ]}
-              >
-                <AppText variant="caption" style={{ color: palette.warning }}>
-                  {t('video.nsfw')}
-                </AppText>
-              </View>
-            ) : null}
-            {isAnonymous ? (
-              <View
-                style={[
-                  styles.gridAnonymousBadge,
-                  {
-                    borderColor: withAlpha(palette.border, 0.85),
-                    backgroundColor: withAlpha(palette.overlay, 0.9),
-                  },
-                ]}
-              >
-                <AppText variant="caption" style={styles.gridAnonymousText}>
-                  {t('video.anonymous')}
-                </AppText>
+            {item.is_nsfw || isAnonymous ? (
+              <View style={styles.gridBadgesRow}>
+                {item.is_nsfw ? (
+                  <View
+                    style={[
+                      styles.gridMetaBadge,
+                      {
+                        borderColor: withAlpha(palette.warning, 0.82),
+                        backgroundColor: withAlpha(palette.warning, 0.14),
+                      },
+                    ]}
+                  >
+                    <AppText variant="caption" style={[styles.gridMetaBadgeText, { color: palette.warning }]}>
+                      {t('video.nsfw')}
+                    </AppText>
+                  </View>
+                ) : null}
+                {isAnonymous ? (
+                  <View
+                    style={[
+                      styles.gridMetaBadge,
+                      {
+                        borderColor: withAlpha(palette.border, 0.85),
+                        backgroundColor: withAlpha(palette.overlay, 0.9),
+                      },
+                    ]}
+                  >
+                    <AppText variant="caption" style={[styles.gridMetaBadgeText, { color: '#FFFFFF' }]}>
+                      {t('video.anonymous')}
+                    </AppText>
+                  </View>
+                ) : null}
               </View>
             ) : null}
           </View>
@@ -303,6 +340,7 @@ export function ExploreScreen() {
     if (searchInputRef.current?.isFocused()) {
       searchInputRef.current.blur();
     }
+    setSortPickerVisible(false);
   }, []);
 
   const isEmpty = !isLoading && videos.length === 0;
@@ -377,6 +415,7 @@ export function ExploreScreen() {
                 video={selectedVideo}
                 isActive={isFocused}
                 isScreenActive={isFocused}
+                showAnonymousBadge={!selectedVideo.uploader}
                 renderFarRightAction={renderModalCloseAction}
               />
             ) : null}
@@ -491,23 +530,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 15,
   },
-  gridNsfwBadge: {
+  gridBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexWrap: 'wrap',
+  },
+  gridMetaBadge: {
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 6,
     paddingVertical: 2,
     alignSelf: 'flex-start',
   },
-  gridAnonymousBadge: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    alignSelf: 'flex-start',
-  },
-  gridAnonymousText: {
+  gridMetaBadgeText: {
     fontSize: 10,
-    color: '#FFFFFF',
   },
   modalBackdrop: {
     flex: 1,

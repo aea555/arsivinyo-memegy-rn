@@ -12,7 +12,8 @@ type AppSettingsState = {
   resetFeedVideoOnSwipe: boolean;
   feedHoldFastForwardSpeed: FeedHoldFastForwardSpeed;
   feedPreserveAspectRatio: boolean;
-  includeNsfw: boolean;
+  feedIncludeNsfw: boolean;
+  searchIncludeNsfw: boolean;
   authDebugAggressiveRefresh: boolean;
   uploadAnonymousDefault: boolean;
   clipboardUploadAskMetadata: boolean;
@@ -24,7 +25,8 @@ type AppSettingsState = {
   setResetFeedVideoOnSwipe: (enabled: boolean) => Promise<void>;
   setFeedHoldFastForwardSpeed: (speed: FeedHoldFastForwardSpeed) => Promise<void>;
   setFeedPreserveAspectRatio: (enabled: boolean) => Promise<void>;
-  setIncludeNsfw: (enabled: boolean) => Promise<void>;
+  setFeedIncludeNsfw: (enabled: boolean) => Promise<void>;
+  setSearchIncludeNsfw: (enabled: boolean) => Promise<void>;
   setAuthDebugAggressiveRefresh: (enabled: boolean) => Promise<void>;
   setUploadAnonymousDefault: (enabled: boolean) => Promise<void>;
   setClipboardUploadAskMetadata: (enabled: boolean) => Promise<void>;
@@ -38,7 +40,8 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
   resetFeedVideoOnSwipe: true,
   feedHoldFastForwardSpeed: 1.5,
   feedPreserveAspectRatio: true,
-  includeNsfw: true,
+  feedIncludeNsfw: true,
+  searchIncludeNsfw: true,
   authDebugAggressiveRefresh: __DEV__,
   uploadAnonymousDefault: false,
   clipboardUploadAskMetadata: true,
@@ -51,7 +54,8 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       storedResetFeedVideoOnSwipe,
       storedFeedHoldFastForwardSpeed,
       storedFeedPreserveAspectRatio,
-      storedIncludeNsfw,
+      storedFeedIncludeNsfw,
+      storedSearchIncludeNsfw,
       storedAuthDebugAggressiveRefresh,
       storedUploadAnonymousDefault,
       storedClipboardUploadAskMetadata,
@@ -64,11 +68,19 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       LocalStorage.getFeedHoldFastForwardRate(),
       LocalStorage.getFeedPreserveAspectRatio(),
       LocalStorage.getFeedIncludeNsfw(),
+      LocalStorage.getSearchIncludeNsfw(),
       LocalStorage.getAuthDebugAggressiveRefresh(),
       LocalStorage.getUploadAnonymousDefault(),
       LocalStorage.getClipboardUploadAskMetadata(),
       LocalStorage.getClipboardUploadSaveToDevice(),
     ]);
+
+    const resolvedFeedIncludeNsfw = storedFeedIncludeNsfw ?? true;
+    const resolvedSearchIncludeNsfw = storedSearchIncludeNsfw ?? resolvedFeedIncludeNsfw;
+
+    if (storedSearchIncludeNsfw === null) {
+      await LocalStorage.setSearchIncludeNsfw(resolvedSearchIncludeNsfw);
+    }
 
     set({
       autoPlayVideos: storedAutoPlayVideos ?? false,
@@ -77,7 +89,8 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       resetFeedVideoOnSwipe: storedResetFeedVideoOnSwipe ?? true,
       feedHoldFastForwardSpeed: storedFeedHoldFastForwardSpeed ?? 1.5,
       feedPreserveAspectRatio: storedFeedPreserveAspectRatio ?? true,
-      includeNsfw: storedIncludeNsfw ?? true,
+      feedIncludeNsfw: resolvedFeedIncludeNsfw,
+      searchIncludeNsfw: resolvedSearchIncludeNsfw,
       authDebugAggressiveRefresh: __DEV__ ? (storedAuthDebugAggressiveRefresh ?? true) : false,
       uploadAnonymousDefault: storedUploadAnonymousDefault ?? false,
       clipboardUploadAskMetadata: storedClipboardUploadAskMetadata ?? true,
@@ -108,9 +121,13 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
     await LocalStorage.setFeedPreserveAspectRatio(enabled);
     set({ feedPreserveAspectRatio: enabled });
   },
-  setIncludeNsfw: async (enabled) => {
+  setFeedIncludeNsfw: async (enabled) => {
     await LocalStorage.setFeedIncludeNsfw(enabled);
-    set({ includeNsfw: enabled });
+    set({ feedIncludeNsfw: enabled });
+  },
+  setSearchIncludeNsfw: async (enabled) => {
+    await LocalStorage.setSearchIncludeNsfw(enabled);
+    set({ searchIncludeNsfw: enabled });
   },
   setAuthDebugAggressiveRefresh: async (enabled) => {
     const value = __DEV__ ? enabled : false;

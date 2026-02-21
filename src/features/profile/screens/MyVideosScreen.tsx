@@ -637,34 +637,38 @@ export function MyVideosScreen() {
             <AppText variant="caption" style={styles.gridMetaTitle} numberOfLines={1}>
               {item.title?.trim() || t('video.untitled')}
             </AppText>
-            {(item.is_nsfw === false ? false : true) ? (
-              <View
-                style={[
-                  styles.gridNsfwBadge,
-                  {
-                    borderColor: withAlpha(palette.warning, 0.82),
-                    backgroundColor: withAlpha(palette.warning, 0.14),
-                  },
-                ]}
-              >
-                <AppText variant="caption" style={{ color: palette.warning }}>
-                  {t('video.nsfw')}
-                </AppText>
-              </View>
-            ) : null}
-            {item.is_anonymous ? (
-              <View
-                style={[
-                  styles.gridAnonymousBadge,
-                  {
-                    borderColor: withAlpha(palette.border, 0.85),
-                    backgroundColor: withAlpha(palette.overlay, 0.9),
-                  },
-                ]}
-              >
-                <AppText variant="caption" style={styles.gridAnonymousText}>
-                  {t('video.anonymous')}
-                </AppText>
+            {(item.is_nsfw === false ? false : true) || item.is_anonymous ? (
+              <View style={styles.gridBadgesRow}>
+                {(item.is_nsfw === false ? false : true) ? (
+                  <View
+                    style={[
+                      styles.gridMetaBadge,
+                      {
+                        borderColor: withAlpha(palette.warning, 0.82),
+                        backgroundColor: withAlpha(palette.warning, 0.14),
+                      },
+                    ]}
+                  >
+                    <AppText variant="caption" style={[styles.gridMetaBadgeText, { color: palette.warning }]}>
+                      {t('video.nsfw')}
+                    </AppText>
+                  </View>
+                ) : null}
+                {item.is_anonymous ? (
+                  <View
+                    style={[
+                      styles.gridMetaBadge,
+                      {
+                        borderColor: withAlpha(palette.border, 0.85),
+                        backgroundColor: withAlpha(palette.overlay, 0.9),
+                      },
+                    ]}
+                  >
+                    <AppText variant="caption" style={[styles.gridMetaBadgeText, { color: '#FFFFFF' }]}>
+                      {t('video.anonymous')}
+                    </AppText>
+                  </View>
+                ) : null}
               </View>
             ) : null}
           </View>
@@ -708,34 +712,38 @@ export function MyVideosScreen() {
           />
         </View>
         <AppText variant="caption">{formatDate(selectedVideo.created_at)}</AppText>
-        {selectedVideo.is_anonymous ? (
-          <View
-            style={[
-              styles.anonymousBadge,
-              {
-                borderColor: palette.border,
-                backgroundColor: palette.background,
-              },
-            ]}
-          >
-            <AppText variant="caption" style={styles.anonymousBadgeText}>
-              {t('video.anonymous')}
-            </AppText>
-          </View>
-        ) : null}
-        {(selectedVideo.is_nsfw === false ? false : true) ? (
-          <View
-            style={[
-              styles.nsfwBadge,
-              {
-                borderColor: withAlpha(palette.warning, 0.82),
-                backgroundColor: withAlpha(palette.warning, 0.14),
-              },
-            ]}
-          >
-            <AppText variant="caption" style={{ color: palette.warning }}>
-              {t('video.nsfw')}
-            </AppText>
+        {selectedVideo.is_anonymous || (selectedVideo.is_nsfw === false ? false : true) ? (
+          <View style={styles.statusBadgesRow}>
+            {selectedVideo.is_anonymous ? (
+              <View
+                style={[
+                  styles.anonymousBadge,
+                  {
+                    borderColor: palette.border,
+                    backgroundColor: palette.background,
+                  },
+                ]}
+              >
+                <AppText variant="caption" style={styles.anonymousBadgeText}>
+                  {t('video.anonymous')}
+                </AppText>
+              </View>
+            ) : null}
+            {(selectedVideo.is_nsfw === false ? false : true) ? (
+              <View
+                style={[
+                  styles.nsfwBadge,
+                  {
+                    borderColor: withAlpha(palette.warning, 0.82),
+                    backgroundColor: withAlpha(palette.warning, 0.14),
+                  },
+                ]}
+              >
+                <AppText variant="caption" style={[styles.anonymousBadgeText, { color: palette.warning }]}>
+                  {t('video.nsfw')}
+                </AppText>
+              </View>
+            ) : null}
           </View>
         ) : null}
         <AppText variant="caption" style={styles.statusText}>
@@ -1001,23 +1009,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 15,
   },
-  gridNsfwBadge: {
+  gridBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexWrap: 'wrap',
+  },
+  gridMetaBadge: {
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 6,
     paddingVertical: 2,
     alignSelf: 'flex-start',
   },
-  gridAnonymousBadge: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    alignSelf: 'flex-start',
-  },
-  gridAnonymousText: {
+  gridMetaBadgeText: {
     fontSize: 10,
-    color: '#FFFFFF',
   },
   modalBackdrop: {
     flex: 1,
@@ -1046,6 +1052,12 @@ const styles = StyleSheet.create({
   },
   statusTitleText: {
     flexShrink: 1,
+  },
+  statusBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
   },
   anonymousBadge: {
     alignSelf: 'flex-start',
