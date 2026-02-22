@@ -3,6 +3,7 @@ import {
   AppState,
   AppStateStatus,
   Animated,
+  GestureResponderEvent,
   Modal,
   PanResponder,
   PanResponderGestureState,
@@ -972,6 +973,20 @@ function VideoPlayerNative({
     [updateSeekPreviewFromX]
   );
 
+  const resolveSeekReleasePageX = React.useCallback(
+    (event: GestureResponderEvent, gestureState: PanResponderGestureState) => {
+      const moveX = gestureState.moveX;
+      const dragDelta = Math.abs(gestureState.dx);
+
+      // Tap-only interactions may report moveX as 0, which would incorrectly seek to 0.
+      if (Number.isFinite(moveX) && dragDelta > 0.5) {
+        return moveX;
+      }
+      return event.nativeEvent.pageX;
+    },
+    []
+  );
+
   const seekPanResponder = React.useMemo(
     () =>
       PanResponder.create({
@@ -988,8 +1003,9 @@ function VideoPlayerNative({
         onPanResponderMove: (_, gestureState: PanResponderGestureState) => {
           updateSeekPreviewFromAbsoluteX(gestureState.moveX);
         },
-        onPanResponderRelease: (_, gestureState: PanResponderGestureState) => {
-          const nextTimeSec = updateSeekPreviewFromAbsoluteX(gestureState.moveX);
+        onPanResponderRelease: (event, gestureState: PanResponderGestureState) => {
+          const releasePageX = resolveSeekReleasePageX(event, gestureState);
+          const nextTimeSec = updateSeekPreviewFromAbsoluteX(releasePageX);
           isScrubbingRef.current = false;
           setIsScrubbing(false);
           if (typeof nextTimeSec === 'number') {
@@ -997,8 +1013,9 @@ function VideoPlayerNative({
           }
           scheduleMinimalControlsAutoHide();
         },
-        onPanResponderTerminate: (_, gestureState: PanResponderGestureState) => {
-          const nextTimeSec = updateSeekPreviewFromAbsoluteX(gestureState.moveX);
+        onPanResponderTerminate: (event, gestureState: PanResponderGestureState) => {
+          const releasePageX = resolveSeekReleasePageX(event, gestureState);
+          const nextTimeSec = updateSeekPreviewFromAbsoluteX(releasePageX);
           isScrubbingRef.current = false;
           setIsScrubbing(false);
           if (typeof nextTimeSec === 'number') {
@@ -1012,6 +1029,7 @@ function VideoPlayerNative({
     [
       commitSeek,
       revealMinimalControls,
+      resolveSeekReleasePageX,
       scheduleMinimalControlsAutoHide,
       updateSeekPreviewFromAbsoluteX,
     ]
