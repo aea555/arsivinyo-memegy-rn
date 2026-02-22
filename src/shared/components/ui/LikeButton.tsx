@@ -136,10 +136,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   overlayIconButton: {
-    height: 50,
-    width: 50,
+    height: 44,
+    width: 44,
     borderWidth: 1,
-    borderRadius: 25,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },

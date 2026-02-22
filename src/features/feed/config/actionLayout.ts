@@ -48,9 +48,9 @@ export const FEED_ACTION_LAYOUT_PRESETS: Record<FeedActionLayoutPresetId, FeedAc
       like: 'rightRail',
       download: 'rightRail',
       report: 'topRight',
-      shareHub: 'bottomRight',
-      quickShare: 'bottomRight',
-      share: 'bottomRight',
+      shareHub: 'rightRail',
+      quickShare: 'rightRail',
+      share: 'rightRail',
     },
     topRight: {
       topOffset: Math.max(0, spacing.sm - 3),
@@ -59,13 +59,13 @@ export const FEED_ACTION_LAYOUT_PRESETS: Record<FeedActionLayoutPresetId, FeedAc
     },
     rightRail: {
       rightOffset: 10,
-      bottomOffset: 84,
+      bottomOffset: -60,
       gap: 2,
       scale: 0.9,
     },
     bottomRight: {
       rightOffset: 10,
-      bottomOffset: 24,
+      bottomOffset: -8,
       scale: 0.9,
     },
     shareHub: {

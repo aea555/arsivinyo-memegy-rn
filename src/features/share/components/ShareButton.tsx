@@ -157,9 +157,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   overlayIconButton: {
-    height: 50,
-    width: 50,
-    borderRadius: 25,
+    height: 44,
+    width: 44,
+    borderRadius: 22,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',

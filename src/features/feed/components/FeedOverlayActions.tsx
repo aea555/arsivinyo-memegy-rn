@@ -183,7 +183,7 @@ function FeedOverlayActionsBase({
 
     if (action === 'shareHub') {
       return (
-        <View key={action} style={[styles.shareHubWrap, { transform: [{ scale: zoneScale(slot) }] }]}>
+        <View key={action} style={{ transform: [{ scale: zoneScale(slot) }] }}>
           <QuickShareButton
             videoId={video.id}
             suggestedName={video.title}
@@ -319,12 +319,6 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  shareHubWrap: {
-    width: 52,
-    minHeight: 52,
-    alignItems: 'flex-end',
     justifyContent: 'center',
   },
   pressed: {
