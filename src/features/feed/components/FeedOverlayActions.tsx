@@ -3,174 +3,286 @@ import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
+import {
+  FeedActionId,
+  FeedActionLayoutPresetId,
+  FeedActionSlot,
+  resolveFeedActionLayoutPreset,
+} from '@/src/features/feed/config/actionLayout';
 import { DownloadButton } from '@/src/features/download/components/DownloadButton';
 import { useToggleLike } from '@/src/features/feed/hooks/useToggleLike';
 import { ReportVideoButton } from '@/src/features/reports/components/ReportVideoButton';
 import { QuickShareButton } from '@/src/features/share/components/QuickShareButton';
-import { ShareButton } from '@/src/features/share/components/ShareButton';
+import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { LikeButton } from '@/src/shared/components/ui/LikeButton';
 import { withAlpha } from '@/src/shared/theme/colorUtils';
-import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { VideoFeedItem } from '@/src/shared/types/api';
 import { formatCount } from '@/src/shared/utils/formatters';
 
 type FeedOverlayActionsProps = {
   video: VideoFeedItem;
-  onToggleInfo: () => void;
-  infoVisible: boolean;
   muted: boolean;
   onToggleMute: () => void;
+  safeAreaTop: number;
+  safeAreaBottom: number;
+  layoutPresetId?: FeedActionLayoutPresetId;
 };
+
+const FEED_PRIMARY_ACTIONS: FeedActionId[] = ['mute', 'like', 'download', 'report', 'shareHub'];
 
 function FeedOverlayActionsBase({
   video,
-  onToggleInfo,
-  infoVisible,
   muted,
   onToggleMute,
+  safeAreaTop,
+  safeAreaBottom,
+  layoutPresetId,
 }: FeedOverlayActionsProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
   const toggleLike = useToggleLike(video.id);
   const currentLiked = video.is_liked ?? false;
+  const layout = React.useMemo(() => resolveFeedActionLayoutPreset(layoutPresetId), [layoutPresetId]);
+
+  const tabBarClearance = React.useMemo(
+    () => Math.max(layoutConfig.tabBar.height + layoutConfig.tabBar.paddingBottom, 64),
+    [],
+  );
+
   const handleLikePress = React.useCallback(() => {
     toggleLike.mutate({ currentLiked });
   }, [currentLiked, toggleLike]);
 
-  return (
-    <View style={styles.container} pointerEvents="box-none">
-      <Pressable
-        onPress={onToggleMute}
-        style={({ pressed }) => [
-          styles.iconButton,
-          {
-            backgroundColor: withAlpha(palette.overlay, 0.9),
-            borderColor: withAlpha(palette.border, 0.85),
-          },
-          pressed ? styles.pressed : null,
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={muted ? t('feed.unmute') : t('feed.mute')}
-      >
-        <Ionicons
-          name={muted ? 'volume-mute-outline' : 'volume-high-outline'}
-          size={20}
-          color={palette.text.primary}
-        />
-      </Pressable>
-      {video.is_liked !== undefined ? (
-        <View style={styles.likeGroup}>
-          <View style={styles.scaledActionWrap}>
-            <LikeButton
-              liked={currentLiked}
-              count={video.like_count}
-              onPress={handleLikePress}
-              disabled={toggleLike.isPending}
-              variant="overlay"
-              iconOnly
-            />
-          </View>
-          <View
-            style={[
-              styles.likeCountBadge,
-              {
-                backgroundColor: withAlpha('#000000', 0.58),
-                borderColor: withAlpha(palette.border, 0.74),
-              },
-            ]}
-          >
-            <AppText variant="caption" style={[styles.likeCount, { color: '#FFFFFF' }]}>
-              {formatCount(video.like_count)}
-            </AppText>
-          </View>
-        </View>
-      ) : (
-        <View style={styles.likeGroup}>
-          <View
-            style={[
-              styles.counterFallback,
+  const actionsBySlot = React.useMemo(() => {
+    const grouped: Record<FeedActionSlot, FeedActionId[]> = {
+      topRight: [],
+      rightRail: [],
+      bottomRight: [],
+    };
+
+    for (const action of FEED_PRIMARY_ACTIONS) {
+      grouped[layout.slots[action]].push(action);
+    }
+
+    return grouped;
+  }, [layout.slots]);
+
+  const topRightTop = safeAreaTop + layout.topRight.topOffset;
+  const rightRailBottom = tabBarClearance + safeAreaBottom + layout.rightRail.bottomOffset;
+  const bottomRightBottom = tabBarClearance + safeAreaBottom + layout.bottomRight.bottomOffset;
+
+  const zoneScale = (slot: FeedActionSlot): number => {
+    if (slot === 'topRight') return layout.topRight.scale;
+    if (slot === 'rightRail') return layout.rightRail.scale;
+    return layout.bottomRight.scale;
+  };
+
+  const renderAction = (action: FeedActionId, slot: FeedActionSlot) => {
+    if (action === 'mute') {
+      return (
+        <View key={action} style={{ transform: [{ scale: zoneScale(slot) }] }}>
+          <Pressable
+            onPress={onToggleMute}
+            style={({ pressed }) => [
+              styles.iconButton,
               {
                 backgroundColor: withAlpha(palette.overlay, 0.9),
                 borderColor: withAlpha(palette.border, 0.85),
               },
+              pressed ? styles.pressed : null,
             ]}
+            accessibilityRole="button"
+            accessibilityLabel={muted ? t('feed.unmute') : t('feed.mute')}
           >
-            <Ionicons name="heart-outline" size={24} color={palette.text.secondary} />
-          </View>
-          <View
-            style={[
-              styles.likeCountBadge,
-              {
-                backgroundColor: withAlpha('#000000', 0.58),
-                borderColor: withAlpha(palette.border, 0.74),
-              },
-            ]}
-          >
-            <AppText variant="caption" style={[styles.likeCount, { color: '#FFFFFF' }]}>
-              {formatCount(video.like_count)}
-            </AppText>
-          </View>
+            <Ionicons
+              name={muted ? 'volume-mute-outline' : 'volume-high-outline'}
+              size={20}
+              color={palette.text.primary}
+            />
+          </Pressable>
         </View>
-      )}
-      <View style={styles.scaledActionWrap}>
-        <DownloadButton videoId={video.id} suggestedName={video.title} variant="overlay" iconOnly />
-      </View>
-      <View style={styles.scaledActionWrap}>
-        <QuickShareButton videoId={video.id} suggestedName={video.title} variant="overlay" iconOnly />
-      </View>
-      <View style={styles.scaledActionWrap}>
-        <ShareButton url={video.url} title={video.title} variant="overlay" iconOnly />
-      </View>
-      <View style={styles.scaledActionWrap}>
-        <ReportVideoButton videoId={video.id} variant="overlay" />
-      </View>
-      <Pressable
-        onPress={onToggleInfo}
-        style={({ pressed }) => [
-          styles.iconButton,
-          {
-            backgroundColor: infoVisible
-              ? withAlpha(palette.accent, 0.9)
-              : withAlpha(palette.overlay, 0.9),
-            borderColor: infoVisible ? withAlpha(palette.accent, 0.96) : withAlpha(palette.border, 0.85),
-          },
-          pressed ? styles.pressed : null,
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={infoVisible ? t('feed.hideInfo') : t('feed.info')}
-      >
-        <Ionicons
-          name="information-circle-outline"
-          size={20}
-          color={infoVisible ? palette.onAccent : palette.text.primary}
-        />
-      </Pressable>
+      );
+    }
+
+    if (action === 'like') {
+      return (
+        <View key={action} style={{ transform: [{ scale: zoneScale(slot) }] }}>
+          {video.is_liked !== undefined ? (
+            <View style={styles.likeGroup}>
+              <LikeButton
+                liked={currentLiked}
+                count={video.like_count}
+                onPress={handleLikePress}
+                disabled={toggleLike.isPending}
+                variant="overlay"
+                iconOnly
+              />
+              <View
+                style={[
+                  styles.likeCountBadge,
+                  {
+                    backgroundColor: withAlpha('#000000', 0.58),
+                    borderColor: withAlpha(palette.border, 0.74),
+                  },
+                ]}
+              >
+                <AppText variant="caption" style={[styles.likeCount, { color: '#FFFFFF' }]}>
+                  {formatCount(video.like_count)}
+                </AppText>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.likeGroup}>
+              <View
+                style={[
+                  styles.counterFallback,
+                  {
+                    backgroundColor: withAlpha(palette.overlay, 0.9),
+                    borderColor: withAlpha(palette.border, 0.85),
+                  },
+                ]}
+              >
+                <Ionicons name="heart-outline" size={24} color={palette.text.secondary} />
+              </View>
+              <View
+                style={[
+                  styles.likeCountBadge,
+                  {
+                    backgroundColor: withAlpha('#000000', 0.58),
+                    borderColor: withAlpha(palette.border, 0.74),
+                  },
+                ]}
+              >
+                <AppText variant="caption" style={[styles.likeCount, { color: '#FFFFFF' }]}>
+                  {formatCount(video.like_count)}
+                </AppText>
+              </View>
+            </View>
+          )}
+        </View>
+      );
+    }
+
+    if (action === 'download') {
+      return (
+        <View key={action} style={{ transform: [{ scale: zoneScale(slot) }] }}>
+          <DownloadButton videoId={video.id} suggestedName={video.title} variant="overlay" iconOnly />
+        </View>
+      );
+    }
+
+    if (action === 'report') {
+      return (
+        <View key={action} style={{ transform: [{ scale: zoneScale(slot) }] }}>
+          <ReportVideoButton videoId={video.id} variant="overlay" />
+        </View>
+      );
+    }
+
+    if (action === 'shareHub') {
+      return (
+        <View key={action} style={[styles.shareHubWrap, { transform: [{ scale: zoneScale(slot) }] }]}>
+          <QuickShareButton
+            videoId={video.id}
+            suggestedName={video.title}
+            variant="overlay"
+            iconOnly
+          />
+        </View>
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <View style={styles.overlayRoot} pointerEvents="box-none">
+      {actionsBySlot.topRight.length > 0 ? (
+        <View
+          style={[
+            styles.topRightZone,
+            {
+              top: topRightTop,
+              right: layout.topRight.rightOffset,
+            },
+          ]}
+          pointerEvents="box-none"
+        >
+          {actionsBySlot.topRight.map((action) => renderAction(action, 'topRight'))}
+        </View>
+      ) : null}
+
+      {actionsBySlot.rightRail.length > 0 ? (
+        <View
+          style={[
+            styles.rightRailZone,
+            {
+              right: layout.rightRail.rightOffset,
+              bottom: rightRailBottom,
+              gap: layout.rightRail.gap,
+            },
+          ]}
+          pointerEvents="box-none"
+        >
+          {actionsBySlot.rightRail.map((action) => renderAction(action, 'rightRail'))}
+        </View>
+      ) : null}
+
+      {actionsBySlot.bottomRight.length > 0 ? (
+        <View
+          style={[
+            styles.bottomRightZone,
+            {
+              right: layout.bottomRight.rightOffset,
+              bottom: bottomRightBottom,
+            },
+          ]}
+          pointerEvents="box-none"
+        >
+          {actionsBySlot.bottomRight.map((action) => renderAction(action, 'bottomRight'))}
+        </View>
+      ) : null}
     </View>
   );
 }
 
 function areFeedOverlayActionsPropsEqual(prev: FeedOverlayActionsProps, next: FeedOverlayActionsProps) {
   return (
-    prev.infoVisible === next.infoVisible &&
-    prev.onToggleInfo === next.onToggleInfo &&
     prev.muted === next.muted &&
     prev.onToggleMute === next.onToggleMute &&
+    prev.safeAreaTop === next.safeAreaTop &&
+    prev.safeAreaBottom === next.safeAreaBottom &&
+    prev.layoutPresetId === next.layoutPresetId &&
     prev.video.id === next.video.id &&
     prev.video.like_count === next.video.like_count &&
     prev.video.is_liked === next.video.is_liked &&
-    prev.video.title === next.video.title
+    prev.video.title === next.video.title &&
+    prev.video.url === next.video.url
   );
 }
 
 export const FeedOverlayActions = React.memo(FeedOverlayActionsBase, areFeedOverlayActionsPropsEqual);
 
 const styles = StyleSheet.create({
-  container: {
+  overlayRoot: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  topRightZone: {
+    position: 'absolute',
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  rightRailZone: {
+    position: 'absolute',
     width: 48,
     alignItems: 'center',
-    gap: spacing.xs,
+  },
+  bottomRightZone: {
+    position: 'absolute',
+    alignItems: 'flex-end',
+    gap: 6,
   },
   counterFallback: {
     width: 44,
@@ -209,8 +321,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  scaledActionWrap: {
-    transform: [{ scale: 0.88 }],
+  shareHubWrap: {
+    width: 52,
+    minHeight: 52,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   pressed: {
     transform: [{ scale: 0.98 }],

@@ -156,6 +156,8 @@ export function FeedScreen() {
         holdFastForwardRate={feedHoldFastForwardSpeed}
         preserveAspectRatio={feedPreserveAspectRatio}
         onToggleMute={handleToggleMute}
+        safeAreaTop={insets.top}
+        safeAreaBottom={insets.bottom}
         onVideoEnd={() => {
           if (!autoSwipeFeedVideos) return;
           if (activeId !== item.id) return;
@@ -200,6 +202,8 @@ export function FeedScreen() {
       isFocused,
       videos.length,
       viewportHeight,
+      insets.bottom,
+      insets.top,
     ]
   );
 

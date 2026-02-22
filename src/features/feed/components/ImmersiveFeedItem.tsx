@@ -1,9 +1,8 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import { FeedInfoPopup } from '@/src/features/feed/components/FeedInfoPopup';
 import { FeedOverlayActions } from '@/src/features/feed/components/FeedOverlayActions';
 import { VideoPlayer } from '@/src/features/feed/components/VideoPlayer';
 import { AppText } from '@/src/shared/components/ui/AppText';
@@ -25,9 +24,9 @@ type ImmersiveFeedItemProps = {
   preserveAspectRatio: boolean;
   onVideoEnd?: () => void;
   onToggleMute: () => void;
+  safeAreaTop: number;
+  safeAreaBottom: number;
 };
-
-const INFO_AUTO_DISMISS_MS = 2800;
 
 function ImmersiveFeedItemBase({
   video,
@@ -41,26 +40,11 @@ function ImmersiveFeedItemBase({
   preserveAspectRatio,
   onVideoEnd,
   onToggleMute,
+  safeAreaTop,
+  safeAreaBottom,
 }: ImmersiveFeedItemProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
-  const [infoVisible, setInfoVisible] = useState(false);
-
-  useEffect(() => {
-    if (!isActive && infoVisible) {
-      setInfoVisible(false);
-    }
-  }, [infoVisible, isActive]);
-
-  useEffect(() => {
-    if (!infoVisible) return;
-    const timer = setTimeout(() => {
-      setInfoVisible(false);
-    }, INFO_AUTO_DISMISS_MS);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [infoVisible]);
 
   const uploaderName = video.uploader ? `@${video.uploader.username}` : t('video.anonymous');
   const title = video.title?.trim() || t('video.untitled');
@@ -68,9 +52,6 @@ function ImmersiveFeedItemBase({
   const hasPlayableUrl = typeof video.url === 'string' && video.url.length > 0;
 
   const bottomScrim = useMemo(() => ['transparent', withAlpha('#000000', 0.68)] as const, []);
-  const handleToggleInfo = useCallback(() => {
-    setInfoVisible((prev) => !prev);
-  }, []);
 
   return (
     <View style={[styles.container, { height }]}>
@@ -99,41 +80,38 @@ function ImmersiveFeedItemBase({
       <LinearGradient colors={bottomScrim} style={styles.bottomScrim} pointerEvents="none" />
 
       <View style={styles.overlayRoot} pointerEvents="box-none">
-        <View style={styles.bottomRow}>
-          <View style={styles.leftMeta}>
-            <AppText variant="heading2" style={styles.title} numberOfLines={2}>
-              {title}
-            </AppText>
-            {video.is_nsfw ? (
-              <View style={[styles.nsfwBadge, { borderColor: withAlpha(palette.warning, 0.9) }]}>
-                <AppText variant="caption" style={{ color: palette.warning }}>
-                  {t('video.nsfw')}
-                </AppText>
-              </View>
-            ) : null}
-            {description ? (
-              <AppText variant="caption" style={styles.subtitle} numberOfLines={2}>
-                {description}
-              </AppText>
-            ) : null}
-            <View style={styles.metaStack}>
-              <AppText variant="caption" style={styles.metaText} numberOfLines={1}>
-                {uploaderName}
-              </AppText>
-              <AppText variant="caption" style={styles.metaDate} numberOfLines={1}>
-                {formatDate(video.created_at)}
+        <View style={styles.leftMeta}>
+          <AppText variant="heading2" style={styles.title} numberOfLines={2}>
+            {title}
+          </AppText>
+          {video.is_nsfw ? (
+            <View style={[styles.nsfwBadge, { borderColor: withAlpha(palette.warning, 0.9) }]}>
+              <AppText variant="caption" style={{ color: palette.warning }}>
+                {t('video.nsfw')}
               </AppText>
             </View>
-            <FeedInfoPopup video={video} visible={infoVisible} />
+          ) : null}
+          {description ? (
+            <AppText variant="caption" style={styles.subtitle} numberOfLines={2}>
+              {description}
+            </AppText>
+          ) : null}
+          <View style={styles.metaStack}>
+            <AppText variant="caption" style={styles.metaText} numberOfLines={1}>
+              {uploaderName}
+            </AppText>
+            <AppText variant="caption" style={styles.metaDate} numberOfLines={1}>
+              {formatDate(video.created_at)}
+            </AppText>
           </View>
-          <FeedOverlayActions
-            video={video}
-            infoVisible={infoVisible}
-            onToggleInfo={handleToggleInfo}
-            muted={muted}
-            onToggleMute={onToggleMute}
-          />
         </View>
+        <FeedOverlayActions
+          video={video}
+          muted={muted}
+          onToggleMute={onToggleMute}
+          safeAreaTop={safeAreaTop}
+          safeAreaBottom={safeAreaBottom}
+        />
       </View>
     </View>
   );
@@ -151,6 +129,8 @@ function areImmersiveFeedItemPropsEqual(prev: ImmersiveFeedItemProps, next: Imme
     prev.preserveAspectRatio === next.preserveAspectRatio &&
     prev.onVideoEnd === next.onVideoEnd &&
     prev.onToggleMute === next.onToggleMute &&
+    prev.safeAreaTop === next.safeAreaTop &&
+    prev.safeAreaBottom === next.safeAreaBottom &&
     prev.video.id === next.video.id &&
     prev.video.url === next.video.url &&
     prev.video.is_liked === next.video.is_liked &&
@@ -189,23 +169,16 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
     paddingBottom: spacing.xl,
   },
   metaText: {
     color: '#FFFFFF',
     opacity: 0.92,
   },
-  bottomRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
   leftMeta: {
-    flex: 1,
     gap: spacing.sm,
     paddingBottom: spacing.sm,
+    maxWidth: '76%',
   },
   title: {
     color: '#FFFFFF',

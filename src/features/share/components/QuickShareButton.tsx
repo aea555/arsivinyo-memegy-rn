@@ -14,6 +14,7 @@ type QuickShareButtonProps = {
   suggestedName?: string | null;
   variant?: 'default' | 'overlay';
   iconOnly?: boolean;
+  onPressStart?: () => void;
 };
 
 export function QuickShareButton({
@@ -21,6 +22,7 @@ export function QuickShareButton({
   suggestedName,
   variant = 'default',
   iconOnly = false,
+  onPressStart,
 }: QuickShareButtonProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
@@ -38,7 +40,10 @@ export function QuickShareButton({
 
   return (
     <Pressable
-      onPress={() => void onQuickShare()}
+      onPress={() => {
+        onPressStart?.();
+        void onQuickShare();
+      }}
       disabled={isBusy}
       style={({ pressed }) => [
         buttonStyle,

@@ -14,9 +14,16 @@ type ShareButtonProps = {
   title?: string | null;
   variant?: 'default' | 'overlay';
   iconOnly?: boolean;
+  onPressStart?: () => void;
 };
 
-export function ShareButton({ url, title, variant = 'default', iconOnly = false }: ShareButtonProps) {
+export function ShareButton({
+  url,
+  title,
+  variant = 'default',
+  iconOnly = false,
+  onPressStart,
+}: ShareButtonProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
   const showToast = useToastStore((state) => state.showToast);
@@ -50,7 +57,10 @@ export function ShareButton({ url, title, variant = 'default', iconOnly = false 
 
   return (
     <Pressable
-      onPress={() => void onPress()}
+      onPress={() => {
+        onPressStart?.();
+        void onPress();
+      }}
       style={({ pressed }) => [
         buttonStyle,
         {
