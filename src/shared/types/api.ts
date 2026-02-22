@@ -172,7 +172,10 @@ export type CompleteOnboardingRequest = {
   terms_version: string;
 };
 
-export type TermsResponse = {
+export type TermsLocale = 'en' | 'tr';
+
+export type LocalizedTermsResponse = {
+  language: TermsLocale;
   version: string;
   url?: string | null;
   content_type?: string | null;
@@ -182,6 +185,13 @@ export type TermsResponse = {
   jurisdictions: string[];
   legal_contact_email?: string | null;
   abuse_contact_email?: string | null;
+};
+
+export type TermsBundleResponse = {
+  version: string;
+  default_language: TermsLocale;
+  available_languages: TermsLocale[];
+  documents: Record<TermsLocale, LocalizedTermsResponse>;
 };
 
 export type ModeStatusResponse = {

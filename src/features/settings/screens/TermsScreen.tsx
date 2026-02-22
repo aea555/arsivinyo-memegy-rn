@@ -3,7 +3,7 @@ import { Linking, ScrollView, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
-import { getTerms } from '@/src/features/settings/api/systemApi';
+import { getTermsByLocale, resolveTermsLocale } from '@/src/features/settings/api/systemApi';
 import { MarkdownDocument } from '@/src/features/settings/components/MarkdownDocument';
 import { Screen } from '@/src/shared/components/layout/Screen';
 import { AppText } from '@/src/shared/components/ui/AppText';
@@ -16,10 +16,11 @@ type TermsScreenProps = {
 };
 
 export function TermsScreen({ showBack = true }: TermsScreenProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveTermsLocale(i18n.resolvedLanguage ?? i18n.language);
   const { data, isLoading, isRefetching, refetch } = useQuery({
-    queryKey: ['system', 'terms'],
-    queryFn: getTerms,
+    queryKey: ['system', 'terms', locale],
+    queryFn: () => getTermsByLocale(locale),
   });
 
   return (

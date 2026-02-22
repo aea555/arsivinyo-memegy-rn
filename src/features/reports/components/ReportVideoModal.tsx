@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
 import React, { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -50,6 +51,7 @@ type ReportVideoModalProps = {
 export function ReportVideoModal({ visible, videoId, onClose }: ReportVideoModalProps) {
   const { t } = useTranslation();
   const { palette } = useTheme();
+  const queryClient = useQueryClient();
   const showToast = useToastStore((state) => state.showToast);
   const [selected, setSelected] = useState<AbuseReasonCode[]>([]);
   const [details, setDetails] = useState('');
@@ -78,10 +80,21 @@ export function ReportVideoModal({ visible, videoId, onClose }: ReportVideoModal
 
     setSubmitting(true);
     try {
-      await reportVideo(videoId, {
+      const response = await reportVideo(videoId, {
         reason_codes: selected,
         details: details.trim().length ? details.trim() : null,
       });
+      const invalidations: Promise<unknown>[] = [
+        queryClient.invalidateQueries({ queryKey: ['myReports'] }),
+      ];
+      if (response.report.auto_quarantined) {
+        invalidations.push(
+          queryClient.invalidateQueries({ queryKey: ['feed'], refetchType: 'inactive' }),
+          queryClient.invalidateQueries({ queryKey: ['search'], refetchType: 'inactive' }),
+          queryClient.invalidateQueries({ queryKey: ['myVideos'], refetchType: 'inactive' })
+        );
+      }
+      void Promise.allSettled(invalidations);
       showToast(t('reports.submitted'), 'success');
       setSelected([]);
       setDetails('');

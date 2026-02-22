@@ -67,6 +67,11 @@ export function MyReportsScreen() {
     <Screen title={t('reports.myReportsTitle')} showBack contentStyle={styles.container}>
       <FlatList
         data={items}
+        style={styles.list}
+        contentContainerStyle={[
+          styles.listContent,
+          !isLoading && items.length === 0 ? styles.emptyListContent : undefined,
+        ]}
         keyExtractor={(item) => item.report.id}
         onEndReached={() => {
           if (hasNextPage && !isFetchingNextPage) {
@@ -135,6 +140,16 @@ export function MyReportsScreen() {
 const styles = StyleSheet.create({
   container: {
     gap: spacing.md,
+  },
+  list: {
+    flex: 1,
+  },
+  listContent: {
+    paddingBottom: spacing.xl,
+  },
+  emptyListContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   card: {
     marginBottom: spacing.sm,

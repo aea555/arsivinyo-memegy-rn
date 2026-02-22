@@ -36,7 +36,7 @@
     "ageConfirmLabel": "18 ya\u015f\u0131ndan b\u00fcy\u00fck oldu\u011fumu onayl\u0131yorum",
     "ageConfirmHint": "Memegy kullanmak i\u00e7in en az 18 ya\u015f\u0131nda olmal\u0131s\u0131n.",
     "ageConfirmationRequired": "Ya\u015f onay\u0131 gerekli.",
-    "termsConsentLabel": "\u015eartlar\u0131 kabul ediyorum ({{version}})",
+    "termsConsentLabel": "\u015eartlar\u0131 kabul ediyorum",
     "termsConsentHint": "Devam etmek i\u00e7in g\u00fcncel \u015fartlar\u0131 kabul etmelisin.",
     "termsConsentRequired": "\u015eart onay\u0131 gerekli.",
     "readTerms": "\u015eartlar\u0131 oku"
@@ -345,9 +345,9 @@
     "noDetails": "Video ayr\u0131nt\u0131lar\u0131na ula\u015f\u0131lamad\u0131."
   },
   "onboarding": {
-    "title": "Onboarding'i tamamla",
+    "title": "Devam etmek i\u00e7in onaylar\u0131 tamamla",
     "subtitle": "Devam etmek i\u00e7in ya\u015f\u0131n\u0131 onayla ve \u015fartlar\u0131 kabul et.",
-    "continue": "Onboarding'i tamamla",
+    "continue": "Onaylar\u0131 tamamla",
     "submitting": "Tamamlan\u0131yor...",
     "statusUnavailable": "Onboarding durumu al\u0131namad\u0131.",
     "completeFailed": "Onboarding tamamlanamad\u0131."
@@ -367,14 +367,14 @@
     "selectReason": "En az bir neden se\u00e7.",
     "maxReasons": "En fazla 5 neden se\u00e7ebilirsin.",
     "detailsPlaceholder": "\u0130ste\u011fe ba\u011fl\u0131 detaylar",
-    "openReport": "Videoyu bildir",
-    "myReportsTitle": "Bildirimlerim",
-    "myReportsSubtitle": "G\u00f6nderdi\u011fin bildirimleri takip et",
-    "reportStatusLabel": "Bildirim durumu: {{status}}",
-    "categoryLabel": "\u0130hlal bildirimi kategorisi: {{category}}",
+    "openReport": "Videoyu rapor et",
+    "myReportsTitle": "Raporlar\u0131m",
+    "myReportsSubtitle": "G\u00f6nderdi\u011fin raporları takip et",
+    "reportStatusLabel": "Rapor durumu: {{status}}",
+    "categoryLabel": "\u0130hlal raporu kategorisi: {{category}}",
     "visibilityLabel": "Video g\u00f6r\u00fcn\u00fcrl\u00fc\u011f\u00fc: {{visibility}}",
     "moderationState": "Moderasyon: {{state}}",
-    "empty": "Hen\u00fcz bildirim yok.",
+    "empty": "Hen\u00fcz rapor yok.",
     "status": {
       "open": "A\u00e7\u0131k",
       "under_review": "\u0130ncelemede",

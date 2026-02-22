@@ -36,7 +36,7 @@
     "ageConfirmLabel": "I confirm I am 18+",
     "ageConfirmHint": "You must be at least 18 years old to use Memegy.",
     "ageConfirmationRequired": "Age confirmation is required.",
-    "termsConsentLabel": "I agree to Terms ({{version}})",
+    "termsConsentLabel": "I agree to Terms",
     "termsConsentHint": "You must accept the current terms to continue.",
     "termsConsentRequired": "Terms consent is required.",
     "readTerms": "Read terms"

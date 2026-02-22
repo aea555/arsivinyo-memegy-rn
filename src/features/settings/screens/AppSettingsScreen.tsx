@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import i18n from '@/src/shared/locales/i18n';
 import { Screen } from '@/src/shared/components/layout/Screen';
+import { queryClient } from '@/src/shared/services/api/queryClient';
 import { LocalStorage } from '@/src/shared/services/storage/LocalStorage';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
@@ -23,6 +24,7 @@ export function AppSettingsScreen() {
   const updateLanguage = async (language: 'en' | 'tr') => {
     await i18n.changeLanguage(language);
     await LocalStorage.setLanguage(language);
+    await queryClient.invalidateQueries({ queryKey: ['system', 'terms'] });
   };
 
   return (

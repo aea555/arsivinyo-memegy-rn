@@ -55,6 +55,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await authSessionManager.bootstrapFromStorage();
     const accessToken = authSessionManager.getAccessToken();
     if (!accessToken) {
+      queryClient.removeQueries({ queryKey: ['me'] });
       set({ status: 'unauthenticated', mode: 'normal', user: null, pendingSignup: null });
       return;
     }
@@ -69,6 +70,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     try {
       const response = await apiClient.get<UserDto>('/users/me');
+      queryClient.setQueryData(['me'], response.data);
       set({
         status: 'authenticated',
         mode: modeForUser(response.data, maintenanceEnabled),
@@ -94,6 +96,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (shouldForceLogout) {
         await authSessionManager.clearSession();
+        queryClient.removeQueries({ queryKey: ['me'] });
         set({ status: 'unauthenticated', mode: 'normal', user: null, pendingSignup: null });
         return;
       }
@@ -122,14 +125,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Keep previous mode on transient failure.
     }
   },
-  setAuthenticated: (user) =>
+  setAuthenticated: (user) => {
+    queryClient.setQueryData(['me'], user);
     set({
       status: 'authenticated',
       mode: modeForUser(user, false),
       user,
       pendingSignup: null,
-    }),
-  setUser: (user) => set((state) => ({ user, mode: modeForUser(user, state.mode === 'maintenance') })),
+    });
+  },
+  setUser: (user) => {
+    if (user) {
+      queryClient.setQueryData(['me'], user);
+    } else {
+      queryClient.removeQueries({ queryKey: ['me'] });
+    }
+    set((state) => ({ user, mode: modeForUser(user, state.mode === 'maintenance') }));
+  },
   setPendingSignup: (payload) => set({ pendingSignup: payload }),
   clearPendingSignup: () => set({ pendingSignup: null }),
   logout: async () => {

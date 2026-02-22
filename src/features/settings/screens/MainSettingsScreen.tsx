@@ -70,6 +70,10 @@ export function MainSettingsScreen() {
           isLast
         />
         */}
+        {/* <>
+          <AppText style={styles.otaUpdatesText} variant="bodyBold">OTA Updates ON</AppText>
+          <AppText style={styles.otaUpdatesText} variant="caption">Version: dev110</AppText>
+        </> */}
       </Card>
     </Screen>
   );
@@ -82,5 +86,9 @@ const styles = StyleSheet.create({
   listCard: {
     padding: 0,
     overflow: 'hidden',
+  },
+  otaUpdatesText: {
+    textAlign: 'center',
+    padding: spacing.lg,
   },
 });
