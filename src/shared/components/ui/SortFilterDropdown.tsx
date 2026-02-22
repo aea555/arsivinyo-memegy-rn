@@ -24,6 +24,7 @@ type SortFilterDropdownProps<T extends string> = {
   quickToggleEnabled: boolean;
   onQuickToggle: () => void;
   quickToggleA11yLabel?: string;
+  quickToggleTone?: 'accent' | 'warning';
   triggerMaxWidth?: number;
   dropdownMinWidth?: number;
 };
@@ -40,10 +41,12 @@ export function SortFilterDropdown<T extends string>({
   quickToggleEnabled,
   onQuickToggle,
   quickToggleA11yLabel,
+  quickToggleTone = 'accent',
   triggerMaxWidth = 220,
   dropdownMinWidth = 180,
 }: SortFilterDropdownProps<T>) {
   const { palette } = useTheme();
+  const quickToggleColor = quickToggleTone === 'warning' ? palette.warning : palette.accent;
 
   return (
     <View style={styles.root}>
@@ -112,10 +115,10 @@ export function SortFilterDropdown<T extends string>({
               styles.quickToggleRow,
               {
                 borderColor: quickToggleEnabled
-                  ? withAlpha(palette.accent, 0.42)
+                  ? withAlpha(quickToggleColor, 0.42)
                   : withAlpha(palette.border, 0.78),
                 backgroundColor: quickToggleEnabled
-                  ? withAlpha(palette.accent, 0.14)
+                  ? withAlpha(quickToggleColor, 0.14)
                   : withAlpha(palette.overlay, 0.5),
               },
               pressed ? styles.quickTogglePressed : null,
@@ -124,17 +127,19 @@ export function SortFilterDropdown<T extends string>({
             accessibilityState={{ checked: quickToggleEnabled }}
             accessibilityLabel={quickToggleA11yLabel ?? quickToggleLabel}
           >
-            <AppText style={{ color: palette.text.primary }}>{quickToggleLabel}</AppText>
+            <AppText style={{ color: quickToggleEnabled ? quickToggleColor : palette.text.primary }}>
+              {quickToggleLabel}
+            </AppText>
             <View
               style={[
                 styles.quickToggleTrack,
                 {
                   justifyContent: quickToggleEnabled ? 'flex-end' : 'flex-start',
                   borderColor: quickToggleEnabled
-                    ? withAlpha(palette.accent, 0.6)
+                    ? withAlpha(quickToggleColor, 0.6)
                     : withAlpha(palette.border, 0.82),
                   backgroundColor: quickToggleEnabled
-                    ? withAlpha(palette.accent, 0.36)
+                    ? withAlpha(quickToggleColor, 0.36)
                     : withAlpha(palette.surface, 0.65),
                 },
               ]}
@@ -143,7 +148,7 @@ export function SortFilterDropdown<T extends string>({
                 style={[
                   styles.quickToggleThumb,
                   {
-                    backgroundColor: quickToggleEnabled ? palette.accent : palette.text.secondary,
+                    backgroundColor: quickToggleEnabled ? quickToggleColor : palette.text.secondary,
                   },
                 ]}
               />

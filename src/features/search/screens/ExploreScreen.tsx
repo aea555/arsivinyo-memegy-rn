@@ -164,6 +164,7 @@ export function ExploreScreen() {
           quickToggleLabel={t('search.showNsfw')}
           quickToggleA11yLabel={t('search.showNsfw')}
           quickToggleEnabled={searchIncludeNsfw}
+          quickToggleTone="warning"
           onQuickToggle={() => {
             void setSearchIncludeNsfw(!searchIncludeNsfw);
           }}

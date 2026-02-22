@@ -311,6 +311,7 @@ export function FeedScreen() {
             quickToggleLabel={t('feed.showNsfw')}
             quickToggleA11yLabel={t('feed.showNsfw')}
             quickToggleEnabled={feedIncludeNsfw}
+            quickToggleTone="warning"
             onQuickToggle={() => {
               void setFeedIncludeNsfw(!feedIncludeNsfw);
             }}

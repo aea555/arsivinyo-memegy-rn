@@ -11,6 +11,7 @@ import { useToggleLike } from '@/src/features/feed/hooks/useToggleLike';
 import { AppText } from '@/src/shared/components/ui/AppText';
 import { Card } from '@/src/shared/components/ui/Card';
 import { LikeButton } from '@/src/shared/components/ui/LikeButton';
+import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { formatDate } from '@/src/shared/utils/formatters';
@@ -57,12 +58,15 @@ function VideoCardBase({
 
   return (
     <Card style={styles.card}>
-      <VideoPlayer
+      <View style={styles.mediaBleed}>
+        <VideoPlayer
         uri={video.url}
         isActive={isActive}
         isScreenActive={isScreenActive}
+        flatBottomCorners
         showMinimalControls
       />
+      </View>
       <View style={styles.meta}>
         <View style={styles.metaTopRow}>
           <View style={styles.metaText}>
@@ -182,6 +186,11 @@ export function VideoCard(props: VideoCardProps) {
 const styles = StyleSheet.create({
   card: {
     marginBottom: spacing.lg,
+  },
+  mediaBleed: {
+    marginTop: -layoutConfig.card.padding,
+    marginLeft: -layoutConfig.card.padding,
+    marginRight: -layoutConfig.card.padding,
   },
   meta: {
     marginTop: spacing.md,

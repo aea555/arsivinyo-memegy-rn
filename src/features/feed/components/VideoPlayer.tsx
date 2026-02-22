@@ -25,6 +25,7 @@ type VideoPlayerProps = {
   isActive: boolean;
   isScreenActive?: boolean;
   variant?: 'card' | 'immersive';
+  flatBottomCorners?: boolean;
   height?: number;
   contentFit?: 'cover' | 'contain';
   showNativeControls?: boolean;
@@ -99,6 +100,7 @@ export function VideoPlayer({
   isActive,
   isScreenActive = true,
   variant = 'card',
+  flatBottomCorners = false,
   height,
   contentFit,
   showNativeControls,
@@ -117,11 +119,12 @@ export function VideoPlayer({
 
   if (!canMountNativePlayer) {
     return (
-      <InactiveVideoPlayerShell
-        variant={variant}
-        height={height}
-      />
-    );
+    <InactiveVideoPlayerShell
+      variant={variant}
+      flatBottomCorners={flatBottomCorners}
+      height={height}
+    />
+  );
   }
 
   return (
@@ -130,6 +133,7 @@ export function VideoPlayer({
       isActive={isActive}
       isScreenActive={isScreenActive}
       variant={variant}
+      flatBottomCorners={flatBottomCorners}
       height={height}
       contentFit={contentFit}
       showNativeControls={showNativeControls}
@@ -147,9 +151,13 @@ export function VideoPlayer({
   );
 }
 
-type InactiveVideoPlayerShellProps = Pick<VideoPlayerProps, 'variant' | 'height'>;
+type InactiveVideoPlayerShellProps = Pick<VideoPlayerProps, 'variant' | 'flatBottomCorners' | 'height'>;
 
-function InactiveVideoPlayerShell({ variant = 'card', height }: InactiveVideoPlayerShellProps) {
+function InactiveVideoPlayerShell({
+  variant = 'card',
+  flatBottomCorners = false,
+  height,
+}: InactiveVideoPlayerShellProps) {
   const { palette } = useTheme();
   const isImmersive = variant === 'immersive';
 
@@ -157,6 +165,7 @@ function InactiveVideoPlayerShell({ variant = 'card', height }: InactiveVideoPla
     <View
       style={[
         isImmersive ? styles.immersiveContainer : styles.container,
+        !isImmersive && flatBottomCorners ? styles.flatBottomCorners : null,
         { backgroundColor: palette.surface },
         typeof height === 'number' ? { height } : null,
       ]}
@@ -171,6 +180,7 @@ function VideoPlayerNative({
   isActive,
   isScreenActive = true,
   variant = 'card',
+  flatBottomCorners = false,
   height,
   contentFit,
   showNativeControls,
@@ -1085,6 +1095,7 @@ function VideoPlayerNative({
     <View
       style={[
         isImmersive ? styles.immersiveContainer : styles.container,
+        !isImmersive && flatBottomCorners ? styles.flatBottomCorners : null,
         { backgroundColor: palette.surface },
         typeof height === 'number' ? { height } : null,
       ]}
@@ -1385,6 +1396,10 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 16,
     overflow: 'hidden',
+  },
+  flatBottomCorners: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
   },
   immersiveContainer: {
     borderRadius: 0,

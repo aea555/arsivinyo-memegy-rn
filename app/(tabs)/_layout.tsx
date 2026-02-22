@@ -3,7 +3,7 @@ import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
 import { Tabs, useRouter } from 'expo-router';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, {
   Easing,
   interpolate,
@@ -12,11 +12,13 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { layoutConfig } from '@/src/shared/config/layoutConfig';
 import { ConfirmModal } from '@/src/shared/components/ui/ConfirmModal';
 import { notifyFeedRandomRefresh } from '@/src/features/feed/services/feedEvents';
 import { LocalStorage } from '@/src/shared/services/storage/LocalStorage';
+import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { withAlpha } from '@/src/shared/theme/colorUtils';
 import { useShadows } from '@/src/shared/theme/shadows';
@@ -199,6 +201,7 @@ export default function TabLayout() {
   const { t } = useTranslation();
   const { palette } = useTheme();
   const shadows = useShadows();
+  const insets = useSafeAreaInsets();
   const authStatus = useAuthStore((state) => state.status);
   const [showOtaSuccessModal, setShowOtaSuccessModal] = React.useState(false);
   const hasCheckedOtaSuccessModalRef = React.useRef(false);
@@ -236,6 +239,11 @@ export default function TabLayout() {
     };
   }, [authStatus]);
 
+  const androidBottomEscape = Platform.OS === 'android' ? spacing.xs : 0;
+  const tabBarBottomInset = insets.bottom + androidBottomEscape;
+  const tabBarHeight = layoutConfig.tabBar.height + tabBarBottomInset;
+  const tabBarPaddingBottom = layoutConfig.tabBar.paddingBottom + tabBarBottomInset;
+
   return (
     <>
       <Tabs
@@ -249,8 +257,8 @@ export default function TabLayout() {
             borderTopColor: withAlpha(palette.border, 0.9),
             borderTopWidth: 1,
             overflow: 'visible',
-            height: layoutConfig.tabBar.height,
-            paddingBottom: layoutConfig.tabBar.paddingBottom,
+            height: tabBarHeight,
+            paddingBottom: tabBarPaddingBottom,
             paddingTop: layoutConfig.tabBar.paddingTop,
             paddingHorizontal: layoutConfig.tabBar.paddingHorizontal,
             ...shadows.medium,
