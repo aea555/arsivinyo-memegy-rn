@@ -6,6 +6,7 @@ import {
   Modal,
   PanResponder,
   PanResponderGestureState,
+  Platform,
   Pressable,
   PressableProps,
   StyleSheet,
@@ -188,6 +189,7 @@ function VideoPlayerNative({
   const defaultAutoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
   const autoPlayVideos = autoPlayEnabled ?? defaultAutoPlayVideos;
   const isImmersive = variant === 'immersive';
+  const videoSurfaceType = Platform.OS === 'android' ? 'textureView' : 'surfaceView';
   const [appState, setAppState] = React.useState<AppStateStatus>(AppState.currentState);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [isCustomFullscreen, setIsCustomFullscreen] = React.useState(false);
@@ -1094,6 +1096,7 @@ function VideoPlayerNative({
           ref={videoViewRef}
           style={videoSurfaceStyle}
           player={videoPlayer}
+          surfaceType={videoSurfaceType}
           contentFit={contentFit ?? (isImmersive ? 'cover' : 'cover')}
           nativeControls={showNativeControls ?? (!isImmersive && !shouldShowMinimalControls)}
           onFullscreenEnter={() => {
@@ -1273,6 +1276,7 @@ function VideoPlayerNative({
             <VideoView
               style={styles.customFullscreenVideo}
               player={videoPlayer}
+              surfaceType={Platform.OS === 'android' ? 'textureView' : 'surfaceView'}
               contentFit={contentFit ?? 'contain'}
               nativeControls={false}
             />
