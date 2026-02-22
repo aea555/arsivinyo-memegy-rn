@@ -129,11 +129,10 @@
     "unsupportedSource": "This file source is not supported. Please reselect the video.",
     "fileUnreadable": "We couldn't read this video file. Please select it again."
     ,
-    "isNsfwLabel": "NSFW tag",
-    "isNsfwHint": "Select whether this upload contains NSFW content.",
-    "isNsfwYes": "NSFW",
-    "isNsfwNo": "SFW",
-    "isNsfwRequired": "Please select an NSFW tag before uploading.",
+    "isNsfwLabel": "NSFW",
+    "isNsfwHint": "Turn this on only if the video contains NSFW content.",
+    "isNsfwToggleOn": "Video is NSFW",
+    "isNsfwToggleOff": "Video is SFW",
     "readOnlyEnabled": "Uploads are temporarily disabled (read-only mode).",
     "readOnlyStatusUnavailable": "Could not verify read-only status. Try again."
   },
@@ -238,6 +237,7 @@
     "colorBackground": "Background",
     "colorSurface": "Surface",
     "colorBorder": "Border",
+    "colorSwitchThumb": "Switch thumb",
     "colorTextPrimary": "Text primary",
     "colorTextSecondary": "Text secondary",
     "colorTextDisabled": "Text disabled",

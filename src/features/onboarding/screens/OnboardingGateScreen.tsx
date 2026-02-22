@@ -91,6 +91,7 @@ export function OnboardingGateScreen() {
             value={ageConfirmed}
             onValueChange={setAgeConfirmed}
             trackColor={{ true: palette.accent, false: palette.border }}
+            thumbColor={ageConfirmed ? palette.switchThumb : palette.surface}
             disabled={submitting}
           />
         </View>
@@ -106,6 +107,7 @@ export function OnboardingGateScreen() {
             value={termsAccepted}
             onValueChange={setTermsAccepted}
             trackColor={{ true: palette.accent, false: palette.border }}
+            thumbColor={termsAccepted ? palette.switchThumb : palette.surface}
             disabled={submitting}
           />
         </View>

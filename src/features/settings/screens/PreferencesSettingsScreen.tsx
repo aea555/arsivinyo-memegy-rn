@@ -34,6 +34,7 @@ export function PreferencesSettingsScreen() {
                 void setFeedIncludeNsfw(value);
               }}
               trackColor={{ true: palette.accent, false: palette.border }}
+              thumbColor={feedIncludeNsfw ? palette.switchThumb : palette.surface}
             />
           </View>
           <View style={styles.dividerWrap}>
@@ -52,6 +53,7 @@ export function PreferencesSettingsScreen() {
                 void setSearchIncludeNsfw(value);
               }}
               trackColor={{ true: palette.accent, false: palette.border }}
+              thumbColor={searchIncludeNsfw ? palette.switchThumb : palette.surface}
             />
           </View>
         </Card>

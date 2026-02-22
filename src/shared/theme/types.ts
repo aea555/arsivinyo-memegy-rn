@@ -7,6 +7,7 @@ export type ThemeColorTokens = {
   background: string;
   surface: string;
   border: string;
+  switchThumb: string;
   textPrimary: string;
   textSecondary: string;
   textDisabled: string;
@@ -56,6 +57,7 @@ export type ResolvedPalette = {
   background: string;
   surface: string;
   border: string;
+  switchThumb: string;
   accent: string;
   success: string;
   warning: string;

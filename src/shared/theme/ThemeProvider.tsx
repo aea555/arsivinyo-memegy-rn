@@ -73,6 +73,7 @@ const resolvePalette = (theme: ThemeDefinition, accent: AccentDefinition, effect
     background: normalizeHexColor(theme.colors.background),
     surface: normalizeHexColor(theme.colors.surface),
     border: normalizeHexColor(theme.colors.border),
+    switchThumb: normalizeHexColor(theme.colors.switchThumb ?? theme.colors.textPrimary),
     accent: accentColor,
     success: normalizeHexColor(theme.colors.success),
     warning: normalizeHexColor(theme.colors.warning),

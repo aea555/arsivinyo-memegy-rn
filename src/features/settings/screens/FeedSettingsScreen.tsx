@@ -53,6 +53,7 @@ export function FeedSettingsScreen() {
                 void setAutoPlayFeedVideos(value);
               }}
               trackColor={{ true: palette.accent, false: palette.border }}
+              thumbColor={autoPlayFeedVideos ? palette.switchThumb : palette.surface}
             />
           </View>
         </Card>
@@ -96,6 +97,7 @@ export function FeedSettingsScreen() {
                 void setAutoSwipeFeedVideos(value);
               }}
               trackColor={{ true: palette.accent, false: palette.border }}
+              thumbColor={autoSwipeFeedVideos ? palette.switchThumb : palette.surface}
             />
           </View>
         </Card>
@@ -113,6 +115,7 @@ export function FeedSettingsScreen() {
                 void setResetFeedVideoOnSwipe(value);
               }}
               trackColor={{ true: palette.accent, false: palette.border }}
+              thumbColor={resetFeedVideoOnSwipe ? palette.switchThumb : palette.surface}
             />
           </View>
         </Card>
@@ -130,6 +133,7 @@ export function FeedSettingsScreen() {
                 void setFeedPreserveAspectRatio(value);
               }}
               trackColor={{ true: palette.accent, false: palette.border }}
+              thumbColor={feedPreserveAspectRatio ? palette.switchThumb : palette.surface}
             />
           </View>
         </Card>

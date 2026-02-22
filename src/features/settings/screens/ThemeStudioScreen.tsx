@@ -28,6 +28,7 @@ const THEME_FIELDS: { key: keyof ThemeDraft['colors']; labelKey: string }[] = [
   { key: 'background', labelKey: 'settings.colorBackground' },
   { key: 'surface', labelKey: 'settings.colorSurface' },
   { key: 'border', labelKey: 'settings.colorBorder' },
+  { key: 'switchThumb', labelKey: 'settings.colorSwitchThumb' },
   { key: 'textPrimary', labelKey: 'settings.colorTextPrimary' },
   { key: 'textSecondary', labelKey: 'settings.colorTextSecondary' },
   { key: 'textDisabled', labelKey: 'settings.colorTextDisabled' },

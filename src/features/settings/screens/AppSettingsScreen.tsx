@@ -56,6 +56,7 @@ export function AppSettingsScreen() {
               void setAutoPlayVideos(value);
             }}
             trackColor={{ true: palette.accent, false: palette.border }}
+            thumbColor={autoPlayVideos ? palette.switchThumb : palette.surface}
           />
         </View>
 
@@ -73,6 +74,7 @@ export function AppSettingsScreen() {
                 void setAuthDebugAggressiveRefresh(value);
               }}
               trackColor={{ true: palette.accent, false: palette.border }}
+              thumbColor={authDebugAggressiveRefresh ? palette.switchThumb : palette.surface}
             />
           </View>
         ) : null}

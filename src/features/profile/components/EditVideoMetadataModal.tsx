@@ -123,6 +123,7 @@ export function EditVideoMetadataModal({
               value={draftAnonymous}
               onValueChange={setDraftAnonymous}
               trackColor={{ true: palette.accent, false: palette.border }}
+              thumbColor={draftAnonymous ? palette.switchThumb : palette.surface}
               disabled={isSaving}
             />
           </View>
@@ -138,6 +139,7 @@ export function EditVideoMetadataModal({
               value={draftNsfw}
               onValueChange={setDraftNsfw}
               trackColor={{ true: palette.accent, false: palette.border }}
+              thumbColor={draftNsfw ? palette.switchThumb : palette.surface}
               disabled={isSaving}
             />
           </View>

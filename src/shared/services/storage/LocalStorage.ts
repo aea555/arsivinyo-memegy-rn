@@ -6,7 +6,7 @@ import {
   DEFAULT_DARK_THEME_ID,
   DEFAULT_LIGHT_THEME_ID,
 } from '@/src/shared/theme/presets';
-import { ThemeSettingsState } from '@/src/shared/theme/types';
+import { ThemeColorTokens, ThemeDefinition, ThemeSettingsState } from '@/src/shared/theme/types';
 
 const KEYS = {
   THEME: 'theme_mode',
@@ -42,13 +42,23 @@ function isThemeSettingsShape(value: unknown): value is ThemeSettingsState {
 }
 
 function ensureThemeSettings(value: ThemeSettingsState): ThemeSettingsState {
+  const normalizeThemeColors = (colors: ThemeColorTokens): ThemeColorTokens => ({
+    ...colors,
+    switchThumb: colors.switchThumb ?? colors.textPrimary ?? '#FFFFFF',
+  });
+
+  const normalizeTheme = (theme: ThemeDefinition): ThemeDefinition => ({
+    ...theme,
+    colors: normalizeThemeColors(theme.colors),
+  });
+
   return {
     version: 1,
     mode: value.mode,
     lightThemeId: value.lightThemeId || DEFAULT_LIGHT_THEME_ID,
     darkThemeId: value.darkThemeId || DEFAULT_DARK_THEME_ID,
     accentId: value.accentId || DEFAULT_ACCENT_ID,
-    customThemes: value.customThemes ?? [],
+    customThemes: (value.customThemes ?? []).map(normalizeTheme),
     customAccents: value.customAccents ?? [],
   };
 }

@@ -167,7 +167,7 @@ export function UploadScreen() {
   const [isPreviewLooping, setIsPreviewLooping] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
-  const [isNsfw, setIsNsfw] = useState<boolean | null>(null);
+  const [isNsfw, setIsNsfw] = useState(false);
   const [isReadOnlyEnabled, setIsReadOnlyEnabled] = useState(false);
   const [isReadOnlyChecking, setIsReadOnlyChecking] = useState(false);
 
@@ -308,10 +308,6 @@ export function UploadScreen() {
         showToast(t('upload.readOnlyEnabled'), 'error');
         return;
       }
-      if (typeof isNsfw !== 'boolean') {
-        showToast(t('upload.isNsfwRequired'), 'error');
-        return;
-      }
       setLoading(true);
       const resolvedTitle =
         clampUtf8Bytes((options.customTitle ?? '').trim(), UPLOAD_VIDEO_TITLE_MAX_BYTES) ||
@@ -428,10 +424,6 @@ export function UploadScreen() {
       showToast(t('upload.readOnlyEnabled'), 'error');
       return;
     }
-    if (typeof isNsfw !== 'boolean') {
-      showToast(t('upload.isNsfwRequired'), 'error');
-      return;
-    }
     setLoading(true);
 
     try {
@@ -481,10 +473,6 @@ export function UploadScreen() {
     if (loading) return;
     if (isReadOnlyEnabled) {
       showToast(t('upload.readOnlyEnabled'), 'error');
-      return;
-    }
-    if (typeof isNsfw !== 'boolean') {
-      showToast(t('upload.isNsfwRequired'), 'error');
       return;
     }
     if (!isDownloaderConfigured) {
@@ -561,30 +549,42 @@ export function UploadScreen() {
     clipboardState === 'saving' ||
     clipboardState === 'uploading';
 
-  const nsfwOptions = useMemo(
-    () => [
-      { label: t('upload.isNsfwNo'), value: 'no' },
-      { label: t('upload.isNsfwYes'), value: 'yes' },
-    ],
-    [t]
+  const nsfwToggleCard = (
+    <View
+      style={[
+        styles.nsfwCard,
+        {
+          borderColor: isNsfw ? palette.warning : palette.border,
+          backgroundColor: palette.background,
+        },
+      ]}
+    >
+      <View style={styles.nsfwToggleRow}>
+        <View style={styles.nsfwToggleText}>
+          <AppText variant="bodyBold" style={{ color: isNsfw ? palette.warning : palette.text.primary }}>
+            {t('upload.isNsfwLabel')}
+          </AppText>
+          <AppText variant="caption" style={{ color: isNsfw ? palette.warning : palette.text.secondary }}>
+            {isNsfw ? t('upload.isNsfwToggleOn') : t('upload.isNsfwToggleOff')}
+          </AppText>
+        </View>
+        <Switch
+          value={isNsfw}
+          onValueChange={setIsNsfw}
+          trackColor={{ true: palette.warning, false: palette.border }}
+          thumbColor={isNsfw ? palette.switchThumb : palette.surface}
+        />
+      </View>
+      <AppText variant="caption" style={{ color: palette.text.secondary }}>
+        {t('upload.isNsfwHint')}
+      </AppText>
+    </View>
   );
 
   const manualSection = (
     <>
       <Button label={t('upload.selectVideo')} onPress={handleManualPick} />
-      <View style={[styles.nsfwCard, { borderColor: palette.border, backgroundColor: palette.background }]}>
-        <View style={styles.nsfwHeader}>
-          <AppText variant="bodyBold">{t('upload.isNsfwLabel')}</AppText>
-          <AppText variant="caption" style={{ color: palette.text.secondary }}>
-            {t('upload.isNsfwHint')}
-          </AppText>
-        </View>
-        <SegmentedControl
-          options={nsfwOptions}
-          value={isNsfw === null ? '' : isNsfw ? 'yes' : 'no'}
-          onChange={(value) => setIsNsfw(value === 'yes')}
-        />
-      </View>
+      {nsfwToggleCard}
       {selectedVideo ? (
         <View>
           {!showFullscreen && (
@@ -650,6 +650,7 @@ export function UploadScreen() {
             void setUploadAnonymousDefault(value);
           }}
           trackColor={{ true: palette.accent, false: palette.border }}
+          thumbColor={isAnonymous ? palette.switchThumb : palette.surface}
         />
       </View>
       <View style={styles.footer}>
@@ -661,8 +662,7 @@ export function UploadScreen() {
             !selectedVideo ||
             loading ||
             isReadOnlyEnabled ||
-            isReadOnlyChecking ||
-            typeof isNsfw !== 'boolean'
+            isReadOnlyChecking
           }
         />
       </View>
@@ -680,7 +680,7 @@ export function UploadScreen() {
             opacity: clipboardActionInFlight ? 0.7 : 1,
           },
         ]}
-        disabled={clipboardActionInFlight || isReadOnlyEnabled || typeof isNsfw !== 'boolean'}
+        disabled={clipboardActionInFlight || isReadOnlyEnabled}
         onPress={handleClipboardDownloadAndUpload}
       >
         {clipboardActionInFlight ? (
@@ -708,19 +708,7 @@ export function UploadScreen() {
         </AppText>
       ) : null}
 
-      <View style={[styles.nsfwCard, { borderColor: palette.border, backgroundColor: palette.background }]}>
-        <View style={styles.nsfwHeader}>
-          <AppText variant="bodyBold">{t('upload.isNsfwLabel')}</AppText>
-          <AppText variant="caption" style={{ color: palette.text.secondary }}>
-            {t('upload.isNsfwHint')}
-          </AppText>
-        </View>
-        <SegmentedControl
-          options={nsfwOptions}
-          value={isNsfw === null ? '' : isNsfw ? 'yes' : 'no'}
-          onChange={(value) => setIsNsfw(value === 'yes')}
-        />
-      </View>
+      {nsfwToggleCard}
 
       <View
         style={[
@@ -742,6 +730,7 @@ export function UploadScreen() {
                 void setUploadAnonymousDefault(value);
               }}
               trackColor={{ true: palette.accent, false: palette.border }}
+              thumbColor={isAnonymous ? palette.switchThumb : palette.surface}
             />
           </View>
         </View>
@@ -757,6 +746,7 @@ export function UploadScreen() {
                 void setClipboardUploadAskMetadata(value);
               }}
               trackColor={{ true: palette.accent, false: palette.border }}
+              thumbColor={askMetadataAfterDownload ? palette.switchThumb : palette.surface}
             />
           </View>
         </View>
@@ -772,6 +762,7 @@ export function UploadScreen() {
                 void setClipboardUploadSaveToDevice(value);
               }}
               trackColor={{ true: palette.accent, false: palette.border }}
+              thumbColor={saveToDeviceAlso ? palette.switchThumb : palette.surface}
             />
           </View>
         </View>
@@ -910,17 +901,13 @@ export function UploadScreen() {
                     showToast(t('upload.readOnlyEnabled'), 'error');
                     return;
                   }
-                  if (typeof isNsfw !== 'boolean') {
-                    showToast(t('upload.isNsfwRequired'), 'error');
-                    return;
-                  }
                   await uploadAssetToPlatform(clipboardDownloadedAsset, {
                     fallbackTitle: clipboardFallbackTitle,
                     customTitle: clipboardTitle,
                     customDescription: clipboardDescription,
                   });
                 }}
-                disabled={loading || isReadOnlyEnabled || isReadOnlyChecking || typeof isNsfw !== 'boolean'}
+                disabled={loading || isReadOnlyEnabled || isReadOnlyChecking}
               />
             </View>
           </Pressable>
@@ -1019,7 +1006,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     gap: spacing.xs,
   },
-  nsfwHeader: {
+  nsfwToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  nsfwToggleText: {
+    flex: 1,
     gap: 2,
   },
   removeButton: {
