@@ -15,10 +15,7 @@
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Allow Memegy to access your photo library for downloaded videos.",
         "NSPhotoLibraryAddUsageDescription": "Allow Memegy to save downloaded videos to your photo library.",
-        "LSApplicationQueriesSchemes": [
-          "whatsapp",
-          "whatsapp"
-        ]
+        "LSApplicationQueriesSchemes": ["whatsapp", "whatsapp"]
       }
     },
     "android": {
@@ -70,7 +67,9 @@
         }
       ],
       "expo-video",
-      "expo-media-library"
+      "expo-media-library",
+      "expo-localization",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
