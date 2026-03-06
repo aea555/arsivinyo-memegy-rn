@@ -1,6 +1,11 @@
 import * as FileSystem from 'expo-file-system';
 
-import { DOWNLOADER_API_BASE_URL, DOWNLOADER_APP_SECRET } from '@/src/shared/utils/env';
+import {
+  DOWNLOADER_ACCESS_HEADER_NAME,
+  DOWNLOADER_ACCESS_KEY,
+  DOWNLOADER_API_BASE_URL,
+  DOWNLOADER_APP_SECRET,
+} from '@/src/shared/utils/env';
 
 type DownloaderResponse<T> = {
   success: boolean;
@@ -70,6 +75,9 @@ function buildDownloaderHeaders(includeJsonContentType = true): Record<string, s
   }
   if (DOWNLOADER_APP_SECRET) {
     headers['X-App-Secret'] = DOWNLOADER_APP_SECRET;
+  }
+  if (DOWNLOADER_ACCESS_KEY) {
+    headers[DOWNLOADER_ACCESS_HEADER_NAME] = DOWNLOADER_ACCESS_KEY;
   }
   return headers;
 }
