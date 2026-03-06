@@ -4,13 +4,13 @@
     "slug": "arsivinyo-memegy-rn",
     "version": "1.1.0",
     "orientation": "portrait",
-    "icon": "./assets/images/arsivinyo_memegy_1024.png",
+    "icon": "./assets/images/play_store_512.png",
     "scheme": "memegy",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "icon": "./assets/images/arsivinyo_memegy_1024.png",
+      "icon": "./assets/images/play_store_512.png",
       "bundleIdentifier": "com.anonymous.arsivinyomemegyrn",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Allow Memegy to access your photo library for downloaded videos.",
@@ -39,8 +39,10 @@
         "android.permission.READ_MEDIA_AUDIO"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/arsivinyo_memegy_1024.png"
+        "backgroundColor": "#FFFFFF",
+        "backgroundImage": "./assets/images/ic_launcher_background.png",
+        "foregroundImage": "./assets/images/ic_launcher_foreground.png",
+        "monochromeImage": "./assets/images/ic_launcher_monochrome.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -48,14 +50,14 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/arsivinyo_memegy_512.png"
+      "favicon": "./assets/images/play_store_512.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/arsivinyo_memegy_2048_transparent.png",
+          "image": "./assets/images/ic_launcher_foreground.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "dark": {
