@@ -3,6 +3,10 @@ import { Platform } from 'react-native';
 
 import type {
   LocalCookieProfile,
+  LocalCustomCookieImportInput,
+  LocalCustomCookieImportResult,
+  LocalCustomDomainProfile,
+  LocalCustomDomainSummary,
   LocalDownloadStartInput,
   LocalDownloadStartResult,
   LocalPlatform,
@@ -18,6 +22,11 @@ type LocalDownloaderNativeModule = {
   setCookieDefault(input: { platform: LocalPlatform; profileName: string }): Promise<{ success: boolean }>;
   deleteCookieProfile(input: { platform: LocalPlatform; profileName: string }): Promise<{ success: boolean }>;
   getCookieDefaults(): Promise<Record<LocalPlatform, string | null>>;
+  importCustomCookie(input: LocalCustomCookieImportInput): Promise<LocalCustomCookieImportResult>;
+  listCustomDomains(): Promise<LocalCustomDomainSummary[]>;
+  listCustomDomainProfiles(domain: string): Promise<LocalCustomDomainProfile[]>;
+  setCustomDomainDefault(input: { domain: string; profileName: string }): Promise<{ success: boolean }>;
+  deleteCustomDomainProfile(input: { domain: string; profileName: string }): Promise<{ success: boolean }>;
 };
 
 const unsupported = (): never => {
@@ -46,6 +55,11 @@ const NativeLocalDownloader: LocalDownloaderNativeModule = nativeModule
       setCookieDefault: async () => unsupported(),
       deleteCookieProfile: async () => unsupported(),
       getCookieDefaults: async () => unsupported(),
+      importCustomCookie: async () => unsupported(),
+      listCustomDomains: async () => unsupported(),
+      listCustomDomainProfiles: async () => unsupported(),
+      setCustomDomainDefault: async () => unsupported(),
+      deleteCustomDomainProfile: async () => unsupported(),
     };
 
 export default NativeLocalDownloader;

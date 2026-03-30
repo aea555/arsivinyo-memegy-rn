@@ -1,12 +1,9 @@
 import * as Clipboard from 'expo-clipboard';
 
-import { isSupportedDownloaderUrl } from '@/src/features/upload/utils/downloaderPlatforms';
-
 export type ClipboardUrlErrorCode =
   | 'CLIPBOARD_UNAVAILABLE'
   | 'CLIPBOARD_EMPTY'
-  | 'INVALID_URL'
-  | 'UNSUPPORTED_PLATFORM';
+  | 'INVALID_URL';
 
 export class ClipboardUrlError extends Error {
   constructor(public code: ClipboardUrlErrorCode, message: string) {
@@ -38,10 +35,6 @@ export function normalizeClipboardUrl(text: string): string {
   return withScheme;
 }
 
-export function isSupportedClipboardDownloaderUrl(url: string): boolean {
-  return isSupportedDownloaderUrl(url);
-}
-
 export async function getClipboardUrlForDownloader(): Promise<string> {
   const hasContent = await Clipboard.hasStringAsync();
   if (!hasContent) {
@@ -50,8 +43,5 @@ export async function getClipboardUrlForDownloader(): Promise<string> {
 
   const rawValue = await Clipboard.getStringAsync();
   const normalizedUrl = normalizeClipboardUrl(rawValue);
-  if (!isSupportedClipboardDownloaderUrl(normalizedUrl)) {
-    throw new ClipboardUrlError('UNSUPPORTED_PLATFORM', 'URL platform is not supported.');
-  }
   return normalizedUrl;
 }

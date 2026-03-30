@@ -443,6 +443,212 @@ class LocalDownloaderModule : Module() {
       }
     }
 
+    AsyncFunction("importCustomCookie") { input: Map<String, Any?> ->
+      val uri = (input["uri"] as? String)?.trim().orEmpty()
+      val profileNameRaw = (input["profileName"] as? String)?.trim()
+      val manualDomainRaw = (input["domain"] as? String)?.trim()
+
+      if (uri.isBlank()) {
+        throw IllegalArgumentException("INVALID_URL")
+      }
+
+      val manualDomain = if (manualDomainRaw.isNullOrBlank()) {
+        null
+      } else {
+        canonicalizeDomain(manualDomainRaw) ?: throw IllegalArgumentException("INVALID_CUSTOM_DOMAIN")
+      }
+
+      val sourceUri = Uri.parse(uri)
+      val resolver = requireNotNull(appContext.reactContext).contentResolver
+      val rawContent = resolver.openInputStream(sourceUri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+        ?: throw IllegalArgumentException("Could not open cookie file")
+      val normalizedCookieText = normalizeCookieContent(rawContent)
+
+      val detectedDomains = extractDomainsFromCookieText(normalizedCookieText).toMutableSet()
+      if (manualDomain != null) {
+        detectedDomains.add(manualDomain)
+      }
+      if (detectedDomains.isEmpty()) {
+        throw IllegalStateException("CUSTOM_COOKIE_NO_DOMAIN_DETECTED")
+      }
+
+      val profileNameSeed = if (profileNameRaw.isNullOrBlank()) {
+        "custom_${System.currentTimeMillis()}"
+      } else {
+        profileNameRaw
+      }
+      val profileId = UUID.randomUUID().toString()
+      val payload = normalizedCookieText.toByteArray(Charsets.UTF_8)
+      val boundDomains = detectedDomains.toList().sorted()
+
+      val finalProfileName = synchronized(customCookieIndexLock) {
+        val index = readCustomCookieIndex()
+        val uniqueProfileName = ensureUniqueCustomProfileName(index, boundDomains, sanitizeProfileName(profileNameSeed))
+        val profileFile = customProfileFile(profileId)
+        writeEncryptedCookieFile(profileFile, payload)
+
+        val now = System.currentTimeMillis()
+        val profilesObj = index.getJSONObject("profiles")
+        profilesObj.put(
+          profileId,
+          JSONObject().apply {
+            put("profileName", uniqueProfileName)
+            put("createdAt", now)
+            put("updatedAt", now)
+            put("domains", JSONArray(boundDomains))
+          }
+        )
+
+        val domainsObj = index.getJSONObject("domains")
+        boundDomains.forEach { domain ->
+          val domainEntry = domainsObj.optJSONObject(domain) ?: JSONObject()
+          val profileIds = domainEntry.optJSONArray("profileIds") ?: JSONArray()
+          if (!jsonArrayContains(profileIds, profileId)) {
+            profileIds.put(profileId)
+          }
+          domainEntry.put("profileIds", profileIds)
+          domainsObj.put(domain, domainEntry)
+
+          val domainDir = customDomainDir(domain, create = true)
+          if (readDefaultProfile(domainDir) == null) {
+            writeDefaultProfile(domainDir, uniqueProfileName)
+          }
+        }
+
+        writeCustomCookieIndex(index)
+        uniqueProfileName
+      }
+
+      mapOf(
+        "profileId" to profileId,
+        "profileName" to finalProfileName,
+        "detectedDomains" to detectedDomains.toList().sorted(),
+        "boundDomains" to boundDomains,
+      )
+    }
+
+    AsyncFunction("listCustomDomains") {
+      synchronized(customCookieIndexLock) {
+        val index = readCustomCookieIndex()
+        val domainsObj = index.getJSONObject("domains")
+        val profilesObj = index.getJSONObject("profiles")
+        val result = mutableListOf<Map<String, Any?>>()
+        val domainKeys = domainsObj.keys()
+        while (domainKeys.hasNext()) {
+          val domain = domainKeys.next()
+          val domainEntry = domainsObj.optJSONObject(domain) ?: JSONObject()
+          val ids = jsonArrayToStringList(domainEntry.optJSONArray("profileIds"))
+          val validProfileIds = ids.filter { profilesObj.has(it) }
+          val defaultProfileName = readDefaultProfile(customDomainDir(domain, create = false))
+            ?.takeIf { defaultName -> validProfileIds.any { id -> profilesObj.optJSONObject(id)?.optString("profileName") == defaultName } }
+
+          result.add(
+            mapOf(
+              "domain" to domain,
+              "profileCount" to validProfileIds.size,
+              "defaultProfileName" to defaultProfileName
+            )
+          )
+        }
+
+        result.sortedBy { it["domain"] as String }
+      }
+    }
+
+    AsyncFunction("listCustomDomainProfiles") { domain: String ->
+      val normalizedDomain = canonicalizeDomain(domain) ?: return@AsyncFunction emptyList<Map<String, Any?>>()
+      synchronized(customCookieIndexLock) {
+        val index = readCustomCookieIndex()
+        val domainsObj = index.getJSONObject("domains")
+        val profilesObj = index.getJSONObject("profiles")
+        val domainEntry = domainsObj.optJSONObject(normalizedDomain) ?: return@synchronized emptyList<Map<String, Any?>>()
+        val profileIds = jsonArrayToStringList(domainEntry.optJSONArray("profileIds"))
+
+        profileIds.mapNotNull { profileId ->
+          val profile = profilesObj.optJSONObject(profileId) ?: return@mapNotNull null
+          val profileName = sanitizeProfileName(profile.optString("profileName"))
+          if (profileName.isBlank()) {
+            return@mapNotNull null
+          }
+          val lastModified = profile.optLong("updatedAt", 0L).takeIf { it > 0L } ?: customProfileFile(profileId).lastModified()
+          mapOf(
+            "profileName" to profileName,
+            "profileId" to profileId,
+            "lastModified" to lastModified,
+          )
+        }.sortedByDescending { it["lastModified"] as Long }
+      }
+    }
+
+    AsyncFunction("setCustomDomainDefault") { input: Map<String, String> ->
+      val domain = canonicalizeDomain(input["domain"].orEmpty())
+      val profileName = sanitizeProfileName(input["profileName"].orEmpty())
+      if (domain == null || profileName.isBlank()) {
+        return@AsyncFunction mapOf("success" to false)
+      }
+
+      synchronized(customCookieIndexLock) {
+        val index = readCustomCookieIndex()
+        val domainsObj = index.getJSONObject("domains")
+        val profilesObj = index.getJSONObject("profiles")
+        val domainEntry = domainsObj.optJSONObject(domain) ?: return@synchronized mapOf("success" to false)
+        val profileIds = jsonArrayToStringList(domainEntry.optJSONArray("profileIds"))
+
+        val exists = profileIds.any { profileId ->
+          profilesObj.optJSONObject(profileId)?.optString("profileName") == profileName
+        }
+        if (!exists) {
+          return@synchronized mapOf("success" to false)
+        }
+
+        writeDefaultProfile(customDomainDir(domain, create = true), profileName)
+        mapOf("success" to true)
+      }
+    }
+
+    AsyncFunction("deleteCustomDomainProfile") { input: Map<String, String> ->
+      val domain = canonicalizeDomain(input["domain"].orEmpty())
+      val profileName = sanitizeProfileName(input["profileName"].orEmpty())
+      if (domain == null || profileName.isBlank()) {
+        return@AsyncFunction mapOf("success" to false)
+      }
+
+      synchronized(customCookieIndexLock) {
+        val index = readCustomCookieIndex()
+        val domainsObj = index.getJSONObject("domains")
+        val profilesObj = index.getJSONObject("profiles")
+        val domainEntry = domainsObj.optJSONObject(domain) ?: return@synchronized mapOf("success" to false)
+        val domainProfileIds = jsonArrayToStringList(domainEntry.optJSONArray("profileIds"))
+        val targetProfileId = domainProfileIds.firstOrNull { profileId ->
+          profilesObj.optJSONObject(profileId)?.optString("profileName") == profileName
+        } ?: return@synchronized mapOf("success" to false)
+
+        val targetProfileObj = profilesObj.optJSONObject(targetProfileId)
+        val boundDomains = jsonArrayToStringList(targetProfileObj?.optJSONArray("domains"))
+
+        boundDomains.forEach { boundDomain ->
+          val boundEntry = domainsObj.optJSONObject(boundDomain) ?: return@forEach
+          val remainingIds = jsonArrayToStringList(boundEntry.optJSONArray("profileIds"))
+            .filter { it != targetProfileId }
+          if (remainingIds.isEmpty()) {
+            domainsObj.remove(boundDomain)
+            customDomainDir(boundDomain, create = false).deleteRecursively()
+          } else {
+            val updatedArray = JSONArray()
+            remainingIds.forEach { updatedArray.put(it) }
+            boundEntry.put("profileIds", updatedArray)
+            domainsObj.put(boundDomain, boundEntry)
+            ensureCustomDomainDefault(boundDomain, index)
+          }
+        }
+
+        profilesObj.remove(targetProfileId)
+        customProfileFile(targetProfileId).delete()
+        writeCustomCookieIndex(index)
+        mapOf("success" to true)
+      }
+    }
+
   }
 
   private fun startDownloadInternal(

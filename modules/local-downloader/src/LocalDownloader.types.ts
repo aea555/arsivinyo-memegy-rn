@@ -36,3 +36,28 @@ export interface LocalCookieProfile {
   path: string;
   lastModified: number;
 }
+
+export interface LocalCustomCookieImportInput {
+  uri: string;
+  profileName?: string;
+  domain?: string | null;
+}
+
+export interface LocalCustomCookieImportResult {
+  profileId: string;
+  profileName: string;
+  detectedDomains: string[];
+  boundDomains: string[];
+}
+
+export interface LocalCustomDomainSummary {
+  domain: string;
+  profileCount: number;
+  defaultProfileName: string | null;
+}
+
+export interface LocalCustomDomainProfile {
+  profileName: string;
+  profileId: string;
+  lastModified: number;
+}
