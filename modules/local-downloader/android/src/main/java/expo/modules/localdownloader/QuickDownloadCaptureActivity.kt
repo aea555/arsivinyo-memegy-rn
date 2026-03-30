@@ -49,17 +49,17 @@ class QuickDownloadCaptureActivity : Activity() {
         showResultToast(result)
         finish()
       } else {
-        statusView.text = LocalDownloaderModule.quickReasonToMessage(result["reason"]?.toString())
+        statusView.text = LocalDownloaderModule.quickReasonToMessage(this, result["reason"]?.toString())
       }
     }
 
     autoStartEnabled = intent?.getBooleanExtra(EXTRA_AUTOSTART, true) ?: true
     if (!autoStartEnabled) {
-      showManualEntry("Paste a URL and tap Download.")
+      showManualEntry(getString(R.string.local_downloader_quick_manual_hint))
       return
     }
 
-    statusView.text = "Trying clipboard URL..."
+    statusView.text = getString(R.string.local_downloader_quick_trying_clipboard)
     rootView.visibility = View.INVISIBLE
   }
 
@@ -75,10 +75,10 @@ class QuickDownloadCaptureActivity : Activity() {
     autoAttemptCount = 0
     autoAttemptScheduled = false
     if (!autoStartEnabled) {
-      showManualEntry("Paste a URL and tap Download.")
+      showManualEntry(getString(R.string.local_downloader_quick_manual_hint))
       return
     }
-    statusView.text = "Trying clipboard URL..."
+    statusView.text = getString(R.string.local_downloader_quick_trying_clipboard)
     rootView.visibility = View.INVISIBLE
     setFinishOnTouchOutside(true)
     scheduleClipboardAutoAttempt()
@@ -110,7 +110,7 @@ class QuickDownloadCaptureActivity : Activity() {
       if (autoAttemptCount < MAX_CLIPBOARD_ATTEMPTS) {
         scheduleClipboardAutoAttempt()
       } else {
-        showManualEntry(LocalDownloaderModule.quickReasonToMessage("NO_CLIPBOARD_URL"))
+        showManualEntry(LocalDownloaderModule.quickReasonToMessage(this, "NO_CLIPBOARD_URL"))
       }
       return
     }
@@ -130,13 +130,13 @@ class QuickDownloadCaptureActivity : Activity() {
       return
     }
 
-    showManualEntry(LocalDownloaderModule.quickReasonToMessage(reason))
+    showManualEntry(LocalDownloaderModule.quickReasonToMessage(this, reason))
   }
 
   private fun showManualEntry(message: String?) {
     rootView.visibility = View.VISIBLE
     setFinishOnTouchOutside(false)
-    statusView.text = message ?: "Paste a URL and tap Download."
+    statusView.text = message ?: getString(R.string.local_downloader_quick_manual_hint)
     if (inputView.text?.isBlank() != false) {
       val clipboardUrl = LocalDownloaderModule.peekClipboardUrl(this)
       if (!clipboardUrl.isNullOrBlank()) {
@@ -146,12 +146,16 @@ class QuickDownloadCaptureActivity : Activity() {
   }
 
   private fun showResultToast(result: Map<String, Any?>) {
+    if (result["metadataRequired"] == true) {
+      Toast.makeText(this, getString(R.string.local_downloader_quick_toast_metadata), Toast.LENGTH_SHORT).show()
+      return
+    }
     val queueSize = (result["queueSize"] as? Number)?.toInt()
     val queueMax = (result["queueMax"] as? Number)?.toInt()
     val message = if (queueSize != null && queueSize > 0 && queueMax != null) {
-      "Queued ($queueSize/$queueMax)"
+      getString(R.string.local_downloader_quick_toast_queued, queueSize, queueMax)
     } else {
-      "Download started"
+      getString(R.string.local_downloader_quick_toast_started)
     }
     Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
   }

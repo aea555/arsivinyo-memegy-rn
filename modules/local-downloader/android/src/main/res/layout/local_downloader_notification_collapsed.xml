@@ -89,20 +89,46 @@
       android:background="@drawable/local_downloader_notification_button"
       android:paddingHorizontal="12dp"
       android:paddingVertical="8dp"
-      android:text="Quick"
+      android:text="@string/local_downloader_notif_action_quick"
       android:textColor="#CFF8EA"
       android:textSize="12sp"
       android:textStyle="bold" />
 
     <TextView
-      android:id="@+id/notification_action_private"
+      android:id="@+id/notification_action_nsfw"
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
       android:layout_marginStart="8dp"
       android:background="@drawable/local_downloader_notification_button"
       android:paddingHorizontal="12dp"
       android:paddingVertical="8dp"
-      android:text="Private OFF"
+      android:text="@string/local_downloader_notif_toggle_nsfw_off"
+      android:textColor="#F8EACF"
+      android:textSize="12sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/notification_action_anonymous"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginStart="8dp"
+      android:background="@drawable/local_downloader_notification_button"
+      android:paddingHorizontal="12dp"
+      android:paddingVertical="8dp"
+      android:text="@string/local_downloader_notif_toggle_anonymous_off"
+      android:textColor="#D8ECFF"
+      android:textSize="12sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/notification_action_save"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginStart="8dp"
+      android:background="@drawable/local_downloader_notification_button"
+      android:paddingHorizontal="12dp"
+      android:paddingVertical="8dp"
+      android:text="@string/local_downloader_notif_toggle_save_on"
       android:textColor="#F8EACF"
       android:textSize="12sp"
       android:textStyle="bold" />

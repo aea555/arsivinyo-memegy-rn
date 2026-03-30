@@ -15,7 +15,7 @@ export function MainSettingsScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const { palette } = useTheme();
-  const showDownloaderCookies = isLocalDownloaderRuntimeAvailable;
+  const showLocalDownloaderSettings = isLocalDownloaderRuntimeAvailable;
 
   return (
     <Screen contentStyle={styles.container}>
@@ -61,16 +61,24 @@ export function MainSettingsScreen() {
           subtitle={t('settings.themeStudioSubtitle')}
           icon={<Ionicons name="sparkles" size={18} color={palette.accent} />}
           onPress={() => router.push('/settings/theme-studio' as never)}
-          isLast={!showDownloaderCookies}
+          isLast={!showLocalDownloaderSettings}
         />
-        {showDownloaderCookies ? (
-          <SettingsRow
-            title={t('settings.downloaderCookies')}
-            subtitle={t('settings.downloaderCookiesSubtitle')}
-            icon={<Ionicons name="download-outline" size={18} color={palette.text.primary} />}
-            onPress={() => router.push('/settings/downloader-cookies' as never)}
-            isLast
-          />
+        {showLocalDownloaderSettings ? (
+          <>
+            <SettingsRow
+              title={t('settings.quickDownloader')}
+              subtitle={t('settings.quickDownloaderSubtitle')}
+              icon={<Ionicons name="notifications-outline" size={18} color={palette.text.primary} />}
+              onPress={() => router.push('/settings/quick-downloader' as never)}
+            />
+            <SettingsRow
+              title={t('settings.downloaderCookies')}
+              subtitle={t('settings.downloaderCookiesSubtitle')}
+              icon={<Ionicons name="download-outline" size={18} color={palette.text.primary} />}
+              onPress={() => router.push('/settings/downloader-cookies' as never)}
+              isLast
+            />
+          </>
         ) : null}
         {/*
         <SettingsRow

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="local_downloader_channel_name">Arka Plan İndirmeleri</string>
+  <string name="local_downloader_channel_description">İndirme ilerlemesini ve kontrolleri gösterir</string>
+
+  <string name="local_downloader_notif_title_downloading">Medya indiriliyor</string>
+  <string name="local_downloader_notif_title_queued">Kuyruktaki indirmeler</string>
+  <string name="local_downloader_notif_title_idle">Arsivinyo İndirici</string>
+
+  <string name="local_downloader_notif_subtitle_starting">İndirme hazırlanıyor</string>
+  <string name="local_downloader_notif_subtitle_downloading">İndirme devam ediyor</string>
+  <string name="local_downloader_notif_subtitle_processing">Medya işleniyor</string>
+  <string name="local_downloader_notif_subtitle_saving">Medya kaydediliyor</string>
+  <string name="local_downloader_notif_subtitle_completed">Tamamlandı</string>
+  <string name="local_downloader_notif_subtitle_error">Panodan tekrar denemek için dokun</string>
+  <string name="local_downloader_notif_subtitle_queue_clipboard">Panodan kuyruğa eklemek için dokun</string>
+  <string name="local_downloader_notif_subtitle_tap_clipboard">Panodan indirmek için dokun</string>
+
+  <string name="local_downloader_notif_queue_label">Kuyruk: %1$d/%2$d</string>
+  <string name="local_downloader_notif_toggle_summary">NSFW %1$s • Anonim %2$s • Kaydet %3$s</string>
+  <string name="local_downloader_toggle_on">AÇIK</string>
+  <string name="local_downloader_toggle_off">KAPALI</string>
+
+  <string name="local_downloader_notif_progress_indeterminate">...</string>
+  <string name="local_downloader_notif_progress_percent">%1$d%%</string>
+  <string name="local_downloader_notif_progress_queued">kuyrukta</string>
+  <string name="local_downloader_notif_progress_idle">boşta</string>
+
+  <string name="local_downloader_notif_action_cancel">İptal</string>
+  <string name="local_downloader_notif_action_quick">Hızlı</string>
+  <string name="local_downloader_notif_toggle_nsfw">NSFW %1$s</string>
+  <string name="local_downloader_notif_toggle_anonymous">Anonim %1$s</string>
+  <string name="local_downloader_notif_toggle_save">Kaydet %1$s</string>
+  <string name="local_downloader_notif_toggle_nsfw_off">NSFW KAPALI</string>
+  <string name="local_downloader_notif_toggle_anonymous_off">Anonim KAPALI</string>
+  <string name="local_downloader_notif_toggle_save_on">Kaydet AÇIK</string>
+  <string name="local_downloader_notif_add_url_label">URL yapıştır</string>
+  <string name="local_downloader_notif_add_url_action">URL ekle</string>
+
+  <string name="local_downloader_msg_ready_for_quick_downloads">Hızlı indirmeler için hazır</string>
+  <string name="local_downloader_msg_stopping_background_notification">Arka plan bildirimi durduruluyor</string>
+  <string name="local_downloader_msg_cancellation_requested">İptal istendi</string>
+  <string name="local_downloader_msg_quick_settings_updated">Hızlı indirme ayarları güncellendi</string>
+  <string name="local_downloader_msg_waiting_for_metadata">Metadata onayı bekleniyor</string>
+  <string name="local_downloader_msg_queued_short">Kuyruğa eklendi (%1$d/%2$d)</string>
+  <string name="local_downloader_msg_quick_download_started">Hızlı indirme başlatıldı</string>
+  <string name="local_downloader_msg_preparing_quick_download">Hızlı indirme hazırlanıyor</string>
+  <string name="local_downloader_msg_app_not_ready">Uygulama hazır değil</string>
+
+  <string name="local_downloader_quick_reason_permission_required">Bildirim izni gerekli</string>
+  <string name="local_downloader_quick_reason_no_clipboard_url">Panoda URL bulunamadı</string>
+  <string name="local_downloader_quick_reason_invalid_url">URL geçersiz</string>
+  <string name="local_downloader_quick_reason_queue_full">Kuyruk dolu</string>
+  <string name="local_downloader_quick_reason_capture_cancelled">Hızlı yakalama iptal edildi</string>
+  <string name="local_downloader_quick_reason_rejected">Hızlı indirme reddedildi</string>
+  <string name="local_downloader_quick_reason_try_another">Başka bir URL deneyin</string>
+
+  <string name="local_downloader_quick_title">Hızlı İndirme</string>
+  <string name="local_downloader_quick_trying_clipboard">Pano URL’i deneniyor...</string>
+  <string name="local_downloader_quick_url_hint">https://example.com/video</string>
+  <string name="local_downloader_quick_download">İndir</string>
+  <string name="local_downloader_quick_manual_hint">Bir URL yapıştırıp İndir’e dokun.</string>
+  <string name="local_downloader_quick_toast_queued">Kuyruğa eklendi (%1$d/%2$d)</string>
+  <string name="local_downloader_quick_toast_started">İndirme başlatıldı</string>
+  <string name="local_downloader_quick_toast_metadata">Metadata için uygulama açılıyor</string>
+</resources>

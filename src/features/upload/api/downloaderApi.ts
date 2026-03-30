@@ -1,7 +1,13 @@
 import LocalDownloaderModule, {
+  type LocalBackgroundPermissionResult,
+  type LocalBackgroundState,
   isLocalDownloaderRuntimeAvailable,
   type LocalDownloadStartInput,
+  type LocalPendingQuickMetadataRequest,
+  type LocalPendingQuickUpload,
   type LocalPlatform,
+  type LocalQuickDownloadResult,
+  type LocalQuickUploadSettings,
 } from '@/src/native/localDownloader';
 
 const KNOWN_NATIVE_ERROR_CODES = [
@@ -33,6 +39,10 @@ const KNOWN_NATIVE_ERROR_CODES = [
   'COOKIE_EMPTY_OR_EXPIRED',
   'TIMESTAMP_POSTPROCESS_FAILED',
   'PREFLIGHT_FAILED',
+  'BACKGROUND_PERMISSION_REQUIRED',
+  'NO_CLIPBOARD_URL',
+  'DOWNLOAD_QUEUE_FULL',
+  'QUICK_DOWNLOAD_REJECTED',
   'INTERNAL_ERROR',
   'FILE_NOT_FOUND',
 ] as const;
@@ -66,6 +76,7 @@ export type StartLocalDownloadInput = {
   cookiePlatform?: LocalPlatform;
   cookieProfile?: string;
   maxFileSizeMb?: number;
+  visibility?: 'public' | 'private';
 };
 
 export class DownloaderApiError extends Error {
@@ -126,6 +137,7 @@ function toStartInput(input: StartLocalDownloadInput): LocalDownloadStartInput {
     cookiePlatform: input.cookiePlatform,
     cookieProfile: input.cookieProfile,
     maxFileSizeMb: input.maxFileSizeMb,
+    visibility: input.visibility,
   };
 }
 
@@ -179,5 +191,101 @@ export async function cancelTask(taskId: string): Promise<{ success: boolean }> 
     return { success: Boolean(result?.success) };
   } catch (error) {
     throw toDownloaderError(error, 'DOWNLOADER_CANCEL_FAILED');
+  }
+}
+
+export async function getBackgroundState(): Promise<LocalBackgroundState> {
+  ensureDownloaderRuntimeAvailable();
+  try {
+    return await LocalDownloaderModule.getBackgroundState();
+  } catch (error) {
+    throw toDownloaderError(error, 'DOWNLOADER_BACKGROUND_STATE_FAILED');
+  }
+}
+
+export async function ensureBackgroundPermission(): Promise<LocalBackgroundPermissionResult> {
+  ensureDownloaderRuntimeAvailable();
+  try {
+    return await LocalDownloaderModule.ensureBackgroundPermission();
+  } catch (error) {
+    throw toDownloaderError(error, 'DOWNLOADER_BACKGROUND_PERMISSION_FAILED');
+  }
+}
+
+export async function startQuickDownloadFromClipboard(): Promise<LocalQuickDownloadResult> {
+  ensureDownloaderRuntimeAvailable();
+  try {
+    return await LocalDownloaderModule.startQuickDownloadFromClipboard();
+  } catch (error) {
+    throw toDownloaderError(error, 'DOWNLOADER_QUICK_START_FAILED');
+  }
+}
+
+export async function startQuickDownloadWithUrl(url: string): Promise<LocalQuickDownloadResult> {
+  ensureDownloaderRuntimeAvailable();
+  try {
+    return await LocalDownloaderModule.startQuickDownloadWithUrl({ url });
+  } catch (error) {
+    throw toDownloaderError(error, 'DOWNLOADER_QUICK_START_FAILED');
+  }
+}
+
+export async function startQuickDownloadWithMetadata(input: {
+  url: string;
+  title?: string | null;
+  description?: string | null;
+}): Promise<LocalQuickDownloadResult> {
+  ensureDownloaderRuntimeAvailable();
+  try {
+    return await LocalDownloaderModule.startQuickDownloadWithMetadata(input);
+  } catch (error) {
+    throw toDownloaderError(error, 'DOWNLOADER_QUICK_START_FAILED');
+  }
+}
+
+export async function setQuickUploadSettings(
+  input: LocalQuickUploadSettings
+): Promise<LocalQuickUploadSettings> {
+  ensureDownloaderRuntimeAvailable();
+  try {
+    return await LocalDownloaderModule.setQuickUploadSettings(input);
+  } catch (error) {
+    throw toDownloaderError(error, 'DOWNLOADER_QUICK_SETTINGS_SET_FAILED');
+  }
+}
+
+export async function getQuickUploadSettings(): Promise<LocalQuickUploadSettings> {
+  ensureDownloaderRuntimeAvailable();
+  try {
+    return await LocalDownloaderModule.getQuickUploadSettings();
+  } catch (error) {
+    throw toDownloaderError(error, 'DOWNLOADER_QUICK_SETTINGS_GET_FAILED');
+  }
+}
+
+export async function listPendingQuickUploads(): Promise<LocalPendingQuickUpload[]> {
+  ensureDownloaderRuntimeAvailable();
+  try {
+    return await LocalDownloaderModule.listPendingQuickUploads();
+  } catch (error) {
+    throw toDownloaderError(error, 'DOWNLOADER_PENDING_LIST_FAILED');
+  }
+}
+
+export async function ackPendingQuickUpload(taskId: string): Promise<{ success: boolean }> {
+  ensureDownloaderRuntimeAvailable();
+  try {
+    return await LocalDownloaderModule.ackPendingQuickUpload({ taskId });
+  } catch (error) {
+    throw toDownloaderError(error, 'DOWNLOADER_PENDING_ACK_FAILED');
+  }
+}
+
+export async function consumePendingQuickMetadataRequest(): Promise<LocalPendingQuickMetadataRequest | null> {
+  ensureDownloaderRuntimeAvailable();
+  try {
+    return await LocalDownloaderModule.consumePendingQuickMetadataRequest();
+  } catch (error) {
+    throw toDownloaderError(error, 'DOWNLOADER_METADATA_PENDING_FAILED');
   }
 }

@@ -15,6 +15,7 @@ type AppSettingsState = {
   feedIncludeNsfw: boolean;
   searchIncludeNsfw: boolean;
   authDebugAggressiveRefresh: boolean;
+  uploadNsfwDefault: boolean;
   uploadAnonymousDefault: boolean;
   clipboardUploadAskMetadata: boolean;
   clipboardUploadSaveToDevice: boolean;
@@ -28,6 +29,7 @@ type AppSettingsState = {
   setFeedIncludeNsfw: (enabled: boolean) => Promise<void>;
   setSearchIncludeNsfw: (enabled: boolean) => Promise<void>;
   setAuthDebugAggressiveRefresh: (enabled: boolean) => Promise<void>;
+  setUploadNsfwDefault: (enabled: boolean) => Promise<void>;
   setUploadAnonymousDefault: (enabled: boolean) => Promise<void>;
   setClipboardUploadAskMetadata: (enabled: boolean) => Promise<void>;
   setClipboardUploadSaveToDevice: (enabled: boolean) => Promise<void>;
@@ -43,6 +45,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
   feedIncludeNsfw: true,
   searchIncludeNsfw: true,
   authDebugAggressiveRefresh: __DEV__,
+  uploadNsfwDefault: false,
   uploadAnonymousDefault: false,
   clipboardUploadAskMetadata: true,
   clipboardUploadSaveToDevice: true,
@@ -57,6 +60,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       storedFeedIncludeNsfw,
       storedSearchIncludeNsfw,
       storedAuthDebugAggressiveRefresh,
+      storedUploadNsfwDefault,
       storedUploadAnonymousDefault,
       storedClipboardUploadAskMetadata,
       storedClipboardUploadSaveToDevice,
@@ -70,6 +74,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       LocalStorage.getFeedIncludeNsfw(),
       LocalStorage.getSearchIncludeNsfw(),
       LocalStorage.getAuthDebugAggressiveRefresh(),
+      LocalStorage.getUploadNsfwDefault(),
       LocalStorage.getUploadAnonymousDefault(),
       LocalStorage.getClipboardUploadAskMetadata(),
       LocalStorage.getClipboardUploadSaveToDevice(),
@@ -92,6 +97,7 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
       feedIncludeNsfw: resolvedFeedIncludeNsfw,
       searchIncludeNsfw: resolvedSearchIncludeNsfw,
       authDebugAggressiveRefresh: __DEV__ ? (storedAuthDebugAggressiveRefresh ?? true) : false,
+      uploadNsfwDefault: storedUploadNsfwDefault ?? false,
       uploadAnonymousDefault: storedUploadAnonymousDefault ?? false,
       clipboardUploadAskMetadata: storedClipboardUploadAskMetadata ?? true,
       clipboardUploadSaveToDevice: storedClipboardUploadSaveToDevice ?? true,
@@ -133,6 +139,10 @@ export const useAppSettingsStore = create<AppSettingsState>((set) => ({
     const value = __DEV__ ? enabled : false;
     await LocalStorage.setAuthDebugAggressiveRefresh(value);
     set({ authDebugAggressiveRefresh: value });
+  },
+  setUploadNsfwDefault: async (enabled) => {
+    await LocalStorage.setUploadNsfwDefault(enabled);
+    set({ uploadNsfwDefault: enabled });
   },
   setUploadAnonymousDefault: async (enabled) => {
     await LocalStorage.setUploadAnonymousDefault(enabled);

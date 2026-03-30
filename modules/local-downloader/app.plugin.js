@@ -235,6 +235,8 @@ function addAndroidManifestChanges(config) {
 }
 
 const withLocalDownloader = (config) => {
+  config = addAndroidManifestChanges(config);
+
   config = withGradleProperties(config, (config) => {
     const upsertProperty = (key, value) => {
       const existing = config.modResults.find((item) => item.type === 'property' && item.key === key);

@@ -22,6 +22,7 @@ const KEYS = {
   SEARCH_INCLUDE_NSFW: 'search_include_nsfw',
   AUTH_DEBUG_AGGRESSIVE_REFRESH: 'auth_debug_aggressive_refresh',
   OTA_SUCCESS_MODAL_DISMISSED: 'ota_success_modal_dismissed',
+  UPLOAD_NSFW_DEFAULT: 'upload_nsfw_default',
   UPLOAD_ANONYMOUS_DEFAULT: 'upload_anonymous_default',
   CLIPBOARD_UPLOAD_ASK_METADATA: 'clipboard_upload_ask_metadata',
   CLIPBOARD_UPLOAD_SAVE_TO_DEVICE: 'clipboard_upload_save_to_device',
@@ -185,8 +186,16 @@ export const LocalStorage = {
   async setUploadAnonymousDefault(enabled: boolean) {
     await AsyncStorage.setItem(KEYS.UPLOAD_ANONYMOUS_DEFAULT, enabled ? '1' : '0');
   },
+  async setUploadNsfwDefault(enabled: boolean) {
+    await AsyncStorage.setItem(KEYS.UPLOAD_NSFW_DEFAULT, enabled ? '1' : '0');
+  },
   async getUploadAnonymousDefault() {
     const value = await AsyncStorage.getItem(KEYS.UPLOAD_ANONYMOUS_DEFAULT);
+    if (value === null) return null;
+    return value === '1';
+  },
+  async getUploadNsfwDefault() {
+    const value = await AsyncStorage.getItem(KEYS.UPLOAD_NSFW_DEFAULT);
     if (value === null) return null;
     return value === '1';
   },

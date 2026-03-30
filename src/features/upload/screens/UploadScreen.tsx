@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import React, { useMemo, useRef, useState } from 'react';
@@ -16,11 +16,16 @@ import {
   View,
 } from 'react-native';
 
-import { DownloaderApiError } from '@/src/features/upload/api/downloaderApi';
+import {
+  DownloaderApiError,
+  startQuickDownloadWithMetadata,
+} from '@/src/features/upload/api/downloaderApi';
 import { saveVideoUriToLibrary } from '@/src/features/download/services/videoDownloadService';
 import { getReadOnlyStatus } from '@/src/features/settings/api/systemApi';
 import { pickVideo, uploadVideo } from '@/src/features/upload/hooks/useVideoUpload';
-import { downloadFromClipboardToNormalizedAsset } from '@/src/features/upload/services/downloaderUploadBridge';
+import {
+  downloadFromClipboardToNormalizedAsset,
+} from '@/src/features/upload/services/downloaderUploadBridge';
 import { cleanupNormalizedVideoAsset, normalizePickedVideoAsset } from '@/src/features/upload/services/videoAssetNormalizer';
 import { NormalizedVideoAsset, UploadValidationError } from '@/src/features/upload/types/uploadTypes';
 import { ClipboardUrlError } from '@/src/features/upload/utils/clipboardDownloader';
@@ -145,11 +150,28 @@ function getClipboardStateMessage(t: (key: string) => string, state: ClipboardUp
 export function UploadScreen() {
   const { t } = useTranslation();
   const { palette } = useTheme();
+  const params = useLocalSearchParams<{
+    quickUploadMode?: string | string[];
+    quickMetadataUrl?: string | string[];
+    quickMetadataRequestId?: string | string[];
+  }>();
   const isFocused = useIsFocused();
   const showToast = useToastStore((state) => state.showToast);
   const shadows = useShadows();
   const router = useRouter();
+  const quickUploadModeParam = Array.isArray(params.quickUploadMode)
+    ? params.quickUploadMode[0]
+    : params.quickUploadMode;
+  const quickMetadataUrlParam = Array.isArray(params.quickMetadataUrl)
+    ? params.quickMetadataUrl[0]
+    : params.quickMetadataUrl;
+  const quickMetadataRequestIdParam = Array.isArray(params.quickMetadataRequestId)
+    ? params.quickMetadataRequestId[0]
+    : params.quickMetadataRequestId;
+  const quickMetadataHandledRef = useRef<string | null>(null);
   const autoPlayVideos = useAppSettingsStore((state) => state.autoPlayVideos);
+  const isNsfw = useAppSettingsStore((state) => state.uploadNsfwDefault);
+  const setUploadNsfwDefault = useAppSettingsStore((state) => state.setUploadNsfwDefault);
   const isAnonymous = useAppSettingsStore((state) => state.uploadAnonymousDefault);
   const setUploadAnonymousDefault = useAppSettingsStore((state) => state.setUploadAnonymousDefault);
   const askMetadataAfterDownload = useAppSettingsStore((state) => state.clipboardUploadAskMetadata);
@@ -157,7 +179,9 @@ export function UploadScreen() {
   const saveToDeviceAlso = useAppSettingsStore((state) => state.clipboardUploadSaveToDevice);
   const setClipboardUploadSaveToDevice = useAppSettingsStore((state) => state.setClipboardUploadSaveToDevice);
 
-  const [mode, setMode] = useState<UploadMode>('manual');
+  const [mode, setMode] = useState<UploadMode>(
+    quickUploadModeParam === 'clipboard' ? 'clipboard' : 'manual'
+  );
 
   const [selectedVideo, setSelectedVideo] = useState<NormalizedVideoAsset | null>(null);
   const [title, setTitle] = useState('');
@@ -167,7 +191,6 @@ export function UploadScreen() {
   const [isPreviewLooping, setIsPreviewLooping] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
-  const [isNsfw, setIsNsfw] = useState(false);
   const [isReadOnlyEnabled, setIsReadOnlyEnabled] = useState(false);
   const [isReadOnlyChecking, setIsReadOnlyChecking] = useState(false);
 
@@ -178,6 +201,7 @@ export function UploadScreen() {
   const [clipboardFallbackTitle, setClipboardFallbackTitle] = useState('');
   const [clipboardTitle, setClipboardTitle] = useState('');
   const [clipboardDescription, setClipboardDescription] = useState('');
+  const [pendingMetadataUrl, setPendingMetadataUrl] = useState<string | null>(null);
   const clipboardCancelRef = useRef(false);
 
   const videoPlayer = useVideoPlayer(selectedVideo?.normalizedUri || '', (playerInstance) => {
@@ -238,6 +262,39 @@ export function UploadScreen() {
     };
   }, [isFocused, showToast, t]);
 
+  React.useEffect(() => {
+    if (quickUploadModeParam === 'clipboard') {
+      setMode('clipboard');
+    }
+  }, [quickUploadModeParam]);
+
+  React.useEffect(() => {
+    const resolvedUrl = quickMetadataUrlParam;
+    if (!resolvedUrl) return;
+    const requestToken = quickMetadataRequestIdParam || resolvedUrl;
+    if (quickMetadataHandledRef.current === requestToken) {
+      return;
+    }
+    quickMetadataHandledRef.current = requestToken;
+
+    const decodedUrl = (() => {
+      try {
+        return decodeURIComponent(resolvedUrl);
+      } catch {
+        return resolvedUrl;
+      }
+    })();
+    const fallbackTitle = clampUtf8Bytes('downloaded_video', UPLOAD_VIDEO_TITLE_MAX_BYTES);
+    setMode('clipboard');
+    setPendingMetadataUrl(decodedUrl);
+    setClipboardFallbackTitle(fallbackTitle);
+    setClipboardTitle(fallbackTitle);
+    setClipboardDescription('');
+    setClipboardState('metadata');
+    setClipboardStatusMessage(getClipboardStateMessage(t, 'metadata'));
+    setMetadataModalVisible(true);
+  }, [quickMetadataRequestIdParam, quickMetadataUrlParam, t]);
+
   const getNormalizationErrorMessage = React.useCallback(
     (code: UploadValidationError['code']) => {
       switch (code) {
@@ -284,6 +341,17 @@ export function UploadScreen() {
     [t]
   );
 
+  const getQuickMetadataSubmitErrorMessage = React.useCallback(
+    (reason?: string) => {
+      if (reason === 'INVALID_QUICK_URL') return t('upload.clipboardInvalidUrl');
+      if (reason === 'QUEUE_FULL') return t('upload.quickQueueFull');
+      if (reason === 'PERMISSION_REQUIRED') return t('upload.quickPermissionRequired');
+      if (reason === 'ALREADY_ACTIVE') return t('upload.clipboardBusy');
+      return t('upload.quickQueueRejected');
+    },
+    [t]
+  );
+
   const handleTitleChange = React.useCallback((text: string) => {
     setTitle(clampUtf8Bytes(text, UPLOAD_VIDEO_TITLE_MAX_BYTES));
   }, []);
@@ -303,6 +371,7 @@ export function UploadScreen() {
     setClipboardStatusMessage('');
     setClipboardTitle('');
     setClipboardDescription('');
+    setPendingMetadataUrl(null);
     await cleanupClipboardAssetState();
   }, [cleanupClipboardAssetState]);
 
@@ -390,6 +459,7 @@ export function UploadScreen() {
         setClipboardState('idle');
         setClipboardStatusMessage('');
         setMetadataModalVisible(false);
+        setPendingMetadataUrl(null);
         await cleanupClipboardAssetState();
       }
     },
@@ -574,7 +644,9 @@ export function UploadScreen() {
         </View>
         <Switch
           value={isNsfw}
-          onValueChange={setIsNsfw}
+          onValueChange={(value) => {
+            void setUploadNsfwDefault(value);
+          }}
           trackColor={{ true: palette.warning, false: palette.border }}
           thumbColor={isNsfw ? palette.switchThumb : palette.surface}
         />
@@ -924,6 +996,51 @@ export function UploadScreen() {
               <Button
                 label={t('upload.clipboardUploadNow')}
                 onPress={async () => {
+                  if (pendingMetadataUrl) {
+                    if (isReadOnlyEnabled) {
+                      showToast(t('upload.readOnlyEnabled'), 'error');
+                      return;
+                    }
+                    setLoading(true);
+                    try {
+                      const resolvedTitle =
+                        clampUtf8Bytes(clipboardTitle.trim(), UPLOAD_VIDEO_TITLE_MAX_BYTES) ||
+                        clampUtf8Bytes(clipboardFallbackTitle.trim(), UPLOAD_VIDEO_TITLE_MAX_BYTES) ||
+                        'downloaded_video';
+                      const resolvedDescription =
+                        clampUtf8Bytes(clipboardDescription.trim(), UPLOAD_VIDEO_DESCRIPTION_MAX_BYTES) || null;
+                      const result = await startQuickDownloadWithMetadata({
+                        url: pendingMetadataUrl,
+                        title: resolvedTitle,
+                        description: resolvedDescription,
+                      });
+
+                      if (!result.accepted) {
+                        const message = getQuickMetadataSubmitErrorMessage(result.reason);
+                        setClipboardState('error');
+                        setClipboardStatusMessage(message);
+                        showToast(message, 'error');
+                        return;
+                      }
+
+                      setClipboardState('idle');
+                      setClipboardStatusMessage('');
+                      setMetadataModalVisible(false);
+                      setPendingMetadataUrl(null);
+                      setClipboardTitle('');
+                      setClipboardDescription('');
+                      showToast(t('upload.quickBackgroundQueued'), 'success');
+                      router.back();
+                    } catch (error) {
+                      const message = getClipboardErrorMessage(error);
+                      setClipboardState('error');
+                      setClipboardStatusMessage(message);
+                      showToast(message, 'error');
+                    }
+                    setLoading(false);
+                    return;
+                  }
+
                   if (!clipboardDownloadedAsset) return;
                   if (isReadOnlyEnabled) {
                     showToast(t('upload.readOnlyEnabled'), 'error');

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="local_downloader_channel_name">Background Downloads</string>
+  <string name="local_downloader_channel_description">Shows download progress and controls</string>
+
+  <string name="local_downloader_notif_title_downloading">Downloading media</string>
+  <string name="local_downloader_notif_title_queued">Queued downloads</string>
+  <string name="local_downloader_notif_title_idle">Arsivinyo Downloader</string>
+
+  <string name="local_downloader_notif_subtitle_starting">Preparing download</string>
+  <string name="local_downloader_notif_subtitle_downloading">Download in progress</string>
+  <string name="local_downloader_notif_subtitle_processing">Processing media</string>
+  <string name="local_downloader_notif_subtitle_saving">Saving media</string>
+  <string name="local_downloader_notif_subtitle_completed">Completed</string>
+  <string name="local_downloader_notif_subtitle_error">Tap to retry from clipboard</string>
+  <string name="local_downloader_notif_subtitle_queue_clipboard">Tap to queue from clipboard</string>
+  <string name="local_downloader_notif_subtitle_tap_clipboard">Tap to download from clipboard</string>
+
+  <string name="local_downloader_notif_queue_label">Queue: %1$d/%2$d</string>
+  <string name="local_downloader_notif_toggle_summary">NSFW %1$s • Anon %2$s • Save %3$s</string>
+  <string name="local_downloader_toggle_on">ON</string>
+  <string name="local_downloader_toggle_off">OFF</string>
+
+  <string name="local_downloader_notif_progress_indeterminate">...</string>
+  <string name="local_downloader_notif_progress_percent">%1$d%%</string>
+  <string name="local_downloader_notif_progress_queued">queued</string>
+  <string name="local_downloader_notif_progress_idle">idle</string>
+
+  <string name="local_downloader_notif_action_cancel">Cancel</string>
+  <string name="local_downloader_notif_action_quick">Quick</string>
+  <string name="local_downloader_notif_toggle_nsfw">NSFW %1$s</string>
+  <string name="local_downloader_notif_toggle_anonymous">Anon %1$s</string>
+  <string name="local_downloader_notif_toggle_save">Save %1$s</string>
+  <string name="local_downloader_notif_toggle_nsfw_off">NSFW OFF</string>
+  <string name="local_downloader_notif_toggle_anonymous_off">Anon OFF</string>
+  <string name="local_downloader_notif_toggle_save_on">Save ON</string>
+  <string name="local_downloader_notif_add_url_label">Paste URL</string>
+  <string name="local_downloader_notif_add_url_action">Add URL</string>
+
+  <string name="local_downloader_msg_ready_for_quick_downloads">Ready for quick downloads</string>
+  <string name="local_downloader_msg_stopping_background_notification">Stopping background notification</string>
+  <string name="local_downloader_msg_cancellation_requested">Cancellation requested</string>
+  <string name="local_downloader_msg_quick_settings_updated">Quick settings updated</string>
+  <string name="local_downloader_msg_waiting_for_metadata">Waiting for metadata confirmation</string>
+  <string name="local_downloader_msg_queued_short">Queued (%1$d/%2$d)</string>
+  <string name="local_downloader_msg_quick_download_started">Quick download started</string>
+  <string name="local_downloader_msg_preparing_quick_download">Preparing quick download</string>
+  <string name="local_downloader_msg_app_not_ready">App is not ready</string>
+
+  <string name="local_downloader_quick_reason_permission_required">Notification permission required</string>
+  <string name="local_downloader_quick_reason_no_clipboard_url">Clipboard URL not found</string>
+  <string name="local_downloader_quick_reason_invalid_url">URL is invalid</string>
+  <string name="local_downloader_quick_reason_queue_full">Queue full</string>
+  <string name="local_downloader_quick_reason_capture_cancelled">Quick capture cancelled</string>
+  <string name="local_downloader_quick_reason_rejected">Quick download rejected</string>
+  <string name="local_downloader_quick_reason_try_another">Try another URL</string>
+
+  <string name="local_downloader_quick_title">Quick Download</string>
+  <string name="local_downloader_quick_trying_clipboard">Trying clipboard URL...</string>
+  <string name="local_downloader_quick_url_hint">https://example.com/video</string>
+  <string name="local_downloader_quick_download">Download</string>
+  <string name="local_downloader_quick_manual_hint">Paste a URL and tap Download.</string>
+  <string name="local_downloader_quick_toast_queued">Queued (%1$d/%2$d)</string>
+  <string name="local_downloader_quick_toast_started">Download started</string>
+  <string name="local_downloader_quick_toast_metadata">Opening app for metadata</string>
+</resources>

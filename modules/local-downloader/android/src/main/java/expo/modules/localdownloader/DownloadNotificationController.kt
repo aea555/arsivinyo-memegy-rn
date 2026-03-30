@@ -18,7 +18,9 @@ internal data class BackgroundNotificationState(
   val message: String?,
   val progressPercent: Double?,
   val queueSize: Int,
-  val privateModeEnabled: Boolean,
+  val nsfwDefault: Boolean,
+  val anonymousDefault: Boolean,
+  val saveToDeviceDefault: Boolean,
   val pinned: Boolean = false,
 ) {
   val hasWork: Boolean
@@ -30,8 +32,6 @@ internal data class BackgroundNotificationState(
 
 internal object DownloadNotificationController {
   const val CHANNEL_ID = "arsivinyo_downloads"
-  const val CHANNEL_NAME = "Background Downloads"
-  const val CHANNEL_DESCRIPTION = "Shows download progress and controls"
   const val NOTIFICATION_ID = 7441
 
   const val ACTION_SYNC = "expo.modules.localdownloader.action.NOTIFICATION_SYNC"
@@ -43,7 +43,9 @@ internal object DownloadNotificationController {
   private const val EXTRA_MESSAGE = "extra_message"
   private const val EXTRA_PROGRESS_PERCENT = "extra_progress_percent"
   private const val EXTRA_QUEUE_SIZE = "extra_queue_size"
-  private const val EXTRA_PRIVATE_MODE_ENABLED = "extra_private_mode_enabled"
+  private const val EXTRA_NSFW_DEFAULT = "extra_nsfw_default"
+  private const val EXTRA_ANONYMOUS_DEFAULT = "extra_anonymous_default"
+  private const val EXTRA_SAVE_TO_DEVICE_DEFAULT = "extra_save_to_device_default"
   private const val EXTRA_PINNED = "extra_pinned"
 
   fun startOrUpdate(context: Context, state: BackgroundNotificationState) {
@@ -55,7 +57,9 @@ internal object DownloadNotificationController {
       putExtra(EXTRA_MESSAGE, state.message)
       putExtra(EXTRA_PROGRESS_PERCENT, state.progressPercent)
       putExtra(EXTRA_QUEUE_SIZE, state.queueSize)
-      putExtra(EXTRA_PRIVATE_MODE_ENABLED, state.privateModeEnabled)
+      putExtra(EXTRA_NSFW_DEFAULT, state.nsfwDefault)
+      putExtra(EXTRA_ANONYMOUS_DEFAULT, state.anonymousDefault)
+      putExtra(EXTRA_SAVE_TO_DEVICE_DEFAULT, state.saveToDeviceDefault)
       putExtra(EXTRA_PINNED, state.pinned)
     }
     ContextCompat.startForegroundService(context, intent)
@@ -75,7 +79,9 @@ internal object DownloadNotificationController {
       message = intent?.getStringExtra(EXTRA_MESSAGE),
       progressPercent = intent?.getDoubleExtra(EXTRA_PROGRESS_PERCENT, Double.NaN)?.takeIf { !it.isNaN() },
       queueSize = intent?.getIntExtra(EXTRA_QUEUE_SIZE, 0) ?: 0,
-      privateModeEnabled = intent?.getBooleanExtra(EXTRA_PRIVATE_MODE_ENABLED, false) ?: false,
+      nsfwDefault = intent?.getBooleanExtra(EXTRA_NSFW_DEFAULT, false) ?: false,
+      anonymousDefault = intent?.getBooleanExtra(EXTRA_ANONYMOUS_DEFAULT, false) ?: false,
+      saveToDeviceDefault = intent?.getBooleanExtra(EXTRA_SAVE_TO_DEVICE_DEFAULT, true) ?: true,
       pinned = intent?.getBooleanExtra(EXTRA_PINNED, false) ?: false,
     )
   }
@@ -85,30 +91,39 @@ internal object DownloadNotificationController {
 
     val hasActiveTask = !state.activeTaskId.isNullOrBlank()
     val title = when {
-      hasActiveTask -> "Downloading media"
-      state.queueSize > 0 -> "Queued downloads"
-      else -> "Arsivinyo Downloader"
+      hasActiveTask -> context.getString(R.string.local_downloader_notif_title_downloading)
+      state.queueSize > 0 -> context.getString(R.string.local_downloader_notif_title_queued)
+      else -> context.getString(R.string.local_downloader_notif_title_idle)
     }
     val subtitle = state.message?.takeIf { it.isNotBlank() }
       ?: when (state.phase) {
-        "starting" -> "Preparing download"
-        "downloading" -> "Download in progress"
-        "processing" -> "Processing media"
-        "saving" -> "Saving media"
-        "completed" -> "Completed"
-        "error" -> "Tap to retry from clipboard"
-        else -> if (state.queueSize > 0) "Tap to queue from clipboard" else "Tap to download from clipboard"
+        "starting" -> context.getString(R.string.local_downloader_notif_subtitle_starting)
+        "downloading" -> context.getString(R.string.local_downloader_notif_subtitle_downloading)
+        "processing" -> context.getString(R.string.local_downloader_notif_subtitle_processing)
+        "saving" -> context.getString(R.string.local_downloader_notif_subtitle_saving)
+        "completed" -> context.getString(R.string.local_downloader_notif_subtitle_completed)
+        "error" -> context.getString(R.string.local_downloader_notif_subtitle_error)
+        else -> if (state.queueSize > 0) {
+          context.getString(R.string.local_downloader_notif_subtitle_queue_clipboard)
+        } else {
+          context.getString(R.string.local_downloader_notif_subtitle_tap_clipboard)
+        }
       }
-    val queueLabel = "Queue: ${state.queueSize}/3"
-    val modeLabel = if (state.privateModeEnabled) "Mode: Private" else "Mode: Public"
+    val queueLabel = context.getString(R.string.local_downloader_notif_queue_label, state.queueSize, 3)
+    val modeLabel = context.getString(
+      R.string.local_downloader_notif_toggle_summary,
+      if (state.nsfwDefault) context.getString(R.string.local_downloader_toggle_on) else context.getString(R.string.local_downloader_toggle_off),
+      if (state.anonymousDefault) context.getString(R.string.local_downloader_toggle_on) else context.getString(R.string.local_downloader_toggle_off),
+      if (state.saveToDeviceDefault) context.getString(R.string.local_downloader_toggle_on) else context.getString(R.string.local_downloader_toggle_off),
+    )
 
     val progress = state.progressPercent?.toInt()?.coerceIn(0, 100)
     val showIndeterminate = hasActiveTask && (state.phase == "starting" || state.phase == "processing" || progress == null)
     val progressText = when {
-      showIndeterminate -> "..."
-      hasActiveTask -> "${progress ?: 0}%"
-      state.queueSize > 0 -> "queued"
-      else -> "idle"
+      showIndeterminate -> context.getString(R.string.local_downloader_notif_progress_indeterminate)
+      hasActiveTask -> context.getString(R.string.local_downloader_notif_progress_percent, progress ?: 0)
+      state.queueSize > 0 -> context.getString(R.string.local_downloader_notif_progress_queued)
+      else -> context.getString(R.string.local_downloader_notif_progress_idle)
     }
 
     val collapsed = RemoteViews(context.packageName, R.layout.local_downloader_notification_collapsed).apply {
@@ -124,8 +139,30 @@ internal object DownloadNotificationController {
         setTextViewText(R.id.notification_progress_text, progressText)
       }
       setOnClickPendingIntent(R.id.notification_action_quick, buildQuickCapturePendingIntent(context, 40))
-      setOnClickPendingIntent(R.id.notification_action_private, buildActionPendingIntent(context, DownloadActionReceiver.ACTION_TOGGLE_PRIVATE_MODE, 45))
-      setTextViewText(R.id.notification_action_private, if (state.privateModeEnabled) "Private ON" else "Private OFF")
+      setOnClickPendingIntent(R.id.notification_action_nsfw, buildActionPendingIntent(context, DownloadActionReceiver.ACTION_TOGGLE_NSFW, 45))
+      setOnClickPendingIntent(R.id.notification_action_anonymous, buildActionPendingIntent(context, DownloadActionReceiver.ACTION_TOGGLE_ANONYMOUS, 46))
+      setOnClickPendingIntent(R.id.notification_action_save, buildActionPendingIntent(context, DownloadActionReceiver.ACTION_TOGGLE_SAVE_TO_DEVICE, 47))
+      setTextViewText(
+        R.id.notification_action_nsfw,
+        context.getString(
+          R.string.local_downloader_notif_toggle_nsfw,
+          if (state.nsfwDefault) context.getString(R.string.local_downloader_toggle_on) else context.getString(R.string.local_downloader_toggle_off)
+        )
+      )
+      setTextViewText(
+        R.id.notification_action_anonymous,
+        context.getString(
+          R.string.local_downloader_notif_toggle_anonymous,
+          if (state.anonymousDefault) context.getString(R.string.local_downloader_toggle_on) else context.getString(R.string.local_downloader_toggle_off)
+        )
+      )
+      setTextViewText(
+        R.id.notification_action_save,
+        context.getString(
+          R.string.local_downloader_notif_toggle_save,
+          if (state.saveToDeviceDefault) context.getString(R.string.local_downloader_toggle_on) else context.getString(R.string.local_downloader_toggle_off)
+        )
+      )
     }
 
     val expanded = RemoteViews(context.packageName, R.layout.local_downloader_notification_expanded).apply {
@@ -147,16 +184,38 @@ internal object DownloadNotificationController {
         setViewVisibility(R.id.notification_action_cancel, android.view.View.GONE)
       }
       setOnClickPendingIntent(R.id.notification_action_quick, buildQuickCapturePendingIntent(context, 42))
-      setOnClickPendingIntent(R.id.notification_action_private, buildActionPendingIntent(context, DownloadActionReceiver.ACTION_TOGGLE_PRIVATE_MODE, 46))
-      setTextViewText(R.id.notification_action_private, if (state.privateModeEnabled) "Private ON" else "Private OFF")
+      setOnClickPendingIntent(R.id.notification_action_nsfw, buildActionPendingIntent(context, DownloadActionReceiver.ACTION_TOGGLE_NSFW, 48))
+      setOnClickPendingIntent(R.id.notification_action_anonymous, buildActionPendingIntent(context, DownloadActionReceiver.ACTION_TOGGLE_ANONYMOUS, 49))
+      setOnClickPendingIntent(R.id.notification_action_save, buildActionPendingIntent(context, DownloadActionReceiver.ACTION_TOGGLE_SAVE_TO_DEVICE, 50))
+      setTextViewText(
+        R.id.notification_action_nsfw,
+        context.getString(
+          R.string.local_downloader_notif_toggle_nsfw,
+          if (state.nsfwDefault) context.getString(R.string.local_downloader_toggle_on) else context.getString(R.string.local_downloader_toggle_off)
+        )
+      )
+      setTextViewText(
+        R.id.notification_action_anonymous,
+        context.getString(
+          R.string.local_downloader_notif_toggle_anonymous,
+          if (state.anonymousDefault) context.getString(R.string.local_downloader_toggle_on) else context.getString(R.string.local_downloader_toggle_off)
+        )
+      )
+      setTextViewText(
+        R.id.notification_action_save,
+        context.getString(
+          R.string.local_downloader_notif_toggle_save,
+          if (state.saveToDeviceDefault) context.getString(R.string.local_downloader_toggle_on) else context.getString(R.string.local_downloader_toggle_off)
+        )
+      )
     }
 
     val addUrlRemoteInput = RemoteInput.Builder(REMOTE_INPUT_URL_KEY)
-      .setLabel("Paste URL")
+      .setLabel(context.getString(R.string.local_downloader_notif_add_url_label))
       .build()
     val addUrlAction = NotificationCompat.Action.Builder(
       android.R.drawable.ic_input_add,
-      "Add URL",
+      context.getString(R.string.local_downloader_notif_add_url_action),
       buildMutableActionPendingIntent(context, DownloadActionReceiver.ACTION_ADD_URL_REMOTE_INPUT, 44)
     )
       .addRemoteInput(addUrlRemoteInput)
@@ -191,8 +250,12 @@ internal object DownloadNotificationController {
       return
     }
 
-    val channel = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW).apply {
-      description = CHANNEL_DESCRIPTION
+    val channel = NotificationChannel(
+      CHANNEL_ID,
+      context.getString(R.string.local_downloader_channel_name),
+      NotificationManager.IMPORTANCE_LOW
+    ).apply {
+      description = context.getString(R.string.local_downloader_channel_description)
       setShowBadge(false)
       lockscreenVisibility = Notification.VISIBILITY_PRIVATE
     }

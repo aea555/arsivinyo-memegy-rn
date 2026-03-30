@@ -14,6 +14,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SplashScreen as AppSplashScreen } from '@/src/features/auth/screens/SplashScreen';
 import { useAuthSessionLifecycle } from '@/src/features/auth/hooks/useAuthSessionLifecycle';
 import { useMyVideosRealtimeSync } from '@/src/features/profile/hooks/useMyVideosRealtimeSync';
+import { useQuickUploadCoordinator } from '@/src/features/upload/hooks/useQuickUploadCoordinator';
 import i18n from '@/src/shared/locales/i18n';
 import { AppToastHost } from '@/src/shared/components/ui/AppToastHost';
 import { queryClient } from '@/src/shared/services/api/queryClient';
@@ -78,6 +79,7 @@ export default function RootLayout() {
 
   useMyVideosRealtimeSync();
   useAuthSessionLifecycle();
+  useQuickUploadCoordinator();
 
   const [fontsLoaded] = useFonts({
     Comfortaa_300Light,

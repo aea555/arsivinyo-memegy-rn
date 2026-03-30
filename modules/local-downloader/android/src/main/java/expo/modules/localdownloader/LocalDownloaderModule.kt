@@ -68,6 +68,15 @@ import kotlin.math.max
 data class TaskState(
   var taskId: String,
   var status: String,
+  var source: String? = null,
+  var sourceUrl: String? = null,
+  var quickAnonymousDefault: Boolean? = null,
+  var quickNsfwDefault: Boolean? = null,
+  var quickSaveToDeviceDefault: Boolean? = null,
+  var quickCustomTitle: String? = null,
+  var quickCustomDescription: String? = null,
+  var quickUploadAcked: Boolean = false,
+  var createdAtMs: Long = System.currentTimeMillis(),
   var state: String? = null,
   var filename: String? = null,
   var filePath: String? = null,
@@ -146,14 +155,34 @@ data class CustomDomainMatch(
 data class PendingQuickRequest(
   val url: String,
   val captureMode: String,
-  val visibility: String,
+  val nsfwDefault: Boolean,
+  val anonymousDefault: Boolean,
+  val saveToDeviceDefault: Boolean,
   val createdAtMs: Long
 )
 
 data class QueuedQuickDownload(
   val url: String,
-  val visibility: String,
+  val nsfwDefault: Boolean,
+  val anonymousDefault: Boolean,
+  val saveToDeviceDefault: Boolean,
+  val customTitle: String? = null,
+  val customDescription: String? = null,
   val enqueuedAtMs: Long = System.currentTimeMillis()
+)
+
+data class QuickUploadSettings(
+  val nsfwDefault: Boolean,
+  val anonymousDefault: Boolean,
+  val saveToDeviceDefault: Boolean,
+  val askMetadata: Boolean
+)
+
+data class PendingQuickMetadataRequest(
+  val requestId: String,
+  val url: String,
+  val captureMode: String,
+  val createdAtMs: Long
 )
 
 data class PrivateVideoEntry(
@@ -212,6 +241,9 @@ class LocalDownloaderModule : Module() {
   private var privateModeEnabled: Boolean = false
 
   @Volatile
+  private var quickUploadSettingsCache: QuickUploadSettings? = null
+
+  @Volatile
   private var privateLastEncryptMs: Long? = null
 
   @Volatile
@@ -228,6 +260,7 @@ class LocalDownloaderModule : Module() {
       activeModule = this@LocalDownloaderModule
       lastQuickReason = lastQuickReasonFallback
       privateModeEnabled = isPrivateModeEnabledPersisted(requireNotNull(appContext.reactContext))
+      quickUploadSettingsCache = requireNotNull(appContext.reactContext).let { readQuickUploadSettings(it) }
       debug("Module OnCreate started. supportedAbis=${Build.SUPPORTED_ABIS?.joinToString()}")
       cleanupRuntimeCookieTemp()
       cleanupPrivatePlaybackCacheInternal()
@@ -249,7 +282,7 @@ class LocalDownloaderModule : Module() {
         addError("MERGE_DEPENDENCY_MISSING: ffmpeg/ffprobe not executable")
       }
       cachedFfmpegInfo = ffmpegInfo
-      syncForegroundNotification("idle", "Ready for quick downloads")
+      syncForegroundNotification("idle", getString(R.string.local_downloader_msg_ready_for_quick_downloads))
       consumePendingQuickRequests()
       emitBackgroundStateChanged()
     }
@@ -258,7 +291,7 @@ class LocalDownloaderModule : Module() {
       if (activeModule === this@LocalDownloaderModule) {
         activeModule = null
       }
-      syncForegroundNotification("idle", "Stopping background notification")
+      syncForegroundNotification("idle", getString(R.string.local_downloader_msg_stopping_background_notification))
       appContext.reactContext?.let { DownloadNotificationController.stop(it) }
       emitBackgroundStateChanged()
     }
@@ -268,7 +301,7 @@ class LocalDownloaderModule : Module() {
       val cookiePlatform = (input["cookiePlatform"] as? String)?.trim()?.lowercase()?.takeIf { SUPPORTED_PLATFORMS.contains(it) }
       val cookieProfile = (input["cookieProfile"] as? String)?.trim().orEmpty().ifEmpty { null }
       val maxFileSizeMb = (input["maxFileSizeMb"] as? Number)?.toInt()?.coerceAtLeast(0) ?: DEFAULT_MAX_FILE_SIZE_MB
-      val visibility = normalizeVisibility((input["visibility"] as? String), defaultPrivate = privateModeEnabled)
+      val visibility = normalizeVisibility((input["visibility"] as? String), defaultPrivate = false)
       startDownloadInternal(
         url = url,
         cookiePlatform = cookiePlatform,
@@ -299,16 +332,139 @@ class LocalDownloaderModule : Module() {
       markCancelRequested(taskId)
       ignoredTaskResults.add(taskId)
       if (!isTerminalStatus(tasks[taskId]?.status)) {
-        markCancelled(taskId, "Cancellation requested")
+        markCancelled(taskId, getString(R.string.local_downloader_msg_cancellation_requested))
       }
       debug("Task[$taskId] cancellation requested; task marked cancelled immediately")
-      syncForegroundNotification("downloading", "Cancellation requested")
+      syncForegroundNotification("downloading", getString(R.string.local_downloader_msg_cancellation_requested))
       emitBackgroundStateChanged()
 
       mapOf(
         "success" to true,
         "confirmed" to true,
         "pending" to true
+      )
+    }
+
+    AsyncFunction("getBackgroundState") {
+      backgroundStateMap()
+    }
+
+    AsyncFunction("ensureBackgroundPermission") {
+      val context = requireNotNull(appContext.reactContext)
+      val granted = isNotificationPermissionGranted(context)
+      if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        appContext.currentActivity?.let { activity ->
+          runCatching {
+            ActivityCompat.requestPermissions(
+              activity,
+              arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+              REQUEST_CODE_NOTIFICATIONS
+            )
+          }
+        }
+      }
+      val refreshedGranted = isNotificationPermissionGranted(context)
+      mapOf(
+        "granted" to refreshedGranted,
+        "canAskAgain" to canAskForNotificationPermission()
+      )
+    }
+
+    AsyncFunction("startQuickDownloadFromClipboard") {
+      startQuickDownloadFromClipboard()
+    }
+
+    AsyncFunction("startQuickDownloadWithUrl") { input: Map<String, Any?> ->
+      val url = (input["url"] as? String)?.trim().orEmpty()
+      startQuickDownloadWithUrl(url, "manual")
+    }
+
+    AsyncFunction("startQuickDownloadWithMetadata") { input: Map<String, Any?> ->
+      val context = requireNotNull(appContext.reactContext)
+      val url = (input["url"] as? String)?.trim().orEmpty()
+      val title = (input["title"] as? String)?.trim()?.takeIf { it.isNotBlank() }
+      val description = (input["description"] as? String)?.trim()?.takeIf { it.isNotBlank() }
+      val settings = readQuickUploadSettings(context)
+      startQuickDownloadWithUrl(
+        rawUrl = url,
+        captureMode = "manual",
+        quickUploadSettingsOverride = settings.copy(askMetadata = false),
+        quickCustomTitle = title,
+        quickCustomDescription = description
+      )
+    }
+
+    AsyncFunction("setQuickUploadSettings") { input: Map<String, Any?> ->
+      val context = requireNotNull(appContext.reactContext)
+      val current = readQuickUploadSettings(context)
+      val resolved = QuickUploadSettings(
+        nsfwDefault = (input["nsfwDefault"] as? Boolean) ?: current.nsfwDefault,
+        anonymousDefault = (input["anonymousDefault"] as? Boolean) ?: current.anonymousDefault,
+        saveToDeviceDefault = (input["saveToDeviceDefault"] as? Boolean) ?: current.saveToDeviceDefault,
+        askMetadata = (input["askMetadata"] as? Boolean) ?: current.askMetadata
+      )
+      writeQuickUploadSettings(context, resolved)
+      quickUploadSettingsCache = resolved
+      syncForegroundNotification(notificationPhase, getString(R.string.local_downloader_msg_quick_settings_updated))
+      emitBackgroundStateChanged()
+      quickUploadSettingsToMap(resolved)
+    }
+
+    AsyncFunction("getQuickUploadSettings") {
+      val context = requireNotNull(appContext.reactContext)
+      val settings = readQuickUploadSettings(context)
+      quickUploadSettingsCache = settings
+      quickUploadSettingsToMap(settings)
+    }
+
+    AsyncFunction("listPendingQuickUploads") {
+      val pending = tasks.values
+        .filter { task ->
+          task.status == "SUCCESS" &&
+            !task.quickUploadAcked &&
+            !task.filePath.isNullOrBlank() &&
+            (task.source == "quick" || task.source == "queued")
+        }
+        .sortedBy { it.createdAtMs }
+
+      pending.map { task ->
+        val filename = task.filename?.takeIf { it.isNotBlank() } ?: "${task.taskId}.mp4"
+        mapOf(
+          "taskId" to task.taskId,
+          "url" to task.sourceUrl,
+          "filePath" to task.filePath,
+          "filename" to filename,
+          "titleHint" to filename.substringBeforeLast('.').takeIf { it.isNotBlank() },
+          "customTitle" to task.quickCustomTitle,
+          "customDescription" to task.quickCustomDescription,
+          "anonymousDefault" to (task.quickAnonymousDefault ?: false),
+          "nsfwDefault" to (task.quickNsfwDefault ?: false),
+          "saveToDeviceDefault" to (task.quickSaveToDeviceDefault ?: true),
+          "createdAtMs" to task.createdAtMs
+        )
+      }
+    }
+
+    AsyncFunction("ackPendingQuickUpload") { input: Map<String, Any?> ->
+      val taskId = (input["taskId"] as? String)?.trim().orEmpty()
+      if (taskId.isBlank()) {
+        return@AsyncFunction mapOf("success" to false)
+      }
+      val task = tasks[taskId] ?: return@AsyncFunction mapOf("success" to false)
+      task.quickUploadAcked = true
+      persistTaskSnapshot()
+      emitBackgroundStateChanged()
+      mapOf("success" to true)
+    }
+
+    AsyncFunction("consumePendingQuickMetadataRequest") {
+      val request = dequeuePendingQuickMetadataRequest() ?: return@AsyncFunction null
+      emitBackgroundStateChanged()
+      mapOf(
+        "requestId" to request.requestId,
+        "url" to request.url,
+        "captureMode" to request.captureMode,
+        "createdAtMs" to request.createdAtMs
       )
     }
 
@@ -658,6 +814,9 @@ class LocalDownloaderModule : Module() {
     maxFileSizeMb: Int,
     visibility: String,
     source: String,
+    quickUploadSettings: QuickUploadSettings? = null,
+    quickCustomTitle: String? = null,
+    quickCustomDescription: String? = null,
   ): Map<String, Any?> {
     if (url.isBlank()) {
       throw IllegalArgumentException("INVALID_URL")
@@ -672,7 +831,19 @@ class LocalDownloaderModule : Module() {
     val taskId = UUID.randomUUID().toString()
     ignoredTaskResults.remove(taskId)
 
-    val task = TaskState(taskId = taskId, status = "PENDING")
+    val task = TaskState(
+      taskId = taskId,
+      status = "PENDING",
+      source = source,
+      sourceUrl = url,
+      quickAnonymousDefault = quickUploadSettings?.anonymousDefault,
+      quickNsfwDefault = quickUploadSettings?.nsfwDefault,
+      quickSaveToDeviceDefault = quickUploadSettings?.saveToDeviceDefault,
+      quickCustomTitle = quickCustomTitle,
+      quickCustomDescription = quickCustomDescription,
+      quickUploadAcked = false,
+      createdAtMs = System.currentTimeMillis(),
+    )
     tasks[taskId] = task
     persistTaskSnapshot()
     emitProgress(taskId, "PENDING", "starting", "Task created")
@@ -686,7 +857,7 @@ class LocalDownloaderModule : Module() {
 
     activeTaskId = taskId
     activeTaskUrl = url
-    syncForegroundNotification("starting", "Preparing download")
+    syncForegroundNotification("starting", getString(R.string.local_downloader_notif_subtitle_starting))
     emitBackgroundStateChanged()
 
     activeJob = scope.launch {
@@ -889,7 +1060,7 @@ class LocalDownloaderModule : Module() {
               addError("PRIVATE_STORAGE_WRITE_FAILED: task=$taskId message=$privateMessage")
               return@runCatching
             }
-          } else if (source != "manual" && filename != null && filePath != null) {
+          } else if (source != "manual" && filename != null && filePath != null && (quickUploadSettings?.saveToDeviceDefault == true)) {
             emitProgress(taskId, "PROGRESS", "saving", "Saving to gallery", 99.0)
             runCatching {
               val saveResult = saveToMediaStoreInternal(
@@ -938,7 +1109,7 @@ class LocalDownloaderModule : Module() {
         }
 
         if (isCancelRequested(taskId)) {
-          markCancelled(taskId, "Cancellation requested")
+          markCancelled(taskId, getString(R.string.local_downloader_msg_cancellation_requested))
           return@onFailure
         }
 
@@ -972,7 +1143,7 @@ class LocalDownloaderModule : Module() {
     }
     val startedNext = startNextQueuedDownloadIfAny()
     if (!startedNext) {
-      syncForegroundNotification("idle", "Ready for quick downloads")
+      syncForegroundNotification("idle", getString(R.string.local_downloader_msg_ready_for_quick_downloads))
     }
     emitBackgroundStateChanged()
   }
@@ -992,7 +1163,16 @@ class LocalDownloaderModule : Module() {
     }
     pending.forEach { request ->
       runCatching {
-        startQuickDownloadWithUrl(request.url, request.captureMode, request.visibility)
+        startQuickDownloadWithUrl(
+          rawUrl = request.url,
+          captureMode = request.captureMode,
+          quickUploadSettingsOverride = QuickUploadSettings(
+            nsfwDefault = request.nsfwDefault,
+            anonymousDefault = request.anonymousDefault,
+            saveToDeviceDefault = request.saveToDeviceDefault,
+            askMetadata = false
+          )
+        )
       }.onFailure {
         addError("PENDING_QUICK_REQUEST_FAILED: ${it.message}")
       }
@@ -1015,8 +1195,16 @@ class LocalDownloaderModule : Module() {
         cookiePlatform = detectCookiePlatform(next.url),
         cookieProfile = null,
         maxFileSizeMb = DEFAULT_MAX_FILE_SIZE_MB,
-        visibility = next.visibility,
+        visibility = "public",
         source = "queued",
+        quickUploadSettings = QuickUploadSettings(
+          nsfwDefault = next.nsfwDefault,
+          anonymousDefault = next.anonymousDefault,
+          saveToDeviceDefault = next.saveToDeviceDefault,
+          askMetadata = false
+        ),
+        quickCustomTitle = next.customTitle,
+        quickCustomDescription = next.customDescription
       )
       true
     }.getOrElse {
@@ -1040,7 +1228,13 @@ class LocalDownloaderModule : Module() {
     return startQuickDownloadWithUrl(url, "clipboard")
   }
 
-  private fun startQuickDownloadWithUrl(rawUrl: String, captureMode: String, visibilityOverride: String? = null): Map<String, Any?> {
+  private fun startQuickDownloadWithUrl(
+    rawUrl: String,
+    captureMode: String,
+    quickUploadSettingsOverride: QuickUploadSettings? = null,
+    quickCustomTitle: String? = null,
+    quickCustomDescription: String? = null
+  ): Map<String, Any?> {
     val context = requireNotNull(appContext.reactContext)
     if (!isNotificationPermissionGranted(context)) {
       reportQuickActionReason("PERMISSION_REQUIRED")
@@ -1052,14 +1246,45 @@ class LocalDownloaderModule : Module() {
         reportQuickActionReason("INVALID_QUICK_URL")
         return mapOf("accepted" to false, "reason" to "INVALID_QUICK_URL")
       }
-    val selectedVisibility = normalizeVisibility(visibilityOverride, defaultPrivate = privateModeEnabled)
+    val quickSettings = quickUploadSettingsOverride ?: readQuickUploadSettings(context)
+    quickUploadSettingsCache = quickSettings
+
+    if (quickSettings.askMetadata) {
+      val request = PendingQuickMetadataRequest(
+        requestId = UUID.randomUUID().toString(),
+        url = normalizedUrl,
+        captureMode = captureMode,
+        createdAtMs = System.currentTimeMillis()
+      )
+      queuePendingQuickMetadataRequest(request)
+      launchMainAppForMetadata(context)
+      reportQuickActionReason(null)
+      syncForegroundNotification("starting", getString(R.string.local_downloader_msg_waiting_for_metadata))
+      emitBackgroundStateChanged()
+      return mapOf(
+        "accepted" to true,
+        "metadataRequired" to true,
+        "queueSize" to queueSize(),
+        "queueMax" to MAX_QUEUED_DOWNLOADS,
+        "resolvedUrl" to normalizedUrl,
+        "captureMode" to captureMode
+      )
+    }
 
     if (activeJob?.isActive == true) {
-      val queueResult = enqueueQuickUrl(normalizedUrl, selectedVisibility)
+      val queueResult = enqueueQuickUrl(
+        url = normalizedUrl,
+        settings = quickSettings,
+        customTitle = quickCustomTitle,
+        customDescription = quickCustomDescription
+      )
       if (!queueResult.accepted) {
         return mapOf("accepted" to false, "reason" to queueResult.reason)
       }
-      syncForegroundNotification("downloading", "Queued (${queueResult.queueSize}/$MAX_QUEUED_DOWNLOADS)")
+      syncForegroundNotification(
+        "downloading",
+        getString(R.string.local_downloader_msg_queued_short, queueResult.queueSize, MAX_QUEUED_DOWNLOADS)
+      )
       emitBackgroundStateChanged()
       reportQuickActionReason(null)
       return mapOf(
@@ -1067,7 +1292,6 @@ class LocalDownloaderModule : Module() {
         "queueSize" to queueResult.queueSize,
         "queueMax" to MAX_QUEUED_DOWNLOADS,
         "resolvedUrl" to normalizedUrl,
-        "visibility" to selectedVisibility,
         "captureMode" to captureMode
       )
     }
@@ -1078,8 +1302,11 @@ class LocalDownloaderModule : Module() {
         cookiePlatform = detectCookiePlatform(normalizedUrl),
         cookieProfile = null,
         maxFileSizeMb = DEFAULT_MAX_FILE_SIZE_MB,
-        visibility = selectedVisibility,
+        visibility = "public",
         source = "quick",
+        quickUploadSettings = quickSettings,
+        quickCustomTitle = quickCustomTitle,
+        quickCustomDescription = quickCustomDescription
       )
       reportQuickActionReason(null)
       mapOf(
@@ -1088,7 +1315,6 @@ class LocalDownloaderModule : Module() {
         "queueSize" to 0,
         "queueMax" to MAX_QUEUED_DOWNLOADS,
         "resolvedUrl" to normalizedUrl,
-        "visibility" to selectedVisibility,
         "captureMode" to captureMode
       )
     }.getOrElse {
@@ -1102,7 +1328,6 @@ class LocalDownloaderModule : Module() {
         "accepted" to false,
         "reason" to reason,
         "resolvedUrl" to normalizedUrl,
-        "visibility" to selectedVisibility,
         "captureMode" to captureMode
       )
     }
@@ -1114,7 +1339,12 @@ class LocalDownloaderModule : Module() {
     val queueSize: Int = 0
   )
 
-  private fun enqueueQuickUrl(url: String, visibility: String): QueueAttemptResult {
+  private fun enqueueQuickUrl(
+    url: String,
+    settings: QuickUploadSettings,
+    customTitle: String? = null,
+    customDescription: String? = null
+  ): QueueAttemptResult {
     synchronized(queueLock) {
       val now = System.currentTimeMillis()
       pruneRecentQuickUrls(now)
@@ -1127,7 +1357,16 @@ class LocalDownloaderModule : Module() {
         reportQuickActionReason("QUEUE_FULL")
         return QueueAttemptResult(accepted = false, reason = "QUEUE_FULL")
       }
-      queuedQuickDownloads.addLast(QueuedQuickDownload(url = url, visibility = visibility))
+      queuedQuickDownloads.addLast(
+        QueuedQuickDownload(
+          url = url,
+          nsfwDefault = settings.nsfwDefault,
+          anonymousDefault = settings.anonymousDefault,
+          saveToDeviceDefault = settings.saveToDeviceDefault,
+          customTitle = customTitle,
+          customDescription = customDescription
+        )
+      )
       recentQuickUrls[url] = now
       return QueueAttemptResult(accepted = true, queueSize = queuedQuickDownloads.size)
     }
@@ -1177,6 +1416,15 @@ class LocalDownloaderModule : Module() {
     }
   }
 
+  private fun getString(resId: Int, vararg formatArgs: Any): String {
+    val context = appContext.reactContext
+    return if (context != null) {
+      if (formatArgs.isEmpty()) context.getString(resId) else context.getString(resId, *formatArgs)
+    } else {
+      resId.toString()
+    }
+  }
+
   private fun isNotificationPermissionGranted(context: android.content.Context): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
       return true
@@ -1198,6 +1446,13 @@ class LocalDownloaderModule : Module() {
   private fun backgroundStateMap(): Map<String, Any?> {
     val context = appContext.reactContext
     val granted = context?.let { isNotificationPermissionGranted(it) } ?: false
+    val quickSettings = context?.let { readQuickUploadSettings(it) } ?: quickUploadSettingsCache ?: defaultQuickUploadSettings()
+    val pendingQuickUploadCount = tasks.values.count { task ->
+      task.status == "SUCCESS" &&
+        !task.quickUploadAcked &&
+        !task.filePath.isNullOrBlank() &&
+        (task.source == "quick" || task.source == "queued")
+    }
     return mapOf(
       "serviceRunning" to DownloadForegroundService.isRunning,
       "activeTaskId" to activeTaskId,
@@ -1206,7 +1461,9 @@ class LocalDownloaderModule : Module() {
       "queuedUrls" to synchronized(queueLock) { queuedQuickDownloads.map { it.url } },
       "lastQuickReason" to lastQuickReason,
       "notificationPhase" to notificationPhase,
-      "privateModeEnabled" to privateModeEnabled,
+      "quickUploadSettings" to quickUploadSettingsToMap(quickSettings),
+      "pendingQuickUploadCount" to pendingQuickUploadCount,
+      "pendingQuickMetadataCount" to pendingQuickMetadataRequestsSnapshot().size,
       "notificationPermissionRequired" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU),
       "notificationPermissionGranted" to granted
     )
@@ -1235,6 +1492,15 @@ class LocalDownloaderModule : Module() {
     sendEvent("backgroundStateChanged", backgroundStateMap())
   }
 
+  private fun quickUploadSettingsToMap(settings: QuickUploadSettings): Map<String, Any?> {
+    return mapOf(
+      "nsfwDefault" to settings.nsfwDefault,
+      "anonymousDefault" to settings.anonymousDefault,
+      "saveToDeviceDefault" to settings.saveToDeviceDefault,
+      "askMetadata" to settings.askMetadata
+    )
+  }
+
   private fun syncForegroundNotification(phase: String, message: String?, explicitProgress: Double? = null) {
     val context = appContext.reactContext ?: return
     if (!isNotificationPermissionGranted(context)) {
@@ -1243,13 +1509,17 @@ class LocalDownloaderModule : Module() {
     notificationPhase = phase
     val currentTask = activeTaskId
     val progress = explicitProgress ?: currentTask?.let { tasks[it]?.progressPercent }
+    val quickSettings = readQuickUploadSettings(context)
+    quickUploadSettingsCache = quickSettings
     val state = BackgroundNotificationState(
       activeTaskId = currentTask,
       phase = phase,
       message = message,
       progressPercent = progress,
       queueSize = queueSize(),
-      privateModeEnabled = privateModeEnabled,
+      nsfwDefault = quickSettings.nsfwDefault,
+      anonymousDefault = quickSettings.anonymousDefault,
+      saveToDeviceDefault = quickSettings.saveToDeviceDefault,
       pinned = STICKY_NOTIFICATION_ENABLED,
     )
     if (state.shouldRunForeground) {
@@ -1272,23 +1542,31 @@ class LocalDownloaderModule : Module() {
     if (!isTerminalStatus(tasks[taskId]?.status)) {
       markCancelled(taskId, "Cancellation requested from notification")
     }
-    syncForegroundNotification("downloading", "Cancellation requested")
+    syncForegroundNotification("downloading", getString(R.string.local_downloader_msg_cancellation_requested))
     emitBackgroundStateChanged()
   }
 
   private fun quickFromNotificationAction() {
     val result = startQuickDownloadFromClipboard()
     if (result["accepted"] == true) {
+      if (result["metadataRequired"] == true) {
+        syncForegroundNotification("starting", getString(R.string.local_downloader_msg_waiting_for_metadata))
+        return
+      }
       val queueSize = (result["queueSize"] as? Number)?.toInt()
       if (queueSize != null && queueSize > 0) {
-        syncForegroundNotification("downloading", "Queued ($queueSize/$MAX_QUEUED_DOWNLOADS)")
+        syncForegroundNotification(
+          "downloading",
+          getString(R.string.local_downloader_msg_queued_short, queueSize, MAX_QUEUED_DOWNLOADS)
+        )
       } else {
-        syncForegroundNotification("starting", "Quick download started")
+        syncForegroundNotification("starting", getString(R.string.local_downloader_msg_quick_download_started))
       }
       return
     }
     val reason = result["reason"]?.toString().orEmpty()
-    syncForegroundNotification("error", quickReasonToMessage(reason))
+    val context = appContext.reactContext ?: return
+    syncForegroundNotification("error", quickReasonToMessage(context, reason))
   }
 
   private fun emitProgress(
@@ -4443,6 +4721,15 @@ class LocalDownloaderModule : Module() {
         tasks[taskId] = TaskState(
           taskId = taskId,
           status = if (wasInFlight) "FAILURE" else originalStatus,
+          source = obj.optString("source").ifBlank { null },
+          sourceUrl = obj.optString("sourceUrl").ifBlank { null },
+          quickAnonymousDefault = if (obj.has("quickAnonymousDefault")) obj.optBoolean("quickAnonymousDefault") else null,
+          quickNsfwDefault = if (obj.has("quickNsfwDefault")) obj.optBoolean("quickNsfwDefault") else null,
+          quickSaveToDeviceDefault = if (obj.has("quickSaveToDeviceDefault")) obj.optBoolean("quickSaveToDeviceDefault") else null,
+          quickCustomTitle = obj.optString("quickCustomTitle").ifBlank { null },
+          quickCustomDescription = obj.optString("quickCustomDescription").ifBlank { null },
+          quickUploadAcked = obj.optBoolean("quickUploadAcked", false),
+          createdAtMs = obj.optLong("createdAtMs", System.currentTimeMillis()),
           state = obj.optString("state").ifBlank { if (wasInFlight) "error" else null },
           filename = obj.optString("filename").ifBlank { null },
           filePath = obj.optString("filePath").ifBlank { null },
@@ -4479,6 +4766,15 @@ class LocalDownloaderModule : Module() {
     return mapOf(
       "taskId" to taskId,
       "status" to status,
+      "source" to source,
+      "sourceUrl" to sourceUrl,
+      "quickAnonymousDefault" to quickAnonymousDefault,
+      "quickNsfwDefault" to quickNsfwDefault,
+      "quickSaveToDeviceDefault" to quickSaveToDeviceDefault,
+      "quickCustomTitle" to quickCustomTitle,
+      "quickCustomDescription" to quickCustomDescription,
+      "quickUploadAcked" to quickUploadAcked,
+      "createdAtMs" to createdAtMs,
       "state" to state,
       "filename" to filename,
       "filePath" to filePath,
@@ -4506,6 +4802,7 @@ class LocalDownloaderModule : Module() {
     private var lastQuickReasonFallback: String? = null
 
     private val pendingQuickRequests: ArrayDeque<PendingQuickRequest> = ArrayDeque()
+    private val pendingQuickMetadataRequests: ArrayDeque<PendingQuickMetadataRequest> = ArrayDeque()
 
     private const val ANDROID_KEYSTORE = "AndroidKeyStore"
     private const val COOKIE_KEY_ALIAS = "arsivinyo.local.cookies.v1"
@@ -4519,6 +4816,10 @@ class LocalDownloaderModule : Module() {
     private const val SECURE_COOKIES_DIRNAME = "cookies_secure"
     private const val PREFS_NAME = "local_downloader_prefs"
     private const val PREF_PRIVATE_MODE_ENABLED = "private_mode_enabled"
+    private const val PREF_QUICK_NSFW_DEFAULT = "quick_nsfw_default"
+    private const val PREF_QUICK_ANONYMOUS_DEFAULT = "quick_anonymous_default"
+    private const val PREF_QUICK_SAVE_TO_DEVICE_DEFAULT = "quick_save_to_device_default"
+    private const val PREF_QUICK_ASK_METADATA = "quick_ask_metadata"
     private const val PRIVATE_VAULT_DIRNAME = "private_vault"
     private const val PRIVATE_VAULT_OBJECTS_DIRNAME = "objects"
     private const val PRIVATE_VAULT_INDEX_FILENAME = "index.json"
@@ -4591,41 +4892,91 @@ class LocalDownloaderModule : Module() {
       launchQuickCaptureActivity(context)
     }
 
-    fun onNotificationTogglePrivateMode(context: Context) {
-      val module = activeModule
-      if (module != null) {
-        runCatching {
-          module.setPrivateModeEnabledInternal(!module.privateModeEnabled)
-        }.onFailure {
-          reportQuickActionReason("PRIVATE_MODE_UNAVAILABLE")
-        }
-        return
-      }
-
-      if (!PRIVATE_VAULT_FEATURE_FLAG) {
-        reportQuickActionReason("PRIVATE_MODE_UNAVAILABLE")
-        return
-      }
-
-      val current = isPrivateModeEnabledPersisted(context)
-      val next = !current
-      if (next && !isPrivateAuthAvailableStatic(context)) {
-        reportQuickActionReason("PRIVATE_MODE_UNAVAILABLE")
-        return
-      }
-      persistPrivateModeEnabled(context, next)
-      DownloadNotificationController.startOrUpdate(
-        context,
-        BackgroundNotificationState(
-          activeTaskId = null,
-          phase = "idle",
-          message = if (next) "Private mode enabled" else "Private mode disabled",
-          progressPercent = null,
-          queueSize = pendingQuickRequestsSnapshot().size,
-          privateModeEnabled = next,
-          pinned = true
-        )
+    fun onNotificationToggleNsfw(context: Context) {
+      val current = readQuickUploadSettings(context)
+      val next = current.copy(nsfwDefault = !current.nsfwDefault)
+      writeQuickUploadSettings(context, next)
+      activeModule?.quickUploadSettingsCache = next
+      val message = context.getString(
+        R.string.local_downloader_notif_toggle_nsfw,
+        if (next.nsfwDefault) context.getString(R.string.local_downloader_toggle_on) else context.getString(R.string.local_downloader_toggle_off)
       )
+      activeModule?.syncForegroundNotification("idle", message)
+      activeModule?.emitBackgroundStateChanged()
+      if (activeModule == null) {
+        DownloadNotificationController.startOrUpdate(
+          context,
+          BackgroundNotificationState(
+            activeTaskId = null,
+            phase = "idle",
+            message = message,
+            progressPercent = null,
+            queueSize = pendingQuickRequestsSnapshot().size,
+            nsfwDefault = next.nsfwDefault,
+            anonymousDefault = next.anonymousDefault,
+            saveToDeviceDefault = next.saveToDeviceDefault,
+            pinned = true
+          )
+        )
+      }
+    }
+
+    fun onNotificationToggleAnonymous(context: Context) {
+      val current = readQuickUploadSettings(context)
+      val next = current.copy(anonymousDefault = !current.anonymousDefault)
+      writeQuickUploadSettings(context, next)
+      activeModule?.quickUploadSettingsCache = next
+      val message = context.getString(
+        R.string.local_downloader_notif_toggle_anonymous,
+        if (next.anonymousDefault) context.getString(R.string.local_downloader_toggle_on) else context.getString(R.string.local_downloader_toggle_off)
+      )
+      activeModule?.syncForegroundNotification("idle", message)
+      activeModule?.emitBackgroundStateChanged()
+      if (activeModule == null) {
+        DownloadNotificationController.startOrUpdate(
+          context,
+          BackgroundNotificationState(
+            activeTaskId = null,
+            phase = "idle",
+            message = message,
+            progressPercent = null,
+            queueSize = pendingQuickRequestsSnapshot().size,
+            nsfwDefault = next.nsfwDefault,
+            anonymousDefault = next.anonymousDefault,
+            saveToDeviceDefault = next.saveToDeviceDefault,
+            pinned = true
+          )
+        )
+      }
+    }
+
+    fun onNotificationToggleSaveToDevice(context: Context) {
+      val current = readQuickUploadSettings(context)
+      val next = current.copy(saveToDeviceDefault = !current.saveToDeviceDefault)
+      writeQuickUploadSettings(context, next)
+      activeModule?.quickUploadSettingsCache = next
+      val message = context.getString(
+        R.string.local_downloader_notif_toggle_save,
+        if (next.saveToDeviceDefault) context.getString(R.string.local_downloader_toggle_on) else context.getString(R.string.local_downloader_toggle_off)
+      )
+      activeModule?.syncForegroundNotification("idle", message)
+      activeModule?.emitBackgroundStateChanged()
+      if (activeModule == null) {
+        DownloadNotificationController.startOrUpdate(
+          context,
+          BackgroundNotificationState(
+            activeTaskId = null,
+            phase = "idle",
+            message = message,
+            progressPercent = null,
+            queueSize = pendingQuickRequestsSnapshot().size,
+            nsfwDefault = next.nsfwDefault,
+            anonymousDefault = next.anonymousDefault,
+            saveToDeviceDefault = next.saveToDeviceDefault,
+            pinned = true
+          )
+        )
+      }
     }
 
     fun launchQuickCaptureActivity(context: Context) {
@@ -4646,11 +4997,11 @@ class LocalDownloaderModule : Module() {
         return mapOf("accepted" to false, "reason" to "PERMISSION_REQUIRED", "captureMode" to captureMode)
       }
 
-      val selectedVisibility = if (isPrivateModeEnabledPersisted(context)) "private" else "public"
+      val settings = readQuickUploadSettings(context)
       val module = activeModule
       if (module != null) {
         return runCatching {
-          module.startQuickDownloadWithUrl(rawUrl, captureMode, selectedVisibility)
+          module.startQuickDownloadWithUrl(rawUrl, captureMode, settings)
         }.getOrElse {
           reportQuickActionReason("QUICK_DOWNLOAD_REJECTED")
           mapOf("accepted" to false, "reason" to "QUICK_DOWNLOAD_REJECTED", "captureMode" to captureMode)
@@ -4659,6 +5010,41 @@ class LocalDownloaderModule : Module() {
 
       val normalized = normalizeQuickUrl(rawUrl)
         ?: return mapOf("accepted" to false, "reason" to "INVALID_QUICK_URL", "captureMode" to captureMode)
+
+      if (settings.askMetadata) {
+        queuePendingQuickMetadataRequest(
+          PendingQuickMetadataRequest(
+            requestId = UUID.randomUUID().toString(),
+            url = normalized,
+            captureMode = captureMode,
+            createdAtMs = System.currentTimeMillis()
+          )
+        )
+        launchMainAppForMetadata(context)
+        reportQuickActionReason(null)
+        DownloadNotificationController.startOrUpdate(
+          context,
+          BackgroundNotificationState(
+            activeTaskId = null,
+            phase = "starting",
+            message = context.getString(R.string.local_downloader_msg_waiting_for_metadata),
+            progressPercent = null,
+            queueSize = pendingQuickRequestsSnapshot().size,
+            nsfwDefault = settings.nsfwDefault,
+            anonymousDefault = settings.anonymousDefault,
+            saveToDeviceDefault = settings.saveToDeviceDefault,
+            pinned = true
+          )
+        )
+        return mapOf(
+          "accepted" to true,
+          "metadataRequired" to true,
+          "queueSize" to pendingQuickRequestsSnapshot().size,
+          "queueMax" to MAX_PENDING_QUICK_REQUESTS,
+          "resolvedUrl" to normalized,
+          "captureMode" to captureMode
+        )
+      }
 
       val queueState = synchronized(pendingQuickRequests) {
         val duplicate = pendingQuickRequests.any { it.url == normalized }
@@ -4669,7 +5055,16 @@ class LocalDownloaderModule : Module() {
           return@synchronized Pair(false, pendingQuickRequests.size)
         }
 
-        pendingQuickRequests.addLast(PendingQuickRequest(normalized, captureMode, selectedVisibility, System.currentTimeMillis()))
+        pendingQuickRequests.addLast(
+          PendingQuickRequest(
+            url = normalized,
+            captureMode = captureMode,
+            nsfwDefault = settings.nsfwDefault,
+            anonymousDefault = settings.anonymousDefault,
+            saveToDeviceDefault = settings.saveToDeviceDefault,
+            createdAtMs = System.currentTimeMillis()
+          )
+        )
         Pair(true, pendingQuickRequests.size)
       }
 
@@ -4682,7 +5077,6 @@ class LocalDownloaderModule : Module() {
           "accepted" to false,
           "reason" to reason,
           "captureMode" to captureMode,
-          "visibility" to selectedVisibility,
           "queueSize" to queueSize,
           "queueMax" to MAX_PENDING_QUICK_REQUESTS
         )
@@ -4694,10 +5088,16 @@ class LocalDownloaderModule : Module() {
         BackgroundNotificationState(
           activeTaskId = null,
           phase = "starting",
-          message = if (queueSize > 1) "Queued ($queueSize/$MAX_PENDING_QUICK_REQUESTS)" else "Preparing quick download",
+          message = if (queueSize > 1) {
+            context.getString(R.string.local_downloader_msg_queued_short, queueSize, MAX_PENDING_QUICK_REQUESTS)
+          } else {
+            context.getString(R.string.local_downloader_msg_preparing_quick_download)
+          },
           progressPercent = null,
           queueSize = queueSize,
-          privateModeEnabled = selectedVisibility == "private",
+          nsfwDefault = settings.nsfwDefault,
+          anonymousDefault = settings.anonymousDefault,
+          saveToDeviceDefault = settings.saveToDeviceDefault,
           pinned = true
         )
       )
@@ -4706,7 +5106,6 @@ class LocalDownloaderModule : Module() {
         "queueSize" to queueSize,
         "queueMax" to MAX_PENDING_QUICK_REQUESTS,
         "resolvedUrl" to normalized,
-        "visibility" to selectedVisibility,
         "captureMode" to captureMode
       )
     }
@@ -4716,16 +5115,15 @@ class LocalDownloaderModule : Module() {
       activeModule?.reportQuickActionReason(reason)
     }
 
-    fun quickReasonToMessage(reason: String?): String {
+    fun quickReasonToMessage(context: Context, reason: String?): String {
       return when (reason) {
-        "PERMISSION_REQUIRED" -> "Notification permission required"
-        "NO_CLIPBOARD_URL" -> "Clipboard URL not found"
-        "INVALID_QUICK_URL" -> "URL is invalid"
-        "QUEUE_FULL" -> "Queue full"
-        "QUICK_CAPTURE_CANCELLED" -> "Quick capture cancelled"
-        "QUICK_DOWNLOAD_REJECTED" -> "Quick download rejected"
-        "PRIVATE_MODE_UNAVAILABLE" -> "Private mode unavailable on this device"
-        else -> "Try another URL"
+        "PERMISSION_REQUIRED" -> context.getString(R.string.local_downloader_quick_reason_permission_required)
+        "NO_CLIPBOARD_URL" -> context.getString(R.string.local_downloader_quick_reason_no_clipboard_url)
+        "INVALID_QUICK_URL" -> context.getString(R.string.local_downloader_quick_reason_invalid_url)
+        "QUEUE_FULL" -> context.getString(R.string.local_downloader_quick_reason_queue_full)
+        "QUICK_CAPTURE_CANCELLED" -> context.getString(R.string.local_downloader_quick_reason_capture_cancelled)
+        "QUICK_DOWNLOAD_REJECTED" -> context.getString(R.string.local_downloader_quick_reason_rejected)
+        else -> context.getString(R.string.local_downloader_quick_reason_try_another)
       }
     }
 
@@ -4857,14 +5255,91 @@ class LocalDownloaderModule : Module() {
       }
     }
 
-    fun queuePendingQuickRequest(url: String, captureMode: String, visibility: String): Boolean {
+    fun queuePendingQuickRequest(
+      url: String,
+      captureMode: String,
+      settings: QuickUploadSettings = defaultQuickUploadSettings()
+    ): Boolean {
       return synchronized(pendingQuickRequests) {
         if (pendingQuickRequests.size >= MAX_PENDING_QUICK_REQUESTS) {
           false
         } else {
-          pendingQuickRequests.addLast(PendingQuickRequest(url, captureMode, visibility, System.currentTimeMillis()))
+          pendingQuickRequests.addLast(
+            PendingQuickRequest(
+              url = url,
+              captureMode = captureMode,
+              nsfwDefault = settings.nsfwDefault,
+              anonymousDefault = settings.anonymousDefault,
+              saveToDeviceDefault = settings.saveToDeviceDefault,
+              createdAtMs = System.currentTimeMillis()
+            )
+          )
           true
         }
+      }
+    }
+
+    fun pendingQuickMetadataRequestsSnapshot(): List<PendingQuickMetadataRequest> {
+      return synchronized(pendingQuickMetadataRequests) { pendingQuickMetadataRequests.toList() }
+    }
+
+    fun queuePendingQuickMetadataRequest(request: PendingQuickMetadataRequest): Boolean {
+      return synchronized(pendingQuickMetadataRequests) {
+        if (pendingQuickMetadataRequests.size >= MAX_PENDING_QUICK_REQUESTS) {
+          false
+        } else {
+          pendingQuickMetadataRequests.addLast(request)
+          true
+        }
+      }
+    }
+
+    fun dequeuePendingQuickMetadataRequest(): PendingQuickMetadataRequest? {
+      return synchronized(pendingQuickMetadataRequests) {
+        if (pendingQuickMetadataRequests.isEmpty()) null else pendingQuickMetadataRequests.removeFirst()
+      }
+    }
+
+    private fun defaultQuickUploadSettings() = QuickUploadSettings(
+      nsfwDefault = false,
+      anonymousDefault = false,
+      saveToDeviceDefault = true,
+      askMetadata = true
+    )
+
+    private fun readQuickUploadSettings(context: Context): QuickUploadSettings {
+      val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+      val defaults = defaultQuickUploadSettings()
+      return QuickUploadSettings(
+        nsfwDefault = prefs.getBoolean(PREF_QUICK_NSFW_DEFAULT, defaults.nsfwDefault),
+        anonymousDefault = prefs.getBoolean(PREF_QUICK_ANONYMOUS_DEFAULT, defaults.anonymousDefault),
+        saveToDeviceDefault = prefs.getBoolean(PREF_QUICK_SAVE_TO_DEVICE_DEFAULT, defaults.saveToDeviceDefault),
+        askMetadata = prefs.getBoolean(PREF_QUICK_ASK_METADATA, defaults.askMetadata),
+      )
+    }
+
+    private fun writeQuickUploadSettings(context: Context, settings: QuickUploadSettings) {
+      context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(PREF_QUICK_NSFW_DEFAULT, settings.nsfwDefault)
+        .putBoolean(PREF_QUICK_ANONYMOUS_DEFAULT, settings.anonymousDefault)
+        .putBoolean(PREF_QUICK_SAVE_TO_DEVICE_DEFAULT, settings.saveToDeviceDefault)
+        .putBoolean(PREF_QUICK_ASK_METADATA, settings.askMetadata)
+        .apply()
+    }
+
+    private fun launchMainAppForMetadata(context: Context) {
+      val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+      }
+      runCatching {
+        if (intent != null) {
+          context.startActivity(intent)
+        } else {
+          throw IllegalStateException("NO_LAUNCH_INTENT")
+        }
+      }.onFailure {
+        reportQuickActionReason("QUICK_DOWNLOAD_REJECTED")
       }
     }
 
@@ -4879,10 +5354,12 @@ class LocalDownloaderModule : Module() {
           BackgroundNotificationState(
             activeTaskId = null,
             phase = "error",
-            message = "App is not ready",
+            message = context.getString(R.string.local_downloader_msg_app_not_ready),
             progressPercent = null,
             queueSize = 0,
-            privateModeEnabled = isPrivateModeEnabledPersisted(context),
+            nsfwDefault = readQuickUploadSettings(context).nsfwDefault,
+            anonymousDefault = readQuickUploadSettings(context).anonymousDefault,
+            saveToDeviceDefault = readQuickUploadSettings(context).saveToDeviceDefault,
             pinned = true
           )
         )

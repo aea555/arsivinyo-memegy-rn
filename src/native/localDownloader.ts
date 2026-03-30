@@ -1,13 +1,26 @@
-export { default, isLocalDownloaderRuntimeAvailable } from '../../modules/local-downloader/src';
+export {
+  default,
+  addBackgroundStateListener,
+  addDownloadProgressListener,
+  isLocalDownloaderRuntimeAvailable,
+} from '../../modules/local-downloader/src';
 export type {
+  LocalBackgroundPermissionResult,
+  LocalBackgroundState,
+  LocalBackgroundStateEvent,
   LocalCookieProfile,
+  LocalDownloadEvent,
   LocalCustomCookieImportInput,
   LocalCustomCookieImportResult,
   LocalCustomDomainProfile,
   LocalCustomDomainSummary,
   LocalDownloadStartInput,
   LocalDownloadStartResult,
+  LocalPendingQuickMetadataRequest,
+  LocalPendingQuickUpload,
   LocalPlatform,
+  LocalQuickDownloadResult,
+  LocalQuickUploadSettings,
   LocalTaskStatus,
   LocalTaskStatusResult,
 } from '../../modules/local-downloader/src';

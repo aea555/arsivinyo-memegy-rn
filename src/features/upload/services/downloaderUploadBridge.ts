@@ -101,6 +101,12 @@ function getFilenameFromStatus(status: DownloaderTaskStatus): string {
   return fromPath && fromPath.length > 0 ? fromPath : `${status.taskId}.mp4`;
 }
 
+function filenameFromPath(filePath: string): string {
+  const fromPath = filePath.split('/').pop();
+  if (fromPath && fromPath.trim().length > 0) return fromPath.trim();
+  return `downloaded_${Date.now()}.mp4`;
+}
+
 async function resolveDefaultCookieProfileForUrl(url: string): Promise<{
   cookiePlatform: ReturnType<typeof getDownloaderPlatformFromUrl>;
   cookieProfile?: string;
@@ -164,17 +170,29 @@ async function pollUntilFinished(
 export async function downloadFromClipboardToNormalizedAsset(
   options: DownloaderBridgeOptions = {}
 ): Promise<DownloaderBridgeResult> {
+  const url = await getClipboardUrlForDownloader();
+  return downloadFromUrlToNormalizedAsset(url, options);
+}
+
+export async function downloadFromUrlToNormalizedAsset(
+  url: string,
+  options: DownloaderBridgeOptions = {}
+): Promise<DownloaderBridgeResult> {
   const { shouldCancel, onProgress } = options;
 
   assertNotCancelled(shouldCancel);
   onProgress?.({ state: 'starting', taskId: null });
 
-  const url = await getClipboardUrlForDownloader();
-  const cookieHint = await resolveDefaultCookieProfileForUrl(url);
+  const normalizedUrl = url.trim();
+  if (!normalizedUrl) {
+    throw new DownloaderApiError('INVALID_URL', 400, 'URL is empty.');
+  }
+
+  const cookieHint = await resolveDefaultCookieProfileForUrl(normalizedUrl);
 
   assertNotCancelled(shouldCancel);
   const { taskId } = await startDownload({
-    url,
+    url: normalizedUrl,
     cookiePlatform: cookieHint.cookiePlatform ?? undefined,
     cookieProfile: cookieHint.cookieProfile,
   });
@@ -184,15 +202,29 @@ export async function downloadFromClipboardToNormalizedAsset(
   assertNotCancelled(shouldCancel);
 
   onProgress?.({ state: 'fetching', taskId });
+  const filePath = finalStatus.filePath?.trim() ?? '';
+  const filename = getFilenameFromStatus(finalStatus);
+  const asset = await normalizeDownloadedFilePathToAsset(filePath, filename);
 
-  const filePath = finalStatus.filePath?.trim();
-  if (!filePath) {
+  onProgress?.({ state: 'ready', taskId });
+  return {
+    asset,
+    downloadedFilename: filename,
+    fallbackTitle: getFilenameWithoutExtension(filename),
+  };
+}
+
+export async function normalizeDownloadedFilePathToAsset(
+  filePath: string,
+  filenameHint?: string
+): Promise<NormalizedVideoAsset> {
+  const normalizedPath = filePath.trim();
+  if (!normalizedPath) {
     throw new DownloaderApiError('FILE_NOT_FOUND', 404, 'Downloaded file path is missing.');
   }
 
-  const localUri = toFileUri(filePath);
-  const filename = getFilenameFromStatus(finalStatus);
-
+  const localUri = toFileUri(normalizedPath);
+  const filename = (filenameHint?.trim() || filenameFromPath(normalizedPath)).trim();
   const info = await FileSystem.getInfoAsync(localUri);
   const sizeBytes = 'size' in info && typeof info.size === 'number' ? info.size : 0;
   if (!info.exists || sizeBytes <= 0) {
@@ -208,11 +240,5 @@ export async function downloadFromClipboardToNormalizedAsset(
     sourceScheme: 'file',
   };
   validateNormalizedVideoAsset(asset);
-
-  onProgress?.({ state: 'ready', taskId });
-  return {
-    asset,
-    downloadedFilename: filename,
-    fallbackTitle: getFilenameWithoutExtension(filename),
-  };
+  return asset;
 }

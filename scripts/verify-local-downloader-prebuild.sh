@@ -7,6 +7,7 @@ cd "$ROOT_DIR"
 BUILD_GRADLE="$ROOT_DIR/android/build.gradle"
 APP_GRADLE="$ROOT_DIR/android/app/build.gradle"
 GRADLE_PROPERTIES="$ROOT_DIR/android/gradle.properties"
+ANDROID_MANIFEST="$ROOT_DIR/android/app/src/main/AndroidManifest.xml"
 
 require_contains() {
   local file="$1"
@@ -34,7 +35,7 @@ CI=1 npx expo prebuild --clean --platform android --no-install >/tmp/memegy-loca
   exit 1
 }
 
-for file in "$BUILD_GRADLE" "$APP_GRADLE" "$GRADLE_PROPERTIES"; do
+for file in "$BUILD_GRADLE" "$APP_GRADLE" "$GRADLE_PROPERTIES" "$ANDROID_MANIFEST"; do
   if [[ ! -f "$file" ]]; then
     echo "[verify-local-downloader-prebuild] Missing generated file: ${file#$ROOT_DIR/}"
     exit 1
@@ -56,5 +57,12 @@ require_contains "$APP_GRADLE" "abiFilters(*localDownloaderAbis)"
 
 require_contains "$GRADLE_PROPERTIES" "expo.useLegacyPackaging=true"
 require_contains "$GRADLE_PROPERTIES" "reactNativeArchitectures=arm64-v8a"
+
+require_contains "$ANDROID_MANIFEST" "android.permission.POST_NOTIFICATIONS"
+require_contains "$ANDROID_MANIFEST" "android.permission.FOREGROUND_SERVICE"
+require_contains "$ANDROID_MANIFEST" "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
+require_contains "$ANDROID_MANIFEST" "expo.modules.localdownloader.DownloadForegroundService"
+require_contains "$ANDROID_MANIFEST" "expo.modules.localdownloader.DownloadActionReceiver"
+require_contains "$ANDROID_MANIFEST" "expo.modules.localdownloader.QuickDownloadCaptureActivity"
 
 echo "[verify-local-downloader-prebuild] OK"

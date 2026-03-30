@@ -17,7 +17,7 @@
     <TextView
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:text="Quick Download"
+      android:text="@string/local_downloader_quick_title"
       android:textColor="#F2F2F2"
       android:textSize="18sp"
       android:textStyle="bold" />
@@ -27,7 +27,7 @@
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:layout_marginTop="8dp"
-      android:text="Trying clipboard URL..."
+      android:text="@string/local_downloader_quick_trying_clipboard"
       android:textColor="#C7CDD3"
       android:textSize="13sp" />
 
@@ -37,7 +37,7 @@
       android:layout_height="wrap_content"
       android:layout_marginTop="12dp"
       android:background="@drawable/local_downloader_capture_input"
-      android:hint="https://example.com/video"
+      android:hint="@string/local_downloader_quick_url_hint"
       android:inputType="textUri"
       android:textColor="#F2F2F2"
       android:textColorHint="#7F8994"
@@ -58,7 +58,7 @@
         android:minHeight="40dp"
         android:minWidth="96dp"
         android:background="@drawable/local_downloader_notification_button"
-        android:text="Cancel"
+        android:text="@string/local_downloader_notif_action_cancel"
         android:textAllCaps="false"
         android:textColor="#DFE4EA" />
 
@@ -70,7 +70,7 @@
         android:minHeight="40dp"
         android:minWidth="120dp"
         android:background="@drawable/local_downloader_capture_button_primary"
-        android:text="Download"
+        android:text="@string/local_downloader_quick_download"
         android:textAllCaps="false"
         android:textColor="#FFFFFF" />
     </LinearLayout>
