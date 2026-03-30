@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 
 import { confirmUpload, initAnonymousUpload, initUpload, updateVideoMetadata } from '@/src/features/upload/api/uploadApi';
