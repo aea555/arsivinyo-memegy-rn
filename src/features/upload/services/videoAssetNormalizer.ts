@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 import { NormalizedVideoAsset, UploadValidationError } from '@/src/features/upload/types/uploadTypes';
 
 const VIDEO_CACHE_DIR = 'upload-videos-cache';
-const ALLOWED_TEMP_DIR_MARKERS = [`/${VIDEO_CACHE_DIR}/`, '/downloader-cache/'];
+const ALLOWED_TEMP_DIR_MARKERS = [`/${VIDEO_CACHE_DIR}/`, '/downloader-cache/', '/local_downloads/'];
 const DEFAULT_EXTENSION = 'mp4';
 const MIME_BY_EXTENSION: Record<string, string> = {
   mp4: 'video/mp4',

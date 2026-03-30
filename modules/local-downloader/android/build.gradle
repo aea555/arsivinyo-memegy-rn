@@ -1,0 +1,35 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'expo.modules.localdownloader'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.localdownloader"
+  defaultConfig {
+    minSdkVersion rootProject.ext.minSdkVersion
+    targetSdkVersion rootProject.ext.targetSdkVersion
+    versionCode 1
+    versionName "1.0.0"
+  }
+
+  sourceSets {
+    main {
+      jniLibs.srcDirs = ["src/main/jniLibs"]
+    }
+  }
+
+  packagingOptions {
+    doNotStrip "**/libffmpeg.so"
+    doNotStrip "**/libffprobe.so"
+  }
+}
+
+dependencies {
+  implementation "androidx.core:core-ktx:1.13.1"
+  implementation "androidx.activity:activity-ktx:1.9.2"
+  implementation "androidx.biometric:biometric:1.1.0"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+  compileOnly "com.chaquo.python.runtime:chaquopy_java:15.0.1"
+}

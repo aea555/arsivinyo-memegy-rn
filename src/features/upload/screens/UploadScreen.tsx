@@ -34,7 +34,6 @@ import { useShadows } from '@/src/shared/theme/shadows';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
 import { extractApiErrorMessage } from '@/src/shared/utils/errorParser';
-import { isDownloaderConfigured } from '@/src/shared/utils/env';
 import {
   clampUtf8Bytes,
   UPLOAD_VIDEO_DESCRIPTION_MAX_BYTES,
@@ -42,6 +41,7 @@ import {
 } from '@/src/shared/utils/inputLimits';
 import { useAppSettingsStore } from '@/src/store/appSettingsStore';
 import { useToastStore } from '@/src/store/toastStore';
+import { isLocalDownloaderRuntimeAvailable } from '@/src/native/localDownloader';
 
 type UploadMode = 'manual' | 'clipboard';
 type ClipboardUploadState =
@@ -189,7 +189,7 @@ export function UploadScreen() {
     const options: { label: string; value: UploadMode }[] = [
       { label: t('upload.manualMode'), value: 'manual' },
     ];
-    if (isDownloaderConfigured) {
+    if (isLocalDownloaderRuntimeAvailable) {
       options.push({ label: t('upload.clipboardMode'), value: 'clipboard' });
     }
     return options;
@@ -265,14 +265,18 @@ export function UploadScreen() {
       }
 
       if (error instanceof DownloaderApiError) {
-        if (error.code === 'DOWNLOADER_NOT_CONFIGURED') return t('upload.clipboardDownloaderNotConfigured');
+        if (error.code === 'DOWNLOADER_UNAVAILABLE') return t('upload.clipboardDownloaderUnavailable');
+        if (error.code === 'DOWNLOAD_ALREADY_IN_PROGRESS') return t('upload.clipboardBusy');
         if (error.code === 'FILE_TOO_LARGE') return t('upload.tooLarge');
+        if (error.code === 'INVALID_URL') return t('upload.clipboardInvalidUrl');
         if (error.code === 'UNSUPPORTED_PLATFORM') return t('upload.clipboardUnsupportedPlatform');
-        if (error.code === 'TOO_MANY_REQUESTS' || error.code === 'VOLUME_LIMIT_EXCEEDED') return t('upload.clipboardRateLimited');
+        if (error.code === 'COOKIE_PROFILE_NOT_FOUND') return t('upload.clipboardCookieProfileMissing');
+        if (error.code === 'FFMPEG_MISSING' || error.code === 'FFPROBE_MISSING' || error.code === 'MERGE_DEPENDENCY_MISSING') {
+          return t('upload.clipboardRuntimeMissing');
+        }
         if (error.code === 'TASK_TIMEOUT') return t('upload.clipboardTimedOut');
-        if (error.code === 'TASK_FAILED') return t('upload.clipboardTaskFailed');
-        if (error.code === 'DOWNLOADER_FILE_FETCH_FAILED' || error.code === 'FILE_NOT_READY') return t('upload.clipboardFailed');
-        if (error.code === 'DOWNLOAD_CANCELLED') return t('upload.clipboardCancelled');
+        if (error.code === 'TASK_FAILED' || error.code === 'DOWNLOAD_FAILED') return t('upload.clipboardTaskFailed');
+        if (error.code === 'DOWNLOAD_CANCELLED' || error.code === 'TASK_CANCELLED') return t('upload.clipboardCancelled');
       }
 
       return t('upload.clipboardFailed');
@@ -475,8 +479,8 @@ export function UploadScreen() {
       showToast(t('upload.readOnlyEnabled'), 'error');
       return;
     }
-    if (!isDownloaderConfigured) {
-      showToast(t('upload.clipboardDownloaderNotConfigured'), 'error');
+    if (!isLocalDownloaderRuntimeAvailable) {
+      showToast(t('upload.clipboardDownloaderUnavailable'), 'error');
       return;
     }
 
@@ -696,6 +700,30 @@ export function UploadScreen() {
         </AppText>
       </Pressable>
 
+      <View
+        style={[
+          styles.clipboardCookieInfoCard,
+          {
+            backgroundColor: palette.surface,
+            borderColor: palette.border,
+          },
+        ]}
+      >
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push('/settings/downloader-cookies' as never)}
+          style={styles.clipboardCookieLink}
+        >
+          <Ionicons name="key-outline" size={16} color={palette.accent} />
+          <AppText variant="bodyBold" style={{ color: palette.accent }}>
+            {t('upload.clipboardCookiesManage')}
+          </AppText>
+        </Pressable>
+        <AppText variant="caption" style={{ color: palette.text.secondary }}>
+          {t('upload.clipboardCookiesDisclaimer')}
+        </AppText>
+      </View>
+
       {clipboardStatusMessage ? (
         <AppText
           variant="caption"
@@ -783,9 +811,9 @@ export function UploadScreen() {
           onChange={(value) => setMode(value as UploadMode)}
         />
 
-        {!isDownloaderConfigured && mode === 'clipboard' ? (
+        {!isLocalDownloaderRuntimeAvailable && mode === 'clipboard' ? (
           <AppText variant="caption" style={{ color: palette.text.secondary }}>
-            {t('upload.clipboardDownloaderNotConfigured')}
+            {t('upload.clipboardDownloaderUnavailable')}
           </AppText>
         ) : null}
 
@@ -1076,6 +1104,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 14,
     overflow: 'hidden',
+  },
+  clipboardCookieInfoCard: {
+    marginTop: spacing.xs,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.xs,
+  },
+  clipboardCookieLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   clipboardToggleRow: {
     minHeight: 56,

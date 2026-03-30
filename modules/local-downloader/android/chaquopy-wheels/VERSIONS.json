@@ -1,0 +1,12 @@
+{
+  "chaquopyVersion": "15.0.1",
+  "pythonVersion": "3.11",
+  "impersonationDependency": {
+    "name": "curl-cffi",
+    "version": "0.14.0"
+  },
+  "abiCoverage": [
+    "arm64-v8a"
+  ],
+  "notes": "Pinned impersonation coverage defaults to arm64-v8a. Add x86_64 by providing matching Android wheels and overriding ABI_LIST/reactNativeArchitectures."
+}

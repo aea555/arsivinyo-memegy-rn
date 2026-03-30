@@ -1,48 +1,71 @@
-import * as FileSystem from 'expo-file-system/legacy';
+import LocalDownloaderModule, {
+  isLocalDownloaderRuntimeAvailable,
+  type LocalDownloadStartInput,
+  type LocalPlatform,
+} from '@/src/native/localDownloader';
 
-import {
-  DOWNLOADER_ACCESS_HEADER_NAME,
-  DOWNLOADER_ACCESS_KEY,
-  DOWNLOADER_API_BASE_URL,
-  DOWNLOADER_APP_SECRET,
-} from '@/src/shared/utils/env';
+const KNOWN_NATIVE_ERROR_CODES = [
+  'INVALID_URL',
+  'UNSUPPORTED_PLATFORM',
+  'DOWNLOAD_ALREADY_IN_PROGRESS',
+  'FILE_TOO_LARGE',
+  'DOWNLOAD_FAILED',
+  'DOWNLOAD_CANCELLED',
+  'TASK_CANCELLED',
+  'COOKIE_STORE_ENCRYPT_FAILED',
+  'COOKIE_STORE_DECRYPT_FAILED',
+  'COOKIE_MIGRATION_FAILED',
+  'COOKIE_PROFILE_NOT_FOUND',
+  'REDDIT_COOKIE_REQUIRED',
+  'FFMPEG_NATIVE_RUNTIME_UNAVAILABLE',
+  'FFMPEG_MISSING',
+  'FFPROBE_MISSING',
+  'MERGE_DEPENDENCY_MISSING',
+  'SITE_BLOCKED_403',
+  'COOKIE_STALE_OR_INVALID',
+  'TIKTOK_API_STATUS_ZERO',
+  'TIKTOK_EXTRACTOR_UNSTABLE',
+  'IMPERSONATION_BOOTSTRAP_FAILED',
+  'IMPERSONATION_TARGET_REQUIRED_UNAVAILABLE',
+  'IMPERSONATION_DEPENDENCY_MISSING',
+  'IMPERSONATION_RUNTIME_UNAVAILABLE',
+  'COOKIE_DOMAIN_MISMATCH',
+  'COOKIE_EMPTY_OR_EXPIRED',
+  'TIMESTAMP_POSTPROCESS_FAILED',
+  'PREFLIGHT_FAILED',
+  'INTERNAL_ERROR',
+  'FILE_NOT_FOUND',
+] as const;
 
-type DownloaderResponse<T> = {
-  success: boolean;
-  code: string;
-  status_code: number;
-  message?: string;
-  data?: T;
-};
-
-type DownloadStartData = {
-  task_id?: string;
-  estimated_size_mb?: number | null;
-};
-
-type DownloadStatusData = {
-  task_id?: string;
-  status?: string;
-  message?: string;
-  filename?: string;
-  data?: {
-    filename?: string;
-    data?: {
-      filename?: string;
-    };
-  };
-};
+const START_FAILURE_CODES = new Set<string>([
+  'INVALID_URL',
+  'UNSUPPORTED_PLATFORM',
+  'DOWNLOAD_ALREADY_IN_PROGRESS',
+  'FILE_TOO_LARGE',
+  'COOKIE_PROFILE_NOT_FOUND',
+  'FFMPEG_NATIVE_RUNTIME_UNAVAILABLE',
+  'FFMPEG_MISSING',
+  'FFPROBE_MISSING',
+  'MERGE_DEPENDENCY_MISSING',
+  'PREFLIGHT_FAILED',
+  'INTERNAL_ERROR',
+]);
 
 export type DownloaderTaskStatus = {
   taskId: string;
-  status: 'PENDING' | 'STARTED' | 'PROGRESS' | 'SUCCESS' | 'FAILURE' | 'UNKNOWN';
+  status: 'PENDING' | 'STARTED' | 'PROGRESS' | 'SUCCESS' | 'FAILURE' | 'CANCELLED' | 'UNKNOWN';
   filename: string | null;
+  filePath: string | null;
   message: string | null;
+  errorCode: string | null;
+  progressPercent: number | null;
 };
 
-export type DownloadedTaskFile = {
-  localUri: string;
-  filename: string;
+export type StartLocalDownloadInput = {
+  url: string;
+  cookiePlatform?: LocalPlatform;
+  cookieProfile?: string;
+  maxFileSizeMb?: number;
 };
 
 export class DownloaderApiError extends Error {
@@ -56,171 +79,105 @@ export class DownloaderApiError extends Error {
   }
 }
 
-function ensureDownloaderBaseUrl() {
-  const baseUrl = DOWNLOADER_API_BASE_URL.trim();
-  if (!baseUrl) {
+function ensureDownloaderRuntimeAvailable() {
+  if (!isLocalDownloaderRuntimeAvailable) {
     throw new DownloaderApiError(
-      'DOWNLOADER_NOT_CONFIGURED',
+      'DOWNLOADER_UNAVAILABLE',
       0,
-      'Downloader API base URL is not configured.'
+      'Local downloader is available on Android builds only.'
     );
   }
-  return baseUrl.replace(/\/+$/, '');
 }
 
-function buildDownloaderHeaders(includeJsonContentType = true): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (includeJsonContentType) {
-    headers['Content-Type'] = 'application/json';
-  }
-  if (DOWNLOADER_APP_SECRET) {
-    headers['X-App-Secret'] = DOWNLOADER_APP_SECRET;
-  }
-  if (DOWNLOADER_ACCESS_KEY) {
-    headers[DOWNLOADER_ACCESS_HEADER_NAME] = DOWNLOADER_ACCESS_KEY;
-  }
-  return headers;
+function normalizeErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error ?? 'Unknown downloader error');
 }
 
-async function parseResponse<T>(response: Response): Promise<DownloaderResponse<T>> {
-  let payload: unknown = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
+function extractNativeCode(message: string): string {
+  const matched = KNOWN_NATIVE_ERROR_CODES.find((code) => message.includes(code));
+  return matched ?? 'UNKNOWN_ERROR';
+}
 
+function toDownloaderError(error: unknown, fallbackCode: string): DownloaderApiError {
+  const message = normalizeErrorMessage(error);
+  const nativeCode = extractNativeCode(message);
+  const code = nativeCode === 'UNKNOWN_ERROR' ? fallbackCode : nativeCode;
+  return new DownloaderApiError(code, 0, message);
+}
+
+function normalizeStatus(rawStatus: unknown): DownloaderTaskStatus['status'] {
   if (
-    payload &&
-    typeof payload === 'object' &&
-    'success' in payload &&
-    'code' in payload &&
-    'status_code' in payload
-  ) {
-    return payload as DownloaderResponse<T>;
-  }
-
-  throw new DownloaderApiError(
-    'DOWNLOADER_INVALID_RESPONSE',
-    response.status || 0,
-    'Downloader API returned an invalid response.'
-  );
-}
-
-function readFilenameFromStatusData(data: DownloadStatusData): string | null {
-  const value =
-    data.filename ??
-    data.data?.filename ??
-    data.data?.data?.filename ??
-    null;
-
-  if (!value || typeof value !== 'string') return null;
-  return value;
-}
-
-function sanitizeFilename(value: string | null | undefined, fallback: string): string {
-  const selected = value && value.trim().length > 0 ? value.trim() : fallback;
-  const safe = selected.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
-  const normalized = safe.length > 0 ? safe : fallback;
-  return normalized.includes('.') ? normalized : `${normalized}.mp4`;
-}
-
-export async function startDownload(url: string): Promise<{ taskId: string }> {
-  const baseUrl = ensureDownloaderBaseUrl();
-  const response = await fetch(`${baseUrl}/download`, {
-    method: 'POST',
-    headers: buildDownloaderHeaders(true),
-    body: JSON.stringify({ url }),
-  });
-
-  const payload = await parseResponse<DownloadStartData>(response);
-  if (!payload.success || !payload.data?.task_id) {
-    throw new DownloaderApiError(
-      payload.code || 'DOWNLOADER_START_FAILED',
-      payload.status_code || response.status || 0,
-      payload.message || 'Downloader failed to start.'
-    );
-  }
-
-  return { taskId: payload.data.task_id };
-}
-
-export async function getTaskStatus(taskId: string): Promise<DownloaderTaskStatus> {
-  const baseUrl = ensureDownloaderBaseUrl();
-  const response = await fetch(`${baseUrl}/status/${taskId}`, {
-    method: 'GET',
-    headers: buildDownloaderHeaders(false),
-  });
-
-  const payload = await parseResponse<DownloadStatusData>(response);
-  if (!payload.success || !payload.data) {
-    throw new DownloaderApiError(
-      payload.code || 'DOWNLOADER_STATUS_FAILED',
-      payload.status_code || response.status || 0,
-      payload.message || 'Downloader status request failed.'
-    );
-  }
-
-  const rawStatus = payload.data.status ?? 'UNKNOWN';
-  const status =
     rawStatus === 'PENDING' ||
     rawStatus === 'STARTED' ||
     rawStatus === 'PROGRESS' ||
     rawStatus === 'SUCCESS' ||
-    rawStatus === 'FAILURE'
-      ? rawStatus
-      : 'UNKNOWN';
+    rawStatus === 'FAILURE' ||
+    rawStatus === 'CANCELLED'
+  ) {
+    return rawStatus;
+  }
+  return 'UNKNOWN';
+}
 
+function toStartInput(input: StartLocalDownloadInput): LocalDownloadStartInput {
   return {
-    taskId: payload.data.task_id ?? taskId,
-    status,
-    filename: readFilenameFromStatusData(payload.data),
-    message: payload.data.message ?? payload.message ?? null,
+    url: input.url,
+    cookiePlatform: input.cookiePlatform,
+    cookieProfile: input.cookieProfile,
+    maxFileSizeMb: input.maxFileSizeMb,
   };
 }
 
-export async function downloadTaskFile(
-  taskId: string,
-  filenameHint: string | null
-): Promise<DownloadedTaskFile> {
-  const baseUrl = ensureDownloaderBaseUrl();
-  const cacheRoot = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
-  if (!cacheRoot) {
-    throw new DownloaderApiError('DOWNLOADER_CACHE_UNAVAILABLE', 0, 'No writable cache directory found.');
+export async function startDownload(input: StartLocalDownloadInput): Promise<{ taskId: string }> {
+  ensureDownloaderRuntimeAvailable();
+
+  try {
+    const result = await LocalDownloaderModule.startDownload(toStartInput(input));
+    if (!result?.taskId) {
+      throw new DownloaderApiError('DOWNLOADER_START_FAILED', 0, 'Downloader failed to start.');
+    }
+
+    return { taskId: result.taskId };
+  } catch (error) {
+    const normalized = toDownloaderError(error, 'DOWNLOADER_START_FAILED');
+    if (START_FAILURE_CODES.has(normalized.code)) {
+      throw normalized;
+    }
+    throw new DownloaderApiError('DOWNLOADER_START_FAILED', 0, normalized.message);
   }
+}
 
-  const directory = `${cacheRoot.replace(/\/+$/, '')}/downloader-cache`;
-  await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+export async function getTaskStatus(taskId: string): Promise<DownloaderTaskStatus> {
+  ensureDownloaderRuntimeAvailable();
 
-  const fallbackName = `${taskId}.mp4`;
-  const filename = sanitizeFilename(filenameHint, fallbackName);
-  const localUri = `${directory}/${Date.now()}-${filename}`;
-  const downloadUrl = `${baseUrl}/files/${taskId}`;
+  try {
+    const result = await LocalDownloaderModule.getTaskStatus(taskId);
 
-  const result = await FileSystem.downloadAsync(downloadUrl, localUri, {
-    headers: buildDownloaderHeaders(false),
-  });
-
-  if (result.status < 200 || result.status >= 300) {
-    throw new DownloaderApiError(
-      'DOWNLOADER_FILE_FETCH_FAILED',
-      result.status,
-      'Failed to fetch downloaded media file.'
-    );
+    return {
+      taskId: result.taskId ?? taskId,
+      status: normalizeStatus(result.status),
+      filename: result.filename ?? null,
+      filePath: result.filePath ?? null,
+      message: result.errorMessage ?? null,
+      errorCode: result.errorCode ?? null,
+      progressPercent:
+        typeof result.progressPercent === 'number' && Number.isFinite(result.progressPercent)
+          ? result.progressPercent
+          : null,
+    };
+  } catch (error) {
+    throw toDownloaderError(error, 'DOWNLOADER_STATUS_FAILED');
   }
+}
 
-  const info = await FileSystem.getInfoAsync(result.uri);
-  const sizeBytes = 'size' in info && typeof info.size === 'number' ? info.size : 0;
-  if (!info.exists || sizeBytes <= 0) {
-    await FileSystem.deleteAsync(result.uri, { idempotent: true }).catch(() => {
-      // no-op
-    });
-    throw new DownloaderApiError(
-      'DOWNLOADER_FILE_EMPTY',
-      result.status,
-      'Downloader returned an empty file.'
-    );
+export async function cancelTask(taskId: string): Promise<{ success: boolean }> {
+  ensureDownloaderRuntimeAvailable();
+
+  try {
+    const result = await LocalDownloaderModule.cancelTask(taskId);
+    return { success: Boolean(result?.success) };
+  } catch (error) {
+    throw toDownloaderError(error, 'DOWNLOADER_CANCEL_FAILED');
   }
-
-  return { localUri: result.uri, filename };
 }

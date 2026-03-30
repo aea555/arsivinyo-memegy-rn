@@ -62,6 +62,24 @@ Pods/
 # Android
 android/local.properties
 
+# Local downloader large/native artifacts (keep source tracked, ignore heavy/generated payloads)
+modules/local-downloader/android/src/main/jniLibs/**/*.so
+modules/local-downloader/android/src/main/assets/ffmpeg/*/ffmpeg
+modules/local-downloader/android/src/main/assets/ffmpeg/*/ffprobe
+modules/local-downloader/android/chaquopy-wheels/*.whl
+modules/local-downloader/android/build/
+modules/local-downloader/android/.gradle/
+modules/local-downloader/android/.cxx/
+modules/local-downloader/android/.externalNativeBuild/
+modules/local-downloader/.pytest_cache/
+modules/local-downloader/.mypy_cache/
+modules/local-downloader/.ruff_cache/
+
+# Python caches
+**/__pycache__/
+*.pyc
+*.pyo
+
 docs/*
 
 *.md 

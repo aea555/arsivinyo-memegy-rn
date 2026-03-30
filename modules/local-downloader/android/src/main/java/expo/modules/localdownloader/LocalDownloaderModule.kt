@@ -1,0 +1,4692 @@
+package expo.modules.localdownloader
+
+import android.Manifest
+import android.content.ClipboardManager
+import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.app.KeyguardManager
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.os.Looper
+import android.os.StatFs
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
+import android.util.Log
+import android.provider.MediaStore
+import android.provider.OpenableColumns
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
+import expo.modules.kotlin.modules.Module
+import expo.modules.kotlin.modules.ModuleDefinition
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.OutputStream
+import java.io.BufferedOutputStream
+import java.io.ByteArrayOutputStream
+import java.net.URI
+import java.security.MessageDigest
+import java.security.KeyStore
+import java.security.SecureRandom
+import java.time.Instant
+import java.util.ArrayDeque
+import java.util.LinkedHashMap
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import javax.crypto.AEADBadTagException
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.Mac
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
+import kotlin.math.max
+
+data class TaskState(
+  var taskId: String,
+  var status: String,
+  var state: String? = null,
+  var filename: String? = null,
+  var filePath: String? = null,
+  var isPrivate: Boolean? = null,
+  var privateVideoId: String? = null,
+  var sizeMb: Double? = null,
+  var progressPercent: Double? = null,
+  var speedBytesPerSec: Double? = null,
+  var errorCode: String? = null,
+  var errorMessage: String? = null,
+  var estimatedSizeMb: Double? = null,
+  var timestampNormalized: Boolean? = null,
+  var warningCode: String? = null
+)
+
+data class FfmpegInfo(
+  val path: String? = null,
+  val ffprobePath: String? = null,
+  val location: String? = null,
+  val abi: String? = null,
+  val runtimeSource: String = "none",
+  val nativeLibraryDir: String? = null,
+  val nativeLibraryEntries: List<String> = emptyList(),
+  val exists: Boolean = false,
+  val ffprobeExists: Boolean = false,
+  val executable: Boolean = false,
+  val ffprobeExecutable: Boolean = false,
+  val version: String? = null,
+  val ffprobeVersion: String? = null,
+  val ffmpegProbeError: String? = null,
+  val ffprobeProbeError: String? = null,
+  val mergeCapable: Boolean = false
+)
+
+data class BinaryProbeResult(
+  val runnable: Boolean,
+  val version: String? = null,
+  val error: String? = null
+)
+
+data class PreflightPythonInput(
+  val url: String,
+  val cookiesDir: String,
+  val cookieProfile: String?,
+  val maxFileSizeMb: Int,
+  val ffmpegPath: String?,
+  val cookieFilePath: String?,
+  val forceNoCookie: Boolean = false,
+  val mergeCapable: Boolean = true,
+  val userAgent: String,
+  val debugLogging: Boolean = false
+)
+
+data class DownloadPythonInput(
+  val url: String,
+  val outputDir: String,
+  val cookiesDir: String,
+  val cookieProfile: String?,
+  val maxFileSizeMb: Int,
+  val cancelFlagPath: String?,
+  val progressFilePath: String?,
+  val ffmpegPath: String?,
+  val cookieFilePath: String?,
+  val forceNoCookie: Boolean = false,
+  val mergeCapable: Boolean = true,
+  val userAgent: String,
+  val debugLogging: Boolean = false
+)
+
+data class CustomDomainMatch(
+  val urlHost: String,
+  val matchedDomain: String? = null,
+  val profileName: String? = null,
+)
+
+data class PendingQuickRequest(
+  val url: String,
+  val captureMode: String,
+  val visibility: String,
+  val createdAtMs: Long
+)
+
+data class QueuedQuickDownload(
+  val url: String,
+  val visibility: String,
+  val enqueuedAtMs: Long = System.currentTimeMillis()
+)
+
+data class PrivateVideoEntry(
+  val id: String,
+  val title: String,
+  val createdAt: Long,
+  val updatedAt: Long,
+  val sourceUrlHash: String,
+  val mimeType: String,
+  val durationSec: Double? = null,
+  val sizeBytesEncrypted: Long,
+  val cipherVersion: String,
+  val encFileName: String
+)
+
+class LocalDownloaderModule : Module() {
+  private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  private val tasks = ConcurrentHashMap<String, TaskState>()
+  private val cancelFlags = ConcurrentHashMap<String, File>()
+  private val ignoredTaskResults = ConcurrentHashMap.newKeySet<String>()
+  private val lastErrors = ArrayDeque<String>()
+  private val customCookieIndexLock = Any()
+  private val queueLock = Any()
+  private val privateVaultLock = Any()
+  private val privateVaultIoLock = Any()
+  private val queuedQuickDownloads = ArrayDeque<QueuedQuickDownload>()
+  private val recentQuickUrls = LinkedHashMap<String, Long>()
+  private val tag = "LocalDownloader"
+  private val debugLoggingEnabled = BuildConfig.DEBUG
+
+  @Volatile
+  private var activeTaskId: String? = null
+
+  @Volatile
+  private var activeJob: Job? = null
+
+  @Volatile
+  private var cachedFfmpegInfo: FfmpegInfo? = null
+
+  @Volatile
+  private var cookieMigrationStatus: String = "not_needed"
+
+  @Volatile
+  private var lastCustomDomainMatch: CustomDomainMatch? = null
+
+  @Volatile
+  private var lastQuickReason: String? = null
+
+  @Volatile
+  private var notificationPhase: String = "idle"
+
+  @Volatile
+  private var activeTaskUrl: String? = null
+
+  @Volatile
+  private var privateModeEnabled: Boolean = false
+
+  @Volatile
+  private var privateLastEncryptMs: Long? = null
+
+  @Volatile
+  private var privateLastDecryptMs: Long? = null
+
+  @Volatile
+  private var privateLastThroughputMbps: Double? = null
+
+  override fun definition() = ModuleDefinition {
+    Name("LocalDownloader")
+    Events("downloadProgress", "backgroundStateChanged")
+
+    OnCreate {
+      activeModule = this@LocalDownloaderModule
+      lastQuickReason = lastQuickReasonFallback
+      privateModeEnabled = isPrivateModeEnabledPersisted(requireNotNull(appContext.reactContext))
+      debug("Module OnCreate started. supportedAbis=${Build.SUPPORTED_ABIS?.joinToString()}")
+      cleanupRuntimeCookieTemp()
+      cleanupPrivatePlaybackCacheInternal()
+      cleanupPrivateVaultPartials()
+      migrateLegacyCookieStoreIfNeeded()
+      loadTaskSnapshot()
+      val ffmpegInfo = resolveBundledFfmpegPath()
+      debug("Initial ffmpeg info: ${summarizeFfmpegInfo(ffmpegInfo)}")
+      if (ffmpegInfo.runtimeSource != "native_library") {
+        addError(
+          "FFMPEG_NATIVE_RUNTIME_UNAVAILABLE: source=${ffmpegInfo.runtimeSource} " +
+            "nativeDir=${ffmpegInfo.nativeLibraryDir ?: "n/a"}"
+        )
+      } else if (!ffmpegInfo.exists) {
+        addError("FFMPEG_MISSING: bundled ffmpeg binary not found for device ABI")
+      } else if (!ffmpegInfo.ffprobeExists) {
+        addError("FFPROBE_MISSING: bundled ffprobe binary not found for device ABI")
+      } else if (!ffmpegInfo.mergeCapable) {
+        addError("MERGE_DEPENDENCY_MISSING: ffmpeg/ffprobe not executable")
+      }
+      cachedFfmpegInfo = ffmpegInfo
+      syncForegroundNotification("idle", "Ready for quick downloads")
+      consumePendingQuickRequests()
+      emitBackgroundStateChanged()
+    }
+
+    OnDestroy {
+      if (activeModule === this@LocalDownloaderModule) {
+        activeModule = null
+      }
+      syncForegroundNotification("idle", "Stopping background notification")
+      appContext.reactContext?.let { DownloadNotificationController.stop(it) }
+      emitBackgroundStateChanged()
+    }
+
+    AsyncFunction("startDownload") { input: Map<String, Any?> ->
+      val url = (input["url"] as? String)?.trim().orEmpty()
+      val cookiePlatform = (input["cookiePlatform"] as? String)?.trim()?.lowercase()?.takeIf { SUPPORTED_PLATFORMS.contains(it) }
+      val cookieProfile = (input["cookieProfile"] as? String)?.trim().orEmpty().ifEmpty { null }
+      val maxFileSizeMb = (input["maxFileSizeMb"] as? Number)?.toInt()?.coerceAtLeast(0) ?: DEFAULT_MAX_FILE_SIZE_MB
+      val visibility = normalizeVisibility((input["visibility"] as? String), defaultPrivate = privateModeEnabled)
+      startDownloadInternal(
+        url = url,
+        cookiePlatform = cookiePlatform,
+        cookieProfile = cookieProfile,
+        maxFileSizeMb = maxFileSizeMb,
+        visibility = visibility,
+        source = "manual",
+      )
+    }
+
+    AsyncFunction("getTaskStatus") { taskId: String ->
+      val task = tasks[taskId]
+      if (task == null) {
+        mapOf(
+          "taskId" to taskId,
+          "status" to "PENDING"
+        )
+      } else {
+        task.toMap()
+      }
+    }
+
+    AsyncFunction("cancelTask") { taskId: String ->
+      if (activeTaskId != taskId || activeJob == null) {
+        return@AsyncFunction mapOf("success" to false)
+      }
+
+      markCancelRequested(taskId)
+      ignoredTaskResults.add(taskId)
+      if (!isTerminalStatus(tasks[taskId]?.status)) {
+        markCancelled(taskId, "Cancellation requested")
+      }
+      debug("Task[$taskId] cancellation requested; task marked cancelled immediately")
+      syncForegroundNotification("downloading", "Cancellation requested")
+      emitBackgroundStateChanged()
+
+      mapOf(
+        "success" to true,
+        "confirmed" to true,
+        "pending" to true
+      )
+    }
+
+    AsyncFunction("importCookie") { input: Map<String, String> ->
+      val platform = input["platform"]?.trim().orEmpty().lowercase()
+      val uri = input["uri"] ?: throw IllegalArgumentException("Missing uri")
+      val profileNameRaw = input["profileName"] ?: throw IllegalArgumentException("Missing profileName")
+
+      if (!SUPPORTED_PLATFORMS.contains(platform)) {
+        throw IllegalArgumentException("Unsupported platform")
+      }
+
+      val profileName = sanitizeProfileName(profileNameRaw)
+      val platformDir = secureCookiePlatformDir(platform, create = true)
+      val dest = File(platformDir, "$profileName.enc")
+
+      val sourceUri = Uri.parse(uri)
+      val resolver = requireNotNull(appContext.reactContext).contentResolver
+      val rawContent = resolver.openInputStream(sourceUri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+        ?: throw IllegalArgumentException("Could not open cookie file")
+      val normalizedCookieText = normalizeCookieContent(rawContent)
+
+      writeEncryptedCookieFile(dest, normalizedCookieText.toByteArray(Charsets.UTF_8))
+
+      if (readDefaultProfile(platformDir) == null) {
+        writeDefaultProfile(platformDir, profileName)
+      }
+
+      mapOf(
+        "profileName" to profileName,
+        "path" to dest.absolutePath
+      )
+    }
+
+    AsyncFunction("listCookieProfiles") { platform: String ->
+      val normalized = platform.lowercase()
+      if (!SUPPORTED_PLATFORMS.contains(normalized)) {
+        return@AsyncFunction emptyList<Map<String, Any>>()
+      }
+
+      val platformDir = secureCookiePlatformDir(normalized, create = false)
+      if (!platformDir.exists()) {
+        return@AsyncFunction emptyList<Map<String, Any>>()
+      }
+
+      platformDir.listFiles()
+        ?.filter { it.isFile && it.extension == "enc" }
+        ?.sortedByDescending { it.lastModified() }
+        ?.map {
+          mapOf(
+            "profileName" to it.nameWithoutExtension,
+            "path" to it.absolutePath,
+            "lastModified" to it.lastModified()
+          )
+        } ?: emptyList()
+    }
+
+    AsyncFunction("setCookieDefault") { input: Map<String, String> ->
+      val platform = input["platform"]?.trim().orEmpty().lowercase()
+      val profileName = input["profileName"]?.trim().orEmpty()
+
+      if (!SUPPORTED_PLATFORMS.contains(platform) || profileName.isBlank()) {
+        return@AsyncFunction mapOf("success" to false)
+      }
+
+      val platformDir = secureCookiePlatformDir(platform, create = false)
+      if (!platformDir.exists()) {
+        return@AsyncFunction mapOf("success" to false)
+      }
+
+      val profileExists = platformDir.listFiles()
+        ?.any { it.isFile && it.nameWithoutExtension == profileName && it.extension == "enc" }
+        ?: false
+
+      if (!profileExists) {
+        return@AsyncFunction mapOf("success" to false)
+      }
+
+      writeDefaultProfile(platformDir, profileName)
+      mapOf("success" to true)
+    }
+
+    AsyncFunction("deleteCookieProfile") { input: Map<String, String> ->
+      val platform = input["platform"]?.trim().orEmpty().lowercase()
+      val profileName = sanitizeProfileName(input["profileName"].orEmpty())
+
+      if (!SUPPORTED_PLATFORMS.contains(platform) || profileName.isBlank()) {
+        return@AsyncFunction mapOf("success" to false)
+      }
+
+      val platformDir = secureCookiePlatformDir(platform, create = false)
+      if (!platformDir.exists()) {
+        return@AsyncFunction mapOf("success" to false)
+      }
+
+      val targetFile = File(platformDir, "$profileName.enc")
+      if (!targetFile.exists() || !targetFile.isFile) {
+        return@AsyncFunction mapOf("success" to false)
+      }
+
+      if (!targetFile.delete()) {
+        return@AsyncFunction mapOf("success" to false)
+      }
+
+      val remaining = platformDir.listFiles()
+        ?.filter { it.isFile && it.extension == "enc" }
+        ?.sortedByDescending { it.lastModified() }
+        ?: emptyList()
+
+      if (remaining.isEmpty()) {
+        clearDefaultProfile(platformDir)
+        return@AsyncFunction mapOf("success" to true)
+      }
+
+      val defaultProfile = readDefaultProfile(platformDir)
+      if (defaultProfile == null || defaultProfile == profileName) {
+        writeDefaultProfile(platformDir, remaining.first().nameWithoutExtension)
+      }
+
+      mapOf("success" to true)
+    }
+
+    AsyncFunction("getCookieDefaults") {
+      val cookiesRoot = secureCookiesRoot(create = false)
+      SUPPORTED_PLATFORMS.associateWith { platform ->
+        val platformDir = File(cookiesRoot, platform)
+        if (!platformDir.exists()) {
+          null
+        } else {
+          readDefaultProfile(platformDir)
+        }
+      }
+    }
+
+  }
+
+  private fun startDownloadInternal(
+    url: String,
+    cookiePlatform: String?,
+    cookieProfile: String?,
+    maxFileSizeMb: Int,
+    visibility: String,
+    source: String,
+  ): Map<String, Any?> {
+    if (url.isBlank()) {
+      throw IllegalArgumentException("INVALID_URL")
+    }
+
+    val reactContext = requireNotNull(appContext.reactContext)
+
+    if (activeJob?.isActive == true) {
+      throw IllegalStateException("DOWNLOAD_ALREADY_IN_PROGRESS")
+    }
+
+    val taskId = UUID.randomUUID().toString()
+    ignoredTaskResults.remove(taskId)
+
+    val task = TaskState(taskId = taskId, status = "PENDING")
+    tasks[taskId] = task
+    persistTaskSnapshot()
+    emitProgress(taskId, "PENDING", "starting", "Task created")
+
+    val outputDir = File(reactContext.cacheDir, "local_downloads").apply { mkdirs() }
+    val cookiesDir = File(reactContext.filesDir, LEGACY_COOKIES_DIRNAME).apply { mkdirs() }
+    val disabledCookiesDir = File(reactContext.filesDir, DISABLED_COOKIES_DIRNAME)
+    val cancelFlag = createCancelFlag(taskId)
+    val progressFile = createProgressFile(taskId)
+    val effectivePlatform = cookiePlatform ?: detectCookiePlatform(url)
+
+    activeTaskId = taskId
+    activeTaskUrl = url
+    syncForegroundNotification("starting", "Preparing download")
+    emitBackgroundStateChanged()
+
+    activeJob = scope.launch {
+      var runtimeCookiePath: String? = null
+      var progressWatcher: Job? = null
+      runCatching {
+        debug("Task[$taskId] START source=$source visibility=$visibility url=$url platform=$effectivePlatform profile=$cookieProfile maxMb=$maxFileSizeMb")
+        updateStatus(taskId, "STARTED", null, null, null, null, null)
+        emitProgress(taskId, "STARTED", "starting", "Preflight")
+
+        runtimeCookiePath = prepareRuntimeCookiePath(taskId, url, cookieProfile, effectivePlatform)
+        var effectiveCookiePath = runtimeCookiePath
+        debug("Task[$taskId] runtimeCookiePath=${runtimeCookiePath ?: "none"}")
+
+        val ffmpegInfo = getOrResolveFfmpegInfo(forceRefresh = true)
+        debug("Task[$taskId] ffmpeg info before preflight: ${summarizeFfmpegInfo(ffmpegInfo)}")
+        var preflightResult = callPythonPreflight(
+          PreflightPythonInput(
+            url = url,
+            cookiesDir = cookiesDir.absolutePath,
+            cookieProfile = cookieProfile,
+            maxFileSizeMb = maxFileSizeMb,
+            ffmpegPath = ffmpegInfo.path ?: ffmpegInfo.location,
+            cookieFilePath = effectiveCookiePath,
+            forceNoCookie = false,
+            mergeCapable = ffmpegInfo.mergeCapable,
+            userAgent = DEFAULT_HTTP_USER_AGENT,
+            debugLogging = debugLoggingEnabled,
+          )
+        )
+        debug("Task[$taskId] preflight result=$preflightResult")
+
+        if (!preflightResult.optBoolean("success", false) && shouldRetryWithoutCookies(preflightResult, effectiveCookiePath, effectivePlatform)) {
+          addError("COOKIE_RETRY_PREFLIGHT: task=$taskId")
+          cleanupRuntimeCookieTemp(taskId)
+          effectiveCookiePath = null
+          preflightResult = callPythonPreflight(
+            PreflightPythonInput(
+              url = url,
+              cookiesDir = disabledCookiesDir.absolutePath,
+              cookieProfile = null,
+              maxFileSizeMb = maxFileSizeMb,
+              ffmpegPath = ffmpegInfo.path ?: ffmpegInfo.location,
+              cookieFilePath = null,
+              forceNoCookie = true,
+              mergeCapable = ffmpegInfo.mergeCapable,
+              userAgent = DEFAULT_HTTP_USER_AGENT,
+              debugLogging = debugLoggingEnabled,
+            )
+          )
+          debug("Task[$taskId] preflight retry(no-cookie) result=$preflightResult")
+        }
+        preflightResult = normalizeRuntimeError(preflightResult, ffmpegInfo)
+
+        if (shouldIgnoreTaskResult(taskId)) {
+          return@runCatching
+        }
+
+        val estimatedSizeMb = preflightResult.optDouble("estimated_size_mb", Double.NaN)
+          .takeIf { !it.isNaN() && it > 0.0 }
+        if (estimatedSizeMb != null) {
+          tasks[taskId]?.estimatedSizeMb = estimatedSizeMb
+          persistTaskSnapshot()
+        }
+
+        if (isCancelRequested(taskId)) {
+          markCancelled(taskId, "Cancellation confirmed before download start")
+          return@runCatching
+        }
+
+        if (!preflightResult.optBoolean("success", false)) {
+          val code = preflightResult.optString("code", "INTERNAL_ERROR")
+          val msg = preflightResult.optString("message", "Preflight failed")
+          debug("Task[$taskId] preflight failed code=$code message=$msg")
+
+          if (code == "DOWNLOAD_CANCELLED") {
+            markCancelled(taskId, msg)
+            return@runCatching
+          }
+
+          updateStatus(taskId, "FAILURE", null, null, null, code, msg)
+          emitProgress(taskId, "FAILURE", "error", msg)
+          addError("$code: $msg")
+          return@runCatching
+        }
+
+        val freeMb = getFreeSpaceMb(outputDir)
+        val requiredFreeMb = if (estimatedSizeMb != null) {
+          max(1024.0, estimatedSizeMb * 2.5)
+        } else {
+          1024.0
+        }
+
+        if (freeMb < requiredFreeMb) {
+          val msg = "Not enough free storage. Free=${"%.1f".format(freeMb)}MB, Required=${"%.1f".format(requiredFreeMb)}MB"
+          debug("Task[$taskId] storage check failed: $msg")
+          updateStatus(taskId, "FAILURE", null, null, null, "SERVER_BUSY", msg)
+          emitProgress(taskId, "FAILURE", "error", msg)
+          addError("SERVER_BUSY: $msg")
+          return@runCatching
+        }
+
+        tasks[taskId]?.progressPercent = 0.0
+        emitProgress(taskId, "PROGRESS", "downloading", "Downloading media", 0.0)
+        updateStatus(taskId, "PROGRESS", null, null, null, null, null)
+        progressWatcher = launch {
+          observeProgressFile(taskId, progressFile)
+        }
+
+        var result = callPythonDownload(
+          DownloadPythonInput(
+            url = url,
+            outputDir = outputDir.absolutePath,
+            cookiesDir = cookiesDir.absolutePath,
+            cookieProfile = cookieProfile,
+            maxFileSizeMb = maxFileSizeMb,
+            cancelFlagPath = cancelFlag.absolutePath,
+            progressFilePath = progressFile.absolutePath,
+            ffmpegPath = ffmpegInfo.path ?: ffmpegInfo.location,
+            cookieFilePath = effectiveCookiePath,
+            forceNoCookie = false,
+            mergeCapable = ffmpegInfo.mergeCapable,
+            userAgent = DEFAULT_HTTP_USER_AGENT,
+            debugLogging = debugLoggingEnabled,
+          )
+        )
+        debug("Task[$taskId] download result=$result")
+
+        if (!result.optBoolean("success", false) && shouldRetryWithoutCookies(result, effectiveCookiePath, effectivePlatform)) {
+          addError("COOKIE_RETRY_DOWNLOAD: task=$taskId")
+          emitProgress(taskId, "PROGRESS", "downloading", "Retrying without cookies")
+          cleanupRuntimeCookieTemp(taskId)
+          effectiveCookiePath = null
+          clearProgressFile(progressFile)
+          tasks[taskId]?.progressPercent = 0.0
+          result = callPythonDownload(
+            DownloadPythonInput(
+              url = url,
+              outputDir = outputDir.absolutePath,
+              cookiesDir = disabledCookiesDir.absolutePath,
+              cookieProfile = null,
+              maxFileSizeMb = maxFileSizeMb,
+              cancelFlagPath = cancelFlag.absolutePath,
+              progressFilePath = progressFile.absolutePath,
+              ffmpegPath = ffmpegInfo.path ?: ffmpegInfo.location,
+              cookieFilePath = null,
+              forceNoCookie = true,
+              mergeCapable = ffmpegInfo.mergeCapable,
+              userAgent = DEFAULT_HTTP_USER_AGENT,
+              debugLogging = debugLoggingEnabled,
+            )
+          )
+          debug("Task[$taskId] download retry(no-cookie) result=$result")
+        }
+        progressWatcher?.cancel()
+        progressWatcher = null
+        result = normalizeRuntimeError(result, ffmpegInfo)
+
+        if (shouldIgnoreTaskResult(taskId)) {
+          return@runCatching
+        }
+
+        if (result.optBoolean("success", false)) {
+          if (isCancelRequested(taskId)) {
+            markCancelled(taskId, "Cancellation confirmed after worker completion")
+            return@runCatching
+          }
+
+          val filename = result.optString("filename").ifBlank { null }
+          val filePath = result.optString("file_path").ifBlank { null }
+          val sizeMb = result.optDouble("size_mb", Double.NaN).takeIf { !it.isNaN() }
+          val timestampNormalized = if (result.has("timestamp_normalized")) {
+            result.optBoolean("timestamp_normalized")
+          } else {
+            null
+          }
+          val warningCode = result.optString("warning_code").ifBlank { null }
+          debug("Task[$taskId] success file=$filePath sizeMb=$sizeMb timestampNormalized=$timestampNormalized warning=$warningCode")
+
+          var finalFilePath = filePath
+          var privateVideoId: String? = null
+          var finalIsPrivate = false
+          if (filename != null && filePath != null && visibility == "private") {
+            emitProgress(taskId, "PROGRESS", "saving", "Saving to private vault", 99.0)
+            runCatching {
+              val privateEntry = importFileToPrivateVault(
+                sourceFilePath = filePath,
+                filename = filename,
+                sourceUrl = url,
+                mimeType = guessMimeType(filename)
+              )
+              privateVideoId = privateEntry.id
+              finalIsPrivate = true
+              finalFilePath = null
+              runCatching { File(filePath).delete() }
+            }.onFailure { privateError ->
+              val privateMessage = privateError.message ?: "PRIVATE_STORAGE_WRITE_FAILED"
+              updateStatus(taskId, "FAILURE", filename, filePath, sizeMb, "PRIVATE_STORAGE_WRITE_FAILED", privateMessage)
+              emitProgress(taskId, "FAILURE", "error", privateMessage)
+              addError("PRIVATE_STORAGE_WRITE_FAILED: task=$taskId message=$privateMessage")
+              return@runCatching
+            }
+          } else if (source != "manual" && filename != null && filePath != null) {
+            emitProgress(taskId, "PROGRESS", "saving", "Saving to gallery", 99.0)
+            runCatching {
+              val saveResult = saveToMediaStoreInternal(
+                filePath = filePath,
+                filename = filename,
+                mimeType = guessMimeType(filename),
+                dateTakenMs = System.currentTimeMillis(),
+              )
+              debug("Task[$taskId] background save success uri=${saveResult["uri"]}")
+            }.onFailure { saveError ->
+              val saveMessage = "Failed to save media to gallery: ${saveError.message ?: "unknown error"}"
+              updateStatus(taskId, "FAILURE", filename, filePath, sizeMb, "INTERNAL_ERROR", saveMessage)
+              emitProgress(taskId, "FAILURE", "error", saveMessage)
+              addError("BACKGROUND_SAVE_FAILED: task=$taskId message=$saveMessage")
+              return@runCatching
+            }
+          }
+
+          updateStatus(taskId, "SUCCESS", filename, finalFilePath, sizeMb, null, null, finalIsPrivate, privateVideoId)
+          tasks[taskId]?.progressPercent = 100.0
+          tasks[taskId]?.timestampNormalized = timestampNormalized
+          tasks[taskId]?.warningCode = warningCode
+          persistTaskSnapshot()
+          if (warningCode != null) {
+            addError("$warningCode: task=$taskId")
+          }
+          emitProgress(taskId, "SUCCESS", "completed", filename ?: "Download completed", 100.0)
+        } else {
+          val code = result.optString("code", "INTERNAL_ERROR")
+          val message = result.optString("message", "Download failed")
+          debug("Task[$taskId] download failed code=$code message=$message")
+
+          if (isCancelRequested(taskId) || code == "DOWNLOAD_CANCELLED") {
+            markCancelled(taskId, message)
+            return@runCatching
+          }
+
+          updateStatus(taskId, "FAILURE", null, null, null, code, message)
+          emitProgress(taskId, "FAILURE", "error", message)
+          addError("$code: $message")
+        }
+      }.onFailure {
+        progressWatcher?.cancel()
+        if (shouldIgnoreTaskResult(taskId)) {
+          return@onFailure
+        }
+
+        if (isCancelRequested(taskId)) {
+          markCancelled(taskId, "Cancellation requested")
+          return@onFailure
+        }
+
+        Log.e(tag, "Task failed", it)
+        val message = it.message ?: "Unexpected error"
+        val code = extractKnownErrorCode(message) ?: "INTERNAL_ERROR"
+        debug("Task[$taskId] exception code=$code message=$message")
+        updateStatus(taskId, "FAILURE", null, null, null, code, message)
+        emitProgress(taskId, "FAILURE", "error", message)
+        addError("$code: $message")
+      }
+
+      debug("Task[$taskId] cleanup runtime cookie + cancel flag")
+      cleanupRuntimeCookieTemp(taskId)
+      clearCancelFlag(taskId)
+      clearProgressFile(progressFile)
+      onTaskFinished(taskId)
+    }
+
+    return mapOf(
+      "taskId" to taskId,
+      "estimatedSizeMb" to task.estimatedSizeMb
+    )
+  }
+
+  private fun onTaskFinished(taskId: String) {
+    if (activeTaskId == taskId) {
+      activeTaskId = null
+      activeJob = null
+      activeTaskUrl = null
+    }
+    val startedNext = startNextQueuedDownloadIfAny()
+    if (!startedNext) {
+      syncForegroundNotification("idle", "Ready for quick downloads")
+    }
+    emitBackgroundStateChanged()
+  }
+
+  private fun consumePendingQuickRequests() {
+    val pending = synchronized(pendingQuickRequests) {
+      if (pendingQuickRequests.isEmpty()) {
+        emptyList()
+      } else {
+        val copy = pendingQuickRequests.toList()
+        pendingQuickRequests.clear()
+        copy
+      }
+    }
+    if (pending.isEmpty()) {
+      return
+    }
+    pending.forEach { request ->
+      runCatching {
+        startQuickDownloadWithUrl(request.url, request.captureMode, request.visibility)
+      }.onFailure {
+        addError("PENDING_QUICK_REQUEST_FAILED: ${it.message}")
+      }
+    }
+  }
+
+  private fun startNextQueuedDownloadIfAny(): Boolean {
+    if (activeJob?.isActive == true) {
+      return false
+    }
+
+    val next = synchronized(queueLock) {
+      if (queuedQuickDownloads.isEmpty()) null else queuedQuickDownloads.removeFirst()
+    } ?: return false
+
+    emitBackgroundStateChanged()
+    return runCatching {
+      startDownloadInternal(
+        url = next.url,
+        cookiePlatform = detectCookiePlatform(next.url),
+        cookieProfile = null,
+        maxFileSizeMb = DEFAULT_MAX_FILE_SIZE_MB,
+        visibility = next.visibility,
+        source = "queued",
+      )
+      true
+    }.getOrElse {
+      addError("QUICK_QUEUE_START_FAILED: ${it.message}")
+      false
+    }
+  }
+
+  private fun startQuickDownloadFromClipboard(): Map<String, Any?> {
+    val context = requireNotNull(appContext.reactContext)
+    if (!isNotificationPermissionGranted(context)) {
+      reportQuickActionReason("PERMISSION_REQUIRED")
+      return mapOf("accepted" to false, "reason" to "PERMISSION_REQUIRED")
+    }
+
+    val url = readUrlFromClipboard(context)
+      ?: run {
+        reportQuickActionReason("NO_CLIPBOARD_URL")
+        return mapOf("accepted" to false, "reason" to "NO_CLIPBOARD_URL")
+      }
+    return startQuickDownloadWithUrl(url, "clipboard")
+  }
+
+  private fun startQuickDownloadWithUrl(rawUrl: String, captureMode: String, visibilityOverride: String? = null): Map<String, Any?> {
+    val context = requireNotNull(appContext.reactContext)
+    if (!isNotificationPermissionGranted(context)) {
+      reportQuickActionReason("PERMISSION_REQUIRED")
+      return mapOf("accepted" to false, "reason" to "PERMISSION_REQUIRED")
+    }
+
+    val normalizedUrl = normalizeClipboardUrl(rawUrl)
+      ?: run {
+        reportQuickActionReason("INVALID_QUICK_URL")
+        return mapOf("accepted" to false, "reason" to "INVALID_QUICK_URL")
+      }
+    val selectedVisibility = normalizeVisibility(visibilityOverride, defaultPrivate = privateModeEnabled)
+
+    if (activeJob?.isActive == true) {
+      val queueResult = enqueueQuickUrl(normalizedUrl, selectedVisibility)
+      if (!queueResult.accepted) {
+        return mapOf("accepted" to false, "reason" to queueResult.reason)
+      }
+      syncForegroundNotification("downloading", "Queued (${queueResult.queueSize}/$MAX_QUEUED_DOWNLOADS)")
+      emitBackgroundStateChanged()
+      reportQuickActionReason(null)
+      return mapOf(
+        "accepted" to true,
+        "queueSize" to queueResult.queueSize,
+        "queueMax" to MAX_QUEUED_DOWNLOADS,
+        "resolvedUrl" to normalizedUrl,
+        "visibility" to selectedVisibility,
+        "captureMode" to captureMode
+      )
+    }
+
+    return runCatching {
+      val result = startDownloadInternal(
+        url = normalizedUrl,
+        cookiePlatform = detectCookiePlatform(normalizedUrl),
+        cookieProfile = null,
+        maxFileSizeMb = DEFAULT_MAX_FILE_SIZE_MB,
+        visibility = selectedVisibility,
+        source = "quick",
+      )
+      reportQuickActionReason(null)
+      mapOf(
+        "accepted" to true,
+        "taskId" to result["taskId"],
+        "queueSize" to 0,
+        "queueMax" to MAX_QUEUED_DOWNLOADS,
+        "resolvedUrl" to normalizedUrl,
+        "visibility" to selectedVisibility,
+        "captureMode" to captureMode
+      )
+    }.getOrElse {
+      val reason = when {
+        it.message?.contains("BACKGROUND_PERMISSION_REQUIRED") == true -> "PERMISSION_REQUIRED"
+        it.message?.contains("DOWNLOAD_ALREADY_IN_PROGRESS") == true -> "ALREADY_ACTIVE"
+        else -> "QUICK_DOWNLOAD_REJECTED"
+      }
+      reportQuickActionReason(reason)
+      mapOf(
+        "accepted" to false,
+        "reason" to reason,
+        "resolvedUrl" to normalizedUrl,
+        "visibility" to selectedVisibility,
+        "captureMode" to captureMode
+      )
+    }
+  }
+
+  private data class QueueAttemptResult(
+    val accepted: Boolean,
+    val reason: String? = null,
+    val queueSize: Int = 0
+  )
+
+  private fun enqueueQuickUrl(url: String, visibility: String): QueueAttemptResult {
+    synchronized(queueLock) {
+      val now = System.currentTimeMillis()
+      pruneRecentQuickUrls(now)
+      val isDuplicate = url == activeTaskUrl || queuedQuickDownloads.any { it.url == url } || recentQuickUrls.containsKey(url)
+      if (isDuplicate) {
+        reportQuickActionReason("QUICK_DOWNLOAD_REJECTED")
+        return QueueAttemptResult(accepted = false, reason = "QUICK_DOWNLOAD_REJECTED")
+      }
+      if (queuedQuickDownloads.size >= MAX_QUEUED_DOWNLOADS) {
+        reportQuickActionReason("QUEUE_FULL")
+        return QueueAttemptResult(accepted = false, reason = "QUEUE_FULL")
+      }
+      queuedQuickDownloads.addLast(QueuedQuickDownload(url = url, visibility = visibility))
+      recentQuickUrls[url] = now
+      return QueueAttemptResult(accepted = true, queueSize = queuedQuickDownloads.size)
+    }
+  }
+
+  private fun pruneRecentQuickUrls(nowMs: Long) {
+    val iterator = recentQuickUrls.entries.iterator()
+    while (iterator.hasNext()) {
+      val entry = iterator.next()
+      if (nowMs - entry.value > QUICK_DEDUP_WINDOW_MS) {
+        iterator.remove()
+      }
+    }
+  }
+
+  private fun readUrlFromClipboard(context: android.content.Context): String? {
+    val manager = context.getSystemService(ClipboardManager::class.java) ?: return null
+    val item = manager.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0) ?: return null
+
+    val uriValue = item.uri?.toString()?.trim()?.takeIf { it.isNotBlank() }
+    if (!uriValue.isNullOrBlank()) {
+      normalizeClipboardUrl(uriValue)?.let { return it }
+    }
+
+    val htmlText = item.htmlText?.toString()?.trim()?.takeIf { it.isNotBlank() }
+    if (!htmlText.isNullOrBlank()) {
+      normalizeClipboardUrl(htmlText)?.let { return it }
+    }
+
+    val text = item.coerceToText(context)?.toString()?.trim() ?: return null
+    if (text.isBlank()) {
+      return null
+    }
+    return normalizeClipboardUrl(text)
+  }
+
+  private fun normalizeClipboardUrl(raw: String?): String? {
+    return normalizeQuickUrl(raw)
+  }
+
+  private fun normalizeVisibility(rawVisibility: String?, defaultPrivate: Boolean): String {
+    val normalized = rawVisibility?.trim()?.lowercase()
+    return when (normalized) {
+      "private" -> "private"
+      "public" -> "public"
+      else -> if (defaultPrivate) "private" else "public"
+    }
+  }
+
+  private fun isNotificationPermissionGranted(context: android.content.Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+      return true
+    }
+    return ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+  }
+
+  private fun canAskForNotificationPermission(): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+      return true
+    }
+    val activity = appContext.currentActivity ?: return false
+    val granted = isNotificationPermissionGranted(requireNotNull(appContext.reactContext))
+    return !granted || ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.POST_NOTIFICATIONS)
+  }
+
+  private fun queueSize(): Int = synchronized(queueLock) { queuedQuickDownloads.size }
+
+  private fun backgroundStateMap(): Map<String, Any?> {
+    val context = appContext.reactContext
+    val granted = context?.let { isNotificationPermissionGranted(it) } ?: false
+    return mapOf(
+      "serviceRunning" to DownloadForegroundService.isRunning,
+      "activeTaskId" to activeTaskId,
+      "queueSize" to queueSize(),
+      "maxQueueSize" to MAX_QUEUED_DOWNLOADS,
+      "queuedUrls" to synchronized(queueLock) { queuedQuickDownloads.map { it.url } },
+      "lastQuickReason" to lastQuickReason,
+      "notificationPhase" to notificationPhase,
+      "privateModeEnabled" to privateModeEnabled,
+      "notificationPermissionRequired" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU),
+      "notificationPermissionGranted" to granted
+    )
+  }
+
+  private fun setPrivateModeEnabledInternal(enabled: Boolean): Boolean {
+    val context = requireNotNull(appContext.reactContext)
+    if (enabled && !isPrivateAuthAvailable(context)) {
+      throw IllegalStateException("PRIVATE_MODE_UNAVAILABLE")
+    }
+    val resolved = if (PRIVATE_VAULT_FEATURE_FLAG) enabled else false
+    privateModeEnabled = resolved
+    persistPrivateModeEnabled(context, resolved)
+    syncForegroundNotification(notificationPhase, if (resolved) "Private mode enabled" else "Private mode disabled")
+    emitBackgroundStateChanged()
+    return resolved
+  }
+
+  private fun reportQuickActionReason(reason: String?) {
+    lastQuickReason = reason
+    lastQuickReasonFallback = reason
+    emitBackgroundStateChanged()
+  }
+
+  private fun emitBackgroundStateChanged() {
+    sendEvent("backgroundStateChanged", backgroundStateMap())
+  }
+
+  private fun syncForegroundNotification(phase: String, message: String?, explicitProgress: Double? = null) {
+    val context = appContext.reactContext ?: return
+    if (!isNotificationPermissionGranted(context)) {
+      return
+    }
+    notificationPhase = phase
+    val currentTask = activeTaskId
+    val progress = explicitProgress ?: currentTask?.let { tasks[it]?.progressPercent }
+    val state = BackgroundNotificationState(
+      activeTaskId = currentTask,
+      phase = phase,
+      message = message,
+      progressPercent = progress,
+      queueSize = queueSize(),
+      privateModeEnabled = privateModeEnabled,
+      pinned = STICKY_NOTIFICATION_ENABLED,
+    )
+    if (state.shouldRunForeground) {
+      DownloadNotificationController.startOrUpdate(context, state)
+    } else {
+      DownloadNotificationController.stop(context)
+    }
+  }
+
+  private fun stopForegroundNotificationIfIdle() {
+    if (activeTaskId == null && queueSize() == 0) {
+      appContext.reactContext?.let { DownloadNotificationController.stop(it) }
+    }
+  }
+
+  private fun cancelFromNotificationAction() {
+    val taskId = activeTaskId ?: return
+    markCancelRequested(taskId)
+    ignoredTaskResults.add(taskId)
+    if (!isTerminalStatus(tasks[taskId]?.status)) {
+      markCancelled(taskId, "Cancellation requested from notification")
+    }
+    syncForegroundNotification("downloading", "Cancellation requested")
+    emitBackgroundStateChanged()
+  }
+
+  private fun quickFromNotificationAction() {
+    val result = startQuickDownloadFromClipboard()
+    if (result["accepted"] == true) {
+      val queueSize = (result["queueSize"] as? Number)?.toInt()
+      if (queueSize != null && queueSize > 0) {
+        syncForegroundNotification("downloading", "Queued ($queueSize/$MAX_QUEUED_DOWNLOADS)")
+      } else {
+        syncForegroundNotification("starting", "Quick download started")
+      }
+      return
+    }
+    val reason = result["reason"]?.toString().orEmpty()
+    syncForegroundNotification("error", quickReasonToMessage(reason))
+  }
+
+  private fun emitProgress(
+    taskId: String,
+    status: String,
+    state: String,
+    message: String?,
+    progressPercent: Double? = null,
+    speedBytesPerSec: Double? = null
+  ) {
+    val normalizedState = normalizeProgressEventState(state)
+    tasks[taskId]?.state = normalizedState
+    if (progressPercent != null) {
+      tasks[taskId]?.progressPercent = progressPercent.coerceIn(0.0, 100.0)
+    }
+    if (normalizedState != "downloading") {
+      tasks[taskId]?.speedBytesPerSec = null
+    } else if (speedBytesPerSec != null && speedBytesPerSec > 0) {
+      tasks[taskId]?.speedBytesPerSec = speedBytesPerSec
+    }
+    val eventSpeedBytesPerSec = if (normalizedState == "downloading") {
+      (if (speedBytesPerSec != null && speedBytesPerSec > 0) speedBytesPerSec else tasks[taskId]?.speedBytesPerSec)
+    } else {
+      null
+    }
+    sendEvent(
+      "downloadProgress",
+      mapOf(
+        "taskId" to taskId,
+        "status" to status,
+        "state" to normalizedState,
+        "message" to message,
+        "progressPercent" to progressPercent?.coerceIn(0.0, 100.0),
+        "speedBytesPerSec" to eventSpeedBytesPerSec
+      )
+    )
+    if (taskId == activeTaskId) {
+      syncForegroundNotification(normalizedState, message, progressPercent)
+    }
+  }
+
+  private fun updateStatus(
+    taskId: String,
+    status: String,
+    filename: String?,
+    filePath: String?,
+    sizeMb: Double?,
+    errorCode: String?,
+    errorMessage: String?,
+    isPrivate: Boolean? = null,
+    privateVideoId: String? = null
+  ) {
+    val task = tasks[taskId] ?: TaskState(taskId, status)
+    task.status = status
+    if (filename != null) task.filename = filename
+    if (filePath != null) task.filePath = filePath
+    if (sizeMb != null) task.sizeMb = sizeMb
+    if (isPrivate != null) task.isPrivate = isPrivate
+    if (privateVideoId != null || isPrivate == false) task.privateVideoId = privateVideoId
+    if (task.state == null) {
+      task.state = when (status) {
+        "PENDING", "STARTED" -> "starting"
+        "PROGRESS" -> "downloading"
+        "SUCCESS" -> "completed"
+        "FAILURE", "CANCELLED" -> "error"
+        else -> null
+      }
+    }
+    task.errorCode = errorCode
+    task.errorMessage = errorMessage
+    tasks[taskId] = task
+    persistTaskSnapshot()
+  }
+
+  private fun normalizeProgressEventState(rawState: String?): String {
+    return when (rawState?.trim()?.lowercase()) {
+      "starting" -> "starting"
+      "processing" -> "processing"
+      "saving" -> "saving"
+      "completed" -> "completed"
+      "error" -> "error"
+      else -> "downloading"
+    }
+  }
+
+  private fun callPythonPreflight(input: PreflightPythonInput): JSONObject {
+    ensurePythonReady()
+    debug(
+      "Python preflight call url=${input.url} ffmpegPath=${input.ffmpegPath} " +
+        "cookieFile=${input.cookieFilePath ?: "none"} mergeCapable=${input.mergeCapable} forceNoCookie=${input.forceNoCookie}"
+    )
+    val py = Python.getInstance()
+    val module = py.getModule("local_downloader")
+    val result = module.callAttr(
+      "preflight",
+      input.url,
+      input.cookiesDir,
+      input.cookieProfile,
+      input.maxFileSizeMb,
+      input.ffmpegPath,
+      input.cookieFilePath,
+      input.forceNoCookie,
+      input.mergeCapable,
+      input.userAgent,
+      input.debugLogging
+    )
+    val json = JSONObject(result.toString())
+    debug("Python preflight response code=${json.optString("code")} success=${json.optBoolean("success")} msg=${json.optString("message")}")
+    return json
+  }
+
+  private fun callPythonDownload(input: DownloadPythonInput): JSONObject {
+    ensurePythonReady()
+    debug(
+      "Python download call url=${input.url} ffmpegPath=${input.ffmpegPath} " +
+        "cookieFile=${input.cookieFilePath ?: "none"} mergeCapable=${input.mergeCapable} forceNoCookie=${input.forceNoCookie}"
+    )
+    val py = Python.getInstance()
+    val module = py.getModule("local_downloader")
+    val result = module.callAttr(
+      "run_download",
+      input.url,
+      input.outputDir,
+      input.cookiesDir,
+      input.cookieProfile,
+      input.maxFileSizeMb,
+      input.cancelFlagPath,
+      input.progressFilePath,
+      input.ffmpegPath,
+      input.cookieFilePath,
+      input.forceNoCookie,
+      input.mergeCapable,
+      input.userAgent,
+      input.debugLogging
+    )
+    val json = JSONObject(result.toString())
+    debug("Python download response code=${json.optString("code")} success=${json.optBoolean("success")} msg=${json.optString("message")}")
+    return json
+  }
+
+  private fun ensurePythonReady() {
+    val context = requireNotNull(appContext.reactContext).applicationContext
+    if (!Python.isStarted()) {
+      Python.start(AndroidPlatform(context))
+      debug("Python runtime started")
+    } else {
+      debug("Python runtime already started")
+    }
+  }
+
+  private fun getFreeSpaceMb(directory: File): Double {
+    val stat = StatFs(directory.absolutePath)
+    return stat.availableBytes.toDouble() / MB_IN_BYTES
+  }
+
+  private fun normalizeRuntimeError(result: JSONObject, ffmpegInfo: FfmpegInfo): JSONObject {
+    if (result.optBoolean("success", false)) {
+      return result
+    }
+
+    val code = result.optString("code", "")
+    if (code != "MERGE_DEPENDENCY_MISSING" || ffmpegInfo.runtimeSource == "native_library") {
+      return result
+    }
+
+    val reason = buildString {
+      append("Native FFmpeg runtime unavailable")
+      if (!ffmpegInfo.nativeLibraryDir.isNullOrBlank()) {
+        append(" (nativeLibraryDir=")
+        append(ffmpegInfo.nativeLibraryDir)
+        append(")")
+      }
+      if (!ffmpegInfo.ffmpegProbeError.isNullOrBlank()) {
+        append(". ffmpeg: ")
+        append(ffmpegInfo.ffmpegProbeError)
+      }
+      if (!ffmpegInfo.ffprobeProbeError.isNullOrBlank()) {
+        append(". ffprobe: ")
+        append(ffmpegInfo.ffprobeProbeError)
+      }
+    }
+
+    return JSONObject(result.toString()).apply {
+      put("code", "FFMPEG_NATIVE_RUNTIME_UNAVAILABLE")
+      put("message", reason)
+    }
+  }
+
+  private fun guessMimeType(filename: String): String {
+    return when (filename.substringAfterLast('.', "").lowercase()) {
+      "mp4", "m4v", "mov", "3gp" -> "video/mp4"
+      "webm" -> "video/webm"
+      "mkv" -> "video/x-matroska"
+      "avi" -> "video/x-msvideo"
+      "jpg", "jpeg" -> "image/jpeg"
+      "png" -> "image/png"
+      "gif" -> "image/gif"
+      else -> "video/mp4"
+    }
+  }
+
+  private fun saveToMediaStoreInternal(
+    filePath: String,
+    filename: String,
+    mimeType: String,
+    dateTakenMs: Long,
+    relativePath: String? = null
+  ): Map<String, Any?> {
+    val sourceFile = File(filePath)
+    if (!sourceFile.exists() || !sourceFile.isFile) {
+      throw IllegalArgumentException("FILE_NOT_FOUND")
+    }
+    return saveToMediaStoreWithWriter(filename, mimeType, dateTakenMs, relativePath) { output ->
+      sourceFile.inputStream().use { input ->
+        input.copyTo(output, PRIVATE_STREAM_BUFFER_BYTES)
+      }
+    }
+  }
+
+  private fun saveToMediaStoreWithWriter(
+    filename: String,
+    mimeType: String,
+    dateTakenMs: Long,
+    relativePath: String? = null,
+    writer: (OutputStream) -> Unit
+  ): Map<String, Any?> {
+    val startedAtMs = System.currentTimeMillis()
+    val resolvedMimeType = if (mimeType.isBlank()) guessMimeType(filename) else mimeType
+    debug("[PRIVATE] MediaStore write start filename=$filename mimeType=$resolvedMimeType")
+
+    val isVideo = resolvedMimeType.startsWith("video/")
+    val dateTakenColumn = if (isVideo) {
+      MediaStore.Video.VideoColumns.DATE_TAKEN
+    } else {
+      MediaStore.Images.ImageColumns.DATE_TAKEN
+    }
+    val nowSeconds = System.currentTimeMillis() / 1000L
+
+    val contentValues = ContentValues().apply {
+      put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+      put(MediaStore.MediaColumns.MIME_TYPE, resolvedMimeType)
+      put(MediaStore.MediaColumns.DATE_ADDED, nowSeconds)
+      put(MediaStore.MediaColumns.DATE_MODIFIED, nowSeconds)
+      put(dateTakenColumn, dateTakenMs)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val targetRelativePath = relativePath?.trim().takeUnless { it.isNullOrBlank() }
+          ?: if (isVideo) Environment.DIRECTORY_DCIM else Environment.DIRECTORY_PICTURES
+        put(
+          MediaStore.MediaColumns.RELATIVE_PATH,
+          targetRelativePath
+        )
+        put(MediaStore.MediaColumns.IS_PENDING, 1)
+      }
+    }
+
+    val resolver = requireNotNull(appContext.reactContext).contentResolver
+    val collection = if (isVideo) {
+      MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+    } else {
+      MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+    }
+    val uri = resolver.insert(collection, contentValues) ?: throw IOException("MEDIASTORE_INSERT_FAILED")
+    debug("[PRIVATE] MediaStore insert success uri=$uri")
+
+    runCatching {
+      resolver.openOutputStream(uri)?.use { output ->
+        debug("[PRIVATE] MediaStore output stream opened uri=$uri")
+        BufferedOutputStream(output, PRIVATE_STREAM_BUFFER_BYTES).use { bufferedOutput ->
+          writer(bufferedOutput)
+          bufferedOutput.flush()
+        }
+      } ?: throw IOException("MEDIASTORE_OUTPUT_STREAM_FAILED")
+    }.onFailure { error ->
+      debug("[PRIVATE] MediaStore write failed uri=$uri error=${error.javaClass.simpleName}:${error.message}")
+      runCatching { resolver.delete(uri, null, null) }
+      throw error
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      val finalizeValues = ContentValues().apply {
+        put(MediaStore.MediaColumns.IS_PENDING, 0)
+        put(MediaStore.MediaColumns.DATE_MODIFIED, System.currentTimeMillis() / 1000L)
+        put(dateTakenColumn, dateTakenMs)
+      }
+      resolver.update(uri, finalizeValues, null, null)
+    }
+    debug("[PRIVATE] MediaStore write completed uri=$uri elapsedMs=${System.currentTimeMillis() - startedAtMs}")
+
+    return mapOf(
+      "uri" to uri.toString(),
+      "assetId" to uri.lastPathSegment
+    )
+  }
+
+  private fun importFileToPrivateVault(
+    sourceFilePath: String,
+    filename: String,
+    sourceUrl: String,
+    mimeType: String
+  ): PrivateVideoEntry {
+    if (!PRIVATE_VAULT_FEATURE_FLAG) {
+      throw IllegalStateException("PRIVATE_MODE_UNAVAILABLE")
+    }
+    val sourceFile = File(sourceFilePath)
+    if (!sourceFile.exists() || !sourceFile.isFile || sourceFile.length() <= 0L) {
+      throw IllegalStateException("PRIVATE_STORAGE_WRITE_FAILED")
+    }
+
+    val now = System.currentTimeMillis()
+    val id = UUID.randomUUID().toString()
+    val encFileName = "$id.pv"
+    val objectsDir = privateVaultObjectsDir(create = true)
+    val encryptedTarget = File(objectsDir, encFileName)
+    val encryptedTemp = File(objectsDir, ".$encFileName.partial")
+    val sourceHash = sha256Base64(sourceUrl)
+    val safeTitle = sanitizePrivateTitle(filename)
+
+    // Remove stale partials from previously interrupted operations before space checks.
+    cleanupPrivateVaultPartials()
+
+    val sourceBytes = sourceFile.length()
+    val requiredBytes = sourceBytes + PRIVATE_MIN_FREE_SPACE_MARGIN_BYTES
+    val availableBytes = objectsDir.usableSpace
+
+    debug(
+      "[PRIVATE] import start source=$sourceFilePath sourceBytes=$sourceBytes " +
+        "availableBytes=$availableBytes requiredBytes=$requiredBytes target=${encryptedTarget.absolutePath}"
+    )
+
+    if (availableBytes in 1 until requiredBytes) {
+      throw IllegalStateException(
+        "PRIVATE_STORAGE_WRITE_FAILED: INSUFFICIENT_SPACE available_bytes=$availableBytes required_bytes=$requiredBytes"
+      )
+    }
+
+    runCatching {
+      synchronized(privateVaultIoLock) {
+        encryptFileForPrivateVaultV3(sourceFile, encryptedTemp)
+      }
+      if (!encryptedTemp.renameTo(encryptedTarget)) {
+        encryptedTemp.copyTo(encryptedTarget, overwrite = true)
+        encryptedTemp.delete()
+      }
+    }.onFailure {
+      runCatching { encryptedTemp.delete() }
+      runCatching { encryptedTarget.delete() }
+      val cause = it.message ?: it.javaClass.simpleName
+      throw IllegalStateException("PRIVATE_STORAGE_WRITE_FAILED: $cause", it)
+    }
+
+    val entry = PrivateVideoEntry(
+      id = id,
+      title = safeTitle,
+      createdAt = now,
+      updatedAt = now,
+      sourceUrlHash = sourceHash,
+      mimeType = mimeType,
+      durationSec = null,
+      sizeBytesEncrypted = encryptedTarget.length(),
+      cipherVersion = PRIVATE_STORE_VERSION_V3,
+      encFileName = encFileName
+    )
+
+    synchronized(privateVaultLock) {
+      val index = readPrivateVaultIndex()
+      val items = index.optJSONArray("items") ?: JSONArray()
+      items.put(privateVideoEntryToJson(entry))
+      index.put("items", items)
+      writePrivateVaultIndex(index)
+    }
+    debug(
+      "[PRIVATE] import success id=${entry.id} cipher=${entry.cipherVersion} " +
+        "encryptedBytes=${entry.sizeBytesEncrypted} sourceDeletedPending=true"
+    )
+    return entry
+  }
+
+  private fun listPrivateVideosInternal(): List<Map<String, Any?>> {
+    synchronized(privateVaultLock) {
+      val index = readPrivateVaultIndex()
+      val items = index.optJSONArray("items") ?: JSONArray()
+      val parsed = mutableListOf<PrivateVideoEntry>()
+      for (i in 0 until items.length()) {
+        privateVideoEntryFromJson(items.optJSONObject(i))?.let { parsed.add(it) }
+      }
+      return parsed
+        .sortedByDescending { it.updatedAt }
+        .map { entry -> privateVideoEntryToMap(entry) }
+    }
+  }
+
+  private fun privateVideoEntryToMap(entry: PrivateVideoEntry): Map<String, Any?> {
+    return mapOf(
+      "id" to entry.id,
+      "title" to entry.title,
+      "createdAt" to entry.createdAt,
+      "updatedAt" to entry.updatedAt,
+      "mimeType" to entry.mimeType,
+      "durationSec" to entry.durationSec,
+      "sizeBytesEncrypted" to entry.sizeBytesEncrypted,
+      "cipherVersion" to entry.cipherVersion
+    )
+  }
+
+  private fun deletePrivateVideoInternal(id: String): Boolean {
+    if (id.isBlank()) return false
+    synchronized(privateVaultIoLock) {
+      synchronized(privateVaultLock) {
+        val index = readPrivateVaultIndex()
+        val items = index.optJSONArray("items") ?: JSONArray()
+        val remaining = JSONArray()
+        var removed: PrivateVideoEntry? = null
+        for (i in 0 until items.length()) {
+          val entry = privateVideoEntryFromJson(items.optJSONObject(i))
+          if (entry == null) continue
+          if (entry.id == id) {
+            removed = entry
+            continue
+          }
+          remaining.put(privateVideoEntryToJson(entry))
+        }
+        if (removed == null) {
+          return false
+        }
+        index.put("items", remaining)
+        writePrivateVaultIndex(index)
+        runCatching { File(privateVaultObjectsDir(create = true), removed.encFileName).delete() }
+        runCatching { File(privatePlaybackCacheDir(create = true), "${removed.id}.mp4").delete() }
+        return true
+      }
+    }
+  }
+
+  private fun makeVideoPublicInternal(id: String): Map<String, Any?> {
+    return mapOf(
+      "success" to false,
+      "code" to "PRIVATE_EXPORT_DISABLED",
+      "message" to "PRIVATE_EXPORT_DISABLED"
+    )
+  }
+
+  private fun copyPrivateVideoToPublicGalleryInternal(id: String): Map<String, Any?> {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+      return mapOf(
+        "success" to false,
+        "code" to "PRIVATE_PUBLIC_COPY_LEGACY_UNSUPPORTED",
+        "message" to "PRIVATE_PUBLIC_COPY_LEGACY_UNSUPPORTED"
+      )
+    }
+    if (id.isBlank()) {
+      return mapOf(
+        "success" to false,
+        "code" to "PRIVATE_VIDEO_NOT_FOUND",
+        "message" to "PRIVATE_VIDEO_NOT_FOUND"
+      )
+    }
+
+    val entry = synchronized(privateVaultLock) {
+      val index = readPrivateVaultIndex()
+      val items = index.optJSONArray("items") ?: JSONArray()
+      var found: PrivateVideoEntry? = null
+      for (i in 0 until items.length()) {
+        val parsed = privateVideoEntryFromJson(items.optJSONObject(i))
+        if (parsed?.id == id) {
+          found = parsed
+          break
+        }
+      }
+      found
+    } ?: return mapOf(
+      "success" to false,
+      "code" to "PRIVATE_VIDEO_NOT_FOUND",
+      "message" to "PRIVATE_VIDEO_NOT_FOUND"
+    )
+
+    val encryptedFile = File(privateVaultObjectsDir(create = true), entry.encFileName)
+    if (!encryptedFile.exists() || !encryptedFile.isFile) {
+      return mapOf(
+        "success" to false,
+        "code" to "PRIVATE_VIDEO_NOT_FOUND",
+        "message" to "PRIVATE_VIDEO_NOT_FOUND"
+      )
+    }
+
+    return runCatching {
+      val effectiveVersion = detectPrivateCipherVersion(encryptedFile, entry.cipherVersion)
+      if (effectiveVersion == PRIVATE_STORE_VERSION_V1) {
+        throw IllegalStateException("PRIVATE_LEGACY_VAULT_UNSUPPORTED")
+      }
+      val filename = sanitizePrivateTitle(entry.title)
+      synchronized(privateVaultIoLock) {
+        saveToMediaStoreWithWriter(
+          filename = filename,
+          mimeType = entry.mimeType.ifBlank { guessMimeType(filename) },
+          dateTakenMs = entry.updatedAt.takeIf { it > 0L } ?: System.currentTimeMillis(),
+          relativePath = PRIVATE_PUBLIC_COPY_RELATIVE_PATH
+        ) { output ->
+          decryptPrivateVaultFileToOutput(encryptedFile, output, effectiveVersion, traceId = "copy_${entry.id.take(8)}")
+        }
+      }
+    }.map { saved ->
+      mapOf(
+        "success" to true,
+        "uri" to saved["uri"]
+      )
+    }.getOrElse { error ->
+      val code = when (error.message) {
+        "PRIVATE_LEGACY_VAULT_UNSUPPORTED" -> "PRIVATE_LEGACY_VAULT_UNSUPPORTED"
+        else -> "PRIVATE_PUBLIC_COPY_FAILED"
+      }
+      debug("[PRIVATE] copyPrivateVideoToPublicGallery failed id=$id error=${error.javaClass.simpleName}:${error.message}")
+      mapOf(
+        "success" to false,
+        "code" to code,
+        "message" to code
+      )
+    }
+  }
+
+  private fun pickAndImportVideoToPrivateVaultInternal(): Map<String, Any?> {
+    if (!PRIVATE_VAULT_FEATURE_FLAG) {
+      return mapOf("success" to false, "code" to "PRIVATE_MODE_UNAVAILABLE", "message" to "PRIVATE_MODE_UNAVAILABLE")
+    }
+
+    val context = appContext.reactContext
+      ?: return mapOf("success" to false, "code" to "PRIVATE_IMPORT_FAILED", "message" to "PRIVATE_IMPORT_FAILED")
+
+    val resultRef = AtomicReference<PrivateVaultImportActivity.Result?>()
+    val latch = CountDownLatch(1)
+    val launched = PrivateVaultImportActivity.launch(context) { result ->
+      resultRef.set(result)
+      latch.countDown()
+    }
+    if (!launched) {
+      return mapOf("success" to false, "code" to "PRIVATE_IMPORT_FAILED", "message" to "PRIVATE_IMPORT_FAILED")
+    }
+
+    val completed = runCatching { latch.await(PRIVATE_IMPORT_PICK_TIMEOUT_SECONDS, TimeUnit.SECONDS) }.getOrDefault(false)
+    if (!completed) {
+      PrivateVaultImportActivity.cancelPendingWith("PRIVATE_IMPORT_PICK_CANCELLED")
+      return mapOf(
+        "success" to false,
+        "code" to "PRIVATE_IMPORT_PICK_CANCELLED",
+        "message" to "PRIVATE_IMPORT_PICK_CANCELLED"
+      )
+    }
+
+    val pickerResult = resultRef.get()
+      ?: return mapOf("success" to false, "code" to "PRIVATE_IMPORT_FAILED", "message" to "PRIVATE_IMPORT_FAILED")
+    if (!pickerResult.uri.isNullOrBlank()) {
+      val imported = runCatching {
+        importVideoFromContentUriToPrivateVault(Uri.parse(pickerResult.uri))
+      }.getOrElse { error ->
+        val code = when (error.message) {
+          "PRIVATE_IMPORT_UNSUPPORTED_TYPE" -> "PRIVATE_IMPORT_UNSUPPORTED_TYPE"
+          "PRIVATE_STORAGE_WRITE_FAILED" -> "PRIVATE_STORAGE_WRITE_FAILED"
+          "PRIVATE_MODE_UNAVAILABLE" -> "PRIVATE_MODE_UNAVAILABLE"
+          else -> "PRIVATE_IMPORT_FAILED"
+        }
+        return mapOf("success" to false, "code" to code, "message" to code)
+      }
+      return mapOf(
+        "success" to true,
+        "item" to privateVideoEntryToMap(imported)
+      )
+    }
+
+    val code = pickerResult.code?.ifBlank { "PRIVATE_IMPORT_PICK_CANCELLED" } ?: "PRIVATE_IMPORT_PICK_CANCELLED"
+    return mapOf(
+      "success" to false,
+      "code" to code,
+      "message" to (pickerResult.message ?: code)
+    )
+  }
+
+  private fun importVideoFromContentUriToPrivateVault(sourceUri: Uri): PrivateVideoEntry {
+    val context = requireNotNull(appContext.reactContext)
+    val resolver = context.contentResolver
+    val resolvedMimeType = resolver.getType(sourceUri)?.trim().orEmpty().ifBlank { "video/mp4" }
+    if (!resolvedMimeType.startsWith("video/")) {
+      throw IllegalStateException("PRIVATE_IMPORT_UNSUPPORTED_TYPE")
+    }
+
+    val sourceName = queryDisplayName(resolver, sourceUri)
+      ?: "imported_${System.currentTimeMillis()}.${extensionForMimeType(resolvedMimeType)}"
+    val filename = sanitizePrivateTitle(sourceName)
+    val tempDir = privateImportCacheDir(create = true)
+    val tempFile = File(tempDir, "${UUID.randomUUID()}_${filename.take(80)}")
+
+    try {
+      resolver.openInputStream(sourceUri)?.use { input ->
+        FileOutputStream(tempFile).use { output ->
+          input.copyTo(output, PRIVATE_STREAM_BUFFER_BYTES)
+          output.flush()
+        }
+      } ?: throw IllegalStateException("PRIVATE_IMPORT_FAILED")
+
+      if (!tempFile.exists() || tempFile.length() <= 0L) {
+        throw IllegalStateException("PRIVATE_IMPORT_FAILED")
+      }
+      return importFileToPrivateVault(
+        sourceFilePath = tempFile.absolutePath,
+        filename = filename,
+        sourceUrl = sourceUri.toString(),
+        mimeType = resolvedMimeType
+      )
+    } catch (error: Throwable) {
+      throw IllegalStateException(error.message ?: "PRIVATE_IMPORT_FAILED")
+    } finally {
+      runCatching { tempFile.delete() }
+    }
+  }
+
+  private fun preparePrivatePlaybackInternal(id: String, traceId: String = "n/a"): Map<String, Any?> {
+    if (id.isBlank()) {
+      throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+    }
+    privateTrace(traceId, "prepare internal start id=$id thread=${Thread.currentThread().name}")
+    val lookupStartedAt = System.currentTimeMillis()
+    val entry = synchronized(privateVaultLock) {
+      val index = readPrivateVaultIndex()
+      val items = index.optJSONArray("items") ?: JSONArray()
+      var found: PrivateVideoEntry? = null
+      for (i in 0 until items.length()) {
+        val parsed = privateVideoEntryFromJson(items.optJSONObject(i))
+        if (parsed?.id == id) {
+          found = parsed
+          break
+        }
+      }
+      found
+    } ?: throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+    privateTrace(
+      traceId,
+      "prepare internal index hit id=${entry.id} title=${entry.title} elapsedMs=${System.currentTimeMillis() - lookupStartedAt} cipherHint=${entry.cipherVersion}"
+    )
+
+    val encryptedFile = File(privateVaultObjectsDir(create = true), entry.encFileName)
+    if (!encryptedFile.exists() || !encryptedFile.isFile) {
+      privateTrace(traceId, "prepare internal encrypted file missing path=${encryptedFile.absolutePath}")
+      throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+    }
+    privateTrace(
+      traceId,
+      "prepare internal encrypted file ready name=${encryptedFile.name} size=${encryptedFile.length()} path=${encryptedFile.absolutePath}"
+    )
+
+    privateTrace(traceId, "prepare internal cleanup playback cache start")
+    cleanupPrivatePlaybackCacheInternal()
+    privateTrace(traceId, "prepare internal cleanup playback cache done")
+    val playbackDir = privatePlaybackCacheDir(create = true)
+    val suffix = entry.title.substringAfterLast('.', "").lowercase().ifBlank { "mp4" }
+    val output = File(playbackDir, "${entry.id}.$suffix")
+    val effectiveVersion = detectPrivateCipherVersion(encryptedFile, entry.cipherVersion)
+    privateTrace(
+      traceId,
+      "prepare internal decrypt plan version=$effectiveVersion output=${output.absolutePath} outputExists=${output.exists()}"
+    )
+    if (effectiveVersion == PRIVATE_STORE_VERSION_V1) {
+      privateTrace(
+        traceId,
+        "prepare internal legacy v1 blocked for playback id=${entry.id}; requires delete + re-download in v2"
+      )
+      throw IllegalStateException("PRIVATE_LEGACY_VAULT_UNSUPPORTED")
+    }
+    runCatching {
+      val lockWaitStartedAt = System.currentTimeMillis()
+      privateTrace(traceId, "prepare internal waiting io-lock")
+      synchronized(privateVaultIoLock) {
+        val lockAcquiredAt = System.currentTimeMillis()
+        privateTrace(traceId, "prepare internal io-lock acquired waitMs=${lockAcquiredAt - lockWaitStartedAt}")
+        val decryptStartedAt = System.currentTimeMillis()
+        decryptPrivateVaultFile(encryptedFile, output, effectiveVersion, traceId)
+        privateTrace(
+          traceId,
+          "prepare internal decrypt done elapsedMs=${System.currentTimeMillis() - decryptStartedAt} outputExists=${output.exists()} outputSize=${output.length()}"
+        )
+      }
+    }.onFailure {
+      privateTrace(traceId, "prepare internal failed id=${entry.id} error=${it.javaClass.simpleName}:${it.message}")
+      runCatching { output.delete() }
+      if (it is IllegalStateException && it.message == "PRIVATE_LEGACY_VAULT_UNSUPPORTED") {
+        throw it
+      }
+      throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+    }
+    privateTrace(traceId, "prepare internal success id=${entry.id} tempUri=${Uri.fromFile(output)}")
+    return mapOf(
+      "success" to true,
+      "tempUri" to Uri.fromFile(output).toString(),
+      "mimeType" to entry.mimeType.ifBlank { guessMimeType(entry.title) }
+    )
+  }
+
+  private fun cleanupPrivatePlaybackCacheInternal() {
+    runCatching { privatePlaybackCacheDir(create = false).deleteRecursively() }
+    runCatching { privateExportCacheDir(create = false).deleteRecursively() }
+    runCatching { privateImportCacheDir(create = false).deleteRecursively() }
+  }
+
+  private fun setSecureScreenInternal(enabled: Boolean) {
+    val activity = appContext.currentActivity ?: return
+    val latch = CountDownLatch(1)
+    activity.runOnUiThread {
+      if (enabled) {
+        activity.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+      } else {
+        activity.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+      }
+      latch.countDown()
+    }
+    runCatching { latch.await(2, TimeUnit.SECONDS) }
+  }
+
+  private fun cleanupPrivateVaultPartials() {
+    runCatching {
+      val objectsDir = privateVaultObjectsDir(create = false)
+      if (!objectsDir.exists()) return@runCatching
+      objectsDir.listFiles()
+        ?.filter { it.isFile && it.name.startsWith(".") && it.name.endsWith(".partial") }
+        ?.forEach { it.delete() }
+    }
+  }
+
+  private fun countPrivateVaultItems(): Int {
+    return synchronized(privateVaultLock) {
+      val index = readPrivateVaultIndex()
+      val items = index.optJSONArray("items") ?: JSONArray()
+      items.length()
+    }
+  }
+
+  private fun countPrivateVaultLegacyItems(): Int {
+    return synchronized(privateVaultLock) {
+      val index = readPrivateVaultIndex()
+      val items = index.optJSONArray("items") ?: JSONArray()
+      var legacy = 0
+      for (i in 0 until items.length()) {
+        val entry = privateVideoEntryFromJson(items.optJSONObject(i)) ?: continue
+        if (entry.cipherVersion == PRIVATE_STORE_VERSION_V1) {
+          legacy += 1
+        }
+      }
+      legacy
+    }
+  }
+
+  private fun privateVaultRoot(create: Boolean): File {
+    val dir = File(requireNotNull(appContext.reactContext).filesDir, PRIVATE_VAULT_DIRNAME)
+    if (create) {
+      dir.mkdirs()
+    }
+    return dir
+  }
+
+  private fun privateVaultObjectsDir(create: Boolean): File {
+    val dir = File(privateVaultRoot(create), PRIVATE_VAULT_OBJECTS_DIRNAME)
+    if (create) {
+      dir.mkdirs()
+    }
+    return dir
+  }
+
+  private fun privateVaultIndexFile(createParent: Boolean = true): File {
+    val root = privateVaultRoot(createParent)
+    return File(root, PRIVATE_VAULT_INDEX_FILENAME)
+  }
+
+  private fun privatePlaybackCacheDir(create: Boolean): File {
+    val dir = File(requireNotNull(appContext.reactContext).cacheDir, PRIVATE_PLAYBACK_CACHE_DIRNAME)
+    if (create) {
+      dir.mkdirs()
+    }
+    return dir
+  }
+
+  private fun privateExportCacheDir(create: Boolean): File {
+    val dir = File(requireNotNull(appContext.reactContext).cacheDir, PRIVATE_EXPORT_CACHE_DIRNAME)
+    if (create) {
+      dir.mkdirs()
+    }
+    return dir
+  }
+
+  private fun privateImportCacheDir(create: Boolean): File {
+    val dir = File(requireNotNull(appContext.reactContext).cacheDir, PRIVATE_IMPORT_CACHE_DIRNAME)
+    if (create) {
+      dir.mkdirs()
+    }
+    return dir
+  }
+
+  private fun queryDisplayName(resolver: android.content.ContentResolver, sourceUri: Uri): String? {
+    return runCatching {
+      resolver.query(sourceUri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) {
+          val columnIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+          if (columnIndex >= 0) {
+            cursor.getString(columnIndex)?.trim()?.takeIf { it.isNotBlank() }
+          } else null
+        } else null
+      }
+    }.getOrNull()
+  }
+
+  private fun extensionForMimeType(mimeType: String): String {
+    return when {
+      mimeType.equals("video/mp4", ignoreCase = true) -> "mp4"
+      mimeType.equals("video/webm", ignoreCase = true) -> "webm"
+      mimeType.equals("video/x-matroska", ignoreCase = true) -> "mkv"
+      mimeType.equals("video/quicktime", ignoreCase = true) -> "mov"
+      mimeType.equals("video/3gpp", ignoreCase = true) -> "3gp"
+      else -> "mp4"
+    }
+  }
+
+  private fun defaultPrivateVaultIndex(): JSONObject {
+    return JSONObject().apply {
+      put("version", 2)
+      put("items", JSONArray())
+    }
+  }
+
+  private fun readPrivateVaultIndex(): JSONObject {
+    val file = privateVaultIndexFile(createParent = true)
+    if (!file.exists()) {
+      val initial = defaultPrivateVaultIndex()
+      writePrivateVaultIndex(initial)
+      return initial
+    }
+    return runCatching {
+      val parsed = JSONObject(file.readText(Charsets.UTF_8))
+      if (!parsed.has("items")) {
+        parsed.put("items", JSONArray())
+      }
+      parsed
+    }.getOrElse {
+      defaultPrivateVaultIndex()
+    }
+  }
+
+  private fun writePrivateVaultIndex(index: JSONObject) {
+    val file = privateVaultIndexFile(createParent = true)
+    atomicWriteBytes(file, index.toString().toByteArray(Charsets.UTF_8))
+  }
+
+  private fun privateVideoEntryFromJson(obj: JSONObject?): PrivateVideoEntry? {
+    if (obj == null) return null
+    val id = obj.optString("id").trim()
+    val title = obj.optString("title").trim()
+    val createdAt = obj.optLong("createdAt", 0L)
+    val updatedAt = obj.optLong("updatedAt", createdAt)
+    val sourceUrlHash = obj.optString("sourceUrlHash").trim()
+    val mimeType = obj.optString("mimeType").trim()
+    val sizeBytesEncrypted = obj.optLong("sizeBytesEncrypted", 0L)
+    val cipherVersion = obj.optString("cipherVersion").trim().ifBlank { PRIVATE_STORE_VERSION_V1 }
+    val encFileName = obj.optString("encFileName").trim()
+    if (id.isBlank() || title.isBlank() || encFileName.isBlank()) {
+      return null
+    }
+    return PrivateVideoEntry(
+      id = id,
+      title = title,
+      createdAt = createdAt,
+      updatedAt = updatedAt,
+      sourceUrlHash = sourceUrlHash,
+      mimeType = mimeType,
+      durationSec = obj.optDouble("durationSec", Double.NaN).takeIf { !it.isNaN() },
+      sizeBytesEncrypted = sizeBytesEncrypted,
+      cipherVersion = cipherVersion,
+      encFileName = encFileName
+    )
+  }
+
+  private fun privateVideoEntryToJson(entry: PrivateVideoEntry): JSONObject {
+    return JSONObject().apply {
+      put("id", entry.id)
+      put("title", entry.title)
+      put("createdAt", entry.createdAt)
+      put("updatedAt", entry.updatedAt)
+      put("sourceUrlHash", entry.sourceUrlHash)
+      put("mimeType", entry.mimeType)
+      put("durationSec", entry.durationSec)
+      put("sizeBytesEncrypted", entry.sizeBytesEncrypted)
+      put("cipherVersion", entry.cipherVersion)
+      put("encFileName", entry.encFileName)
+    }
+  }
+
+  private fun sanitizePrivateTitle(value: String): String {
+    val clean = value.trim()
+      .replace(Regex("""[\\/:*?"<>|]"""), "_")
+      .replace(Regex("""\s+"""), " ")
+      .take(180)
+    return if (clean.isBlank()) "private_video.mp4" else clean
+  }
+
+  private fun sha256Base64(value: String): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+    return Base64.encodeToString(digest, Base64.NO_WRAP or Base64.URL_SAFE)
+  }
+
+  private fun encryptFileForPrivateVaultV3(source: File, output: File) {
+    val startedAtMs = System.currentTimeMillis()
+    val random = SecureRandom()
+
+    val keyMaterial = ByteArray(PRIVATE_KEY_MATERIAL_BYTES)
+    random.nextBytes(keyMaterial)
+    val encKey = SecretKeySpec(keyMaterial.copyOfRange(0, PRIVATE_DEK_BYTES), "AES")
+    val macKey = SecretKeySpec(keyMaterial.copyOfRange(PRIVATE_DEK_BYTES, PRIVATE_KEY_MATERIAL_BYTES), "HmacSHA256")
+
+    val contentCipher = Cipher.getInstance("AES/CTR/NoPadding")
+    val contentIv = ByteArray(PRIVATE_CTR_IV_BYTES)
+    random.nextBytes(contentIv)
+    contentCipher.init(Cipher.ENCRYPT_MODE, encKey, javax.crypto.spec.IvParameterSpec(contentIv))
+
+    val wrapCipher = Cipher.getInstance("AES/GCM/NoPadding")
+    wrapCipher.init(Cipher.ENCRYPT_MODE, getOrCreatePrivateVaultMasterKeyV2())
+    val wrappedKeyMaterial = wrapCipher.doFinal(keyMaterial)
+    val wrapIv = wrapCipher.iv
+
+    if (wrapIv.isEmpty() || wrapIv.size > 255 || contentIv.size > 255 || wrappedKeyMaterial.size > PRIVATE_MAX_WRAPPED_DEK_BYTES) {
+      throw IllegalStateException("PRIVATE_STORAGE_WRITE_FAILED")
+    }
+
+    val header = ByteArrayOutputStream().apply {
+      write(PRIVATE_VAULT_V3_MAGIC)
+      write(PRIVATE_VAULT_FORMAT_VERSION_V3.toInt())
+      write(PRIVATE_VAULT_ALG_AES_CTR.toInt())
+      write(PRIVATE_VAULT_ALG_AES_GCM.toInt())
+      write(PRIVATE_VAULT_ALG_HMAC_SHA256.toInt())
+      write(wrapIv.size)
+      write(contentIv.size)
+      write((wrappedKeyMaterial.size ushr 24) and 0xFF)
+      write((wrappedKeyMaterial.size ushr 16) and 0xFF)
+      write((wrappedKeyMaterial.size ushr 8) and 0xFF)
+      write(wrappedKeyMaterial.size and 0xFF)
+      write(PRIVATE_HMAC_TAG_BYTES)
+      write(wrapIv)
+      write(contentIv)
+      write(wrappedKeyMaterial)
+    }.toByteArray()
+
+    val hmac = Mac.getInstance("HmacSHA256").apply {
+      init(macKey)
+      update(header)
+    }
+
+    output.parentFile?.mkdirs()
+    FileInputStream(source).use { input ->
+      FileOutputStream(output).use { rawOutput ->
+        rawOutput.write(header)
+
+        debug("[PRIVATE] encrypt-v3 stream-encrypt start source=${source.name} bufferBytes=$PRIVATE_STREAM_BUFFER_BYTES")
+        val inBuffer = ByteArray(PRIVATE_STREAM_BUFFER_BYTES)
+        var totalInputBytes = 0L
+        var totalOutputBytes = 0L
+        var nextLogAtBytes = PRIVATE_LOG_PROGRESS_STEP_BYTES
+        while (true) {
+          val read = input.read(inBuffer)
+          if (read < 0) break
+          totalInputBytes += read
+          val outChunk = contentCipher.update(inBuffer, 0, read)
+          if (outChunk != null && outChunk.isNotEmpty()) {
+            rawOutput.write(outChunk)
+            hmac.update(outChunk)
+            totalOutputBytes += outChunk.size
+          }
+          if (debugLoggingEnabled && totalInputBytes >= nextLogAtBytes) {
+            debug("[PRIVATE] encrypt-v3 progress source=${source.name} inputBytes=$totalInputBytes outputBytes=$totalOutputBytes")
+            nextLogAtBytes += PRIVATE_LOG_PROGRESS_STEP_BYTES
+          }
+        }
+
+        val finalChunk = contentCipher.doFinal()
+        if (finalChunk != null && finalChunk.isNotEmpty()) {
+          rawOutput.write(finalChunk)
+          hmac.update(finalChunk)
+          totalOutputBytes += finalChunk.size
+        }
+
+        val tag = hmac.doFinal()
+        if (tag.size < PRIVATE_HMAC_TAG_BYTES) {
+          throw IllegalStateException("PRIVATE_STORAGE_WRITE_FAILED")
+        }
+        rawOutput.write(tag, 0, PRIVATE_HMAC_TAG_BYTES)
+        rawOutput.flush()
+
+        debug(
+          "[PRIVATE] encrypt-v3 stream-encrypt done source=${source.name} inputBytes=$totalInputBytes " +
+            "outputBytes=$totalOutputBytes elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+        )
+      }
+    }
+
+    recordPrivateCryptoMetric(
+      encrypt = true,
+      inputBytes = source.length(),
+      elapsedMs = System.currentTimeMillis() - startedAtMs
+    )
+  }
+
+  private fun encryptFileForPrivateVaultV2(source: File, output: File) {
+    val startedAtMs = System.currentTimeMillis()
+    val random = SecureRandom()
+    val dekBytes = ByteArray(PRIVATE_DEK_BYTES)
+    random.nextBytes(dekBytes)
+    val dek = SecretKeySpec(dekBytes, "AES")
+
+    val contentCipher = Cipher.getInstance("AES/GCM/NoPadding")
+    val contentIv = ByteArray(PRIVATE_GCM_IV_BYTES)
+    random.nextBytes(contentIv)
+    contentCipher.init(Cipher.ENCRYPT_MODE, dek, GCMParameterSpec(PRIVATE_GCM_TAG_BITS, contentIv))
+
+    val wrapCipher = Cipher.getInstance("AES/GCM/NoPadding")
+    wrapCipher.init(Cipher.ENCRYPT_MODE, getOrCreatePrivateVaultMasterKeyV2())
+    val wrappedDek = wrapCipher.doFinal(dekBytes)
+    val wrapIv = wrapCipher.iv
+
+    if (wrapIv.isEmpty() || wrapIv.size > 255 || contentIv.size > 255) {
+      throw IllegalStateException("PRIVATE_STORAGE_WRITE_FAILED")
+    }
+
+    output.parentFile?.mkdirs()
+    FileInputStream(source).use { input ->
+      FileOutputStream(output).use { rawOutput ->
+        rawOutput.write(PRIVATE_VAULT_V2_MAGIC)
+        rawOutput.write(PRIVATE_VAULT_FORMAT_VERSION_V2.toInt())
+        rawOutput.write(PRIVATE_VAULT_ALG_AES_GCM.toInt())
+        rawOutput.write(PRIVATE_VAULT_ALG_AES_GCM.toInt())
+        rawOutput.write(wrapIv.size)
+        rawOutput.write(contentIv.size)
+        rawOutput.write((wrappedDek.size ushr 24) and 0xFF)
+        rawOutput.write((wrappedDek.size ushr 16) and 0xFF)
+        rawOutput.write((wrappedDek.size ushr 8) and 0xFF)
+        rawOutput.write(wrappedDek.size and 0xFF)
+        rawOutput.write(wrapIv)
+        rawOutput.write(contentIv)
+        rawOutput.write(wrappedDek)
+
+        encryptStreamWithMetrics(input, rawOutput, contentCipher, "encrypt", source.name)
+      }
+    }
+    recordPrivateCryptoMetric(
+      encrypt = true,
+      inputBytes = source.length(),
+      elapsedMs = System.currentTimeMillis() - startedAtMs
+    )
+  }
+
+  private fun decryptPrivateVaultFile(source: File, output: File, effectiveVersion: String, traceId: String = "n/a") {
+    privateTrace(
+      traceId,
+      "decrypt dispatch source=${source.name} version=$effectiveVersion sourceBytes=${source.length()} output=${output.absolutePath}"
+    )
+    when (effectiveVersion) {
+      PRIVATE_STORE_VERSION_V3 -> decryptPrivateVaultFileV3(source, output, traceId)
+      PRIVATE_STORE_VERSION_V2 -> decryptPrivateVaultFileV2(source, output, traceId)
+      PRIVATE_STORE_VERSION_V1 -> decryptPrivateVaultFileV1Legacy(source, output, traceId)
+      else -> throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+    }
+  }
+
+  private fun decryptPrivateVaultFileToOutput(
+    source: File,
+    output: OutputStream,
+    effectiveVersion: String,
+    traceId: String = "n/a"
+  ) {
+    privateTrace(
+      traceId,
+      "decrypt dispatch (stream) source=${source.name} version=$effectiveVersion sourceBytes=${source.length()}"
+    )
+    when (effectiveVersion) {
+      PRIVATE_STORE_VERSION_V3 -> decryptPrivateVaultFileV3ToStream(source, output, traceId)
+      PRIVATE_STORE_VERSION_V2 -> decryptPrivateVaultFileV2ToStream(source, output, traceId)
+      PRIVATE_STORE_VERSION_V1 -> decryptPrivateVaultFileV1ToStream(source, output, traceId)
+      else -> throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+    }
+  }
+
+  private fun decryptPrivateVaultFileV1ToStream(source: File, output: OutputStream, traceId: String = "n/a") {
+    privateTrace(traceId, "decrypt-v1(stream) start source=${source.name} size=${source.length()}")
+    val startedAtMs = System.currentTimeMillis()
+    FileInputStream(source).use { rawInput ->
+      val ivLength = rawInput.read()
+      if (ivLength <= 0 || ivLength > 64) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+      val iv = ByteArray(ivLength)
+      readFullyOrThrow(rawInput, iv)
+      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+      cipher.init(Cipher.DECRYPT_MODE, getOrCreatePrivateVaultLegacyKeyV1(), GCMParameterSpec(PRIVATE_GCM_TAG_BITS, iv))
+      decryptStreamWithMetrics(rawInput, output, cipher, "decrypt-v1(stream)", source.name, traceId)
+    }
+    recordPrivateCryptoMetric(
+      encrypt = false,
+      inputBytes = source.length(),
+      elapsedMs = System.currentTimeMillis() - startedAtMs
+    )
+  }
+
+  private fun decryptPrivateVaultFileV2ToStream(source: File, output: OutputStream, traceId: String = "n/a") {
+    privateTrace(traceId, "decrypt-v2(stream) start source=${source.name} size=${source.length()}")
+    val startedAtMs = System.currentTimeMillis()
+    FileInputStream(source).use { rawInput ->
+      val magic = ByteArray(PRIVATE_VAULT_V2_MAGIC.size)
+      if (rawInput.read(magic) != magic.size || !magic.contentEquals(PRIVATE_VAULT_V2_MAGIC)) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+      val version = rawInput.read()
+      val contentAlg = rawInput.read()
+      val wrapAlg = rawInput.read()
+      if (
+        version != PRIVATE_VAULT_FORMAT_VERSION_V2.toInt() ||
+        contentAlg != PRIVATE_VAULT_ALG_AES_GCM.toInt() ||
+        wrapAlg != PRIVATE_VAULT_ALG_AES_GCM.toInt()
+      ) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+
+      val wrapIvLen = rawInput.read()
+      val contentIvLen = rawInput.read()
+      if (wrapIvLen <= 0 || contentIvLen <= 0 || wrapIvLen > 64 || contentIvLen > 64) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+      val wrappedLen = (
+        (rawInput.read() shl 24) or
+          (rawInput.read() shl 16) or
+          (rawInput.read() shl 8) or
+          rawInput.read()
+        )
+      if (wrappedLen <= 0 || wrappedLen > PRIVATE_MAX_WRAPPED_DEK_BYTES) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+
+      val wrapIv = ByteArray(wrapIvLen)
+      val contentIv = ByteArray(contentIvLen)
+      val wrappedDek = ByteArray(wrappedLen)
+      readFullyOrThrow(rawInput, wrapIv)
+      readFullyOrThrow(rawInput, contentIv)
+      readFullyOrThrow(rawInput, wrappedDek)
+
+      val unwrapCipher = Cipher.getInstance("AES/GCM/NoPadding")
+      unwrapCipher.init(Cipher.DECRYPT_MODE, getOrCreatePrivateVaultMasterKeyV2(), GCMParameterSpec(PRIVATE_GCM_TAG_BITS, wrapIv))
+      val dekBytes = unwrapCipher.doFinal(wrappedDek)
+      if (dekBytes.size != PRIVATE_DEK_BYTES) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+
+      val dek = SecretKeySpec(dekBytes, "AES")
+      val contentCipher = Cipher.getInstance("AES/GCM/NoPadding")
+      contentCipher.init(Cipher.DECRYPT_MODE, dek, GCMParameterSpec(PRIVATE_GCM_TAG_BITS, contentIv))
+      decryptStreamWithMetrics(rawInput, output, contentCipher, "decrypt-v2(stream)", source.name, traceId)
+    }
+    recordPrivateCryptoMetric(
+      encrypt = false,
+      inputBytes = source.length(),
+      elapsedMs = System.currentTimeMillis() - startedAtMs
+    )
+  }
+
+  private fun decryptPrivateVaultFileV3ToStream(source: File, output: OutputStream, traceId: String = "n/a") {
+    privateTrace(traceId, "decrypt-v3(stream) start source=${source.name} size=${source.length()}")
+    val startedAtMs = System.currentTimeMillis()
+    FileInputStream(source).use { rawInput ->
+      val magic = ByteArray(PRIVATE_VAULT_V3_MAGIC.size)
+      if (rawInput.read(magic) != magic.size || !magic.contentEquals(PRIVATE_VAULT_V3_MAGIC)) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+
+      val version = rawInput.read()
+      val contentAlg = rawInput.read()
+      val wrapAlg = rawInput.read()
+      val macAlg = rawInput.read()
+      if (
+        version != PRIVATE_VAULT_FORMAT_VERSION_V3.toInt() ||
+        contentAlg != PRIVATE_VAULT_ALG_AES_CTR.toInt() ||
+        wrapAlg != PRIVATE_VAULT_ALG_AES_GCM.toInt() ||
+        macAlg != PRIVATE_VAULT_ALG_HMAC_SHA256.toInt()
+      ) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+
+      val wrapIvLen = rawInput.read()
+      val contentIvLen = rawInput.read()
+      if (wrapIvLen <= 0 || contentIvLen <= 0 || wrapIvLen > 64 || contentIvLen > 64) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+      val wrappedLen = (
+        (rawInput.read() shl 24) or
+          (rawInput.read() shl 16) or
+          (rawInput.read() shl 8) or
+          rawInput.read()
+        )
+      val macLen = rawInput.read()
+      if (wrappedLen <= 0 || wrappedLen > PRIVATE_MAX_WRAPPED_DEK_BYTES || macLen != PRIVATE_HMAC_TAG_BYTES) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+
+      val wrapIv = ByteArray(wrapIvLen)
+      val contentIv = ByteArray(contentIvLen)
+      val wrappedKeyMaterial = ByteArray(wrappedLen)
+      readFullyOrThrow(rawInput, wrapIv)
+      readFullyOrThrow(rawInput, contentIv)
+      readFullyOrThrow(rawInput, wrappedKeyMaterial)
+
+      val header = ByteArrayOutputStream().apply {
+        write(PRIVATE_VAULT_V3_MAGIC)
+        write(version)
+        write(contentAlg)
+        write(wrapAlg)
+        write(macAlg)
+        write(wrapIvLen)
+        write(contentIvLen)
+        write((wrappedLen ushr 24) and 0xFF)
+        write((wrappedLen ushr 16) and 0xFF)
+        write((wrappedLen ushr 8) and 0xFF)
+        write(wrappedLen and 0xFF)
+        write(macLen)
+        write(wrapIv)
+        write(contentIv)
+        write(wrappedKeyMaterial)
+      }.toByteArray()
+
+      val unwrapCipher = Cipher.getInstance("AES/GCM/NoPadding")
+      unwrapCipher.init(Cipher.DECRYPT_MODE, getOrCreatePrivateVaultMasterKeyV2(), GCMParameterSpec(PRIVATE_GCM_TAG_BITS, wrapIv))
+      val keyMaterial = unwrapCipher.doFinal(wrappedKeyMaterial)
+      if (keyMaterial.size != PRIVATE_KEY_MATERIAL_BYTES) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+      val encKey = SecretKeySpec(keyMaterial.copyOfRange(0, PRIVATE_DEK_BYTES), "AES")
+      val macKey = SecretKeySpec(keyMaterial.copyOfRange(PRIVATE_DEK_BYTES, PRIVATE_KEY_MATERIAL_BYTES), "HmacSHA256")
+
+      val contentCipher = Cipher.getInstance("AES/CTR/NoPadding")
+      contentCipher.init(Cipher.DECRYPT_MODE, encKey, javax.crypto.spec.IvParameterSpec(contentIv))
+      val hmac = Mac.getInstance("HmacSHA256").apply {
+        init(macKey)
+        update(header)
+      }
+
+      val ciphertextBytes = source.length() - header.size - macLen
+      if (ciphertextBytes < 0) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+
+      val inBuffer = ByteArray(PRIVATE_STREAM_BUFFER_BYTES)
+      var remaining = ciphertextBytes
+      var totalInputBytes = 0L
+      var totalOutputBytes = 0L
+      while (remaining > 0) {
+        val request = minOf(inBuffer.size.toLong(), remaining).toInt()
+        val read = rawInput.read(inBuffer, 0, request)
+        if (read <= 0) {
+          throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+        }
+        remaining -= read
+        totalInputBytes += read
+        hmac.update(inBuffer, 0, read)
+        val outChunk = contentCipher.update(inBuffer, 0, read)
+        if (outChunk != null && outChunk.isNotEmpty()) {
+          output.write(outChunk)
+          totalOutputBytes += outChunk.size
+        }
+      }
+
+      val expectedTag = ByteArray(macLen)
+      readFullyOrThrow(rawInput, expectedTag)
+      val finalChunk = contentCipher.doFinal()
+      if (finalChunk != null && finalChunk.isNotEmpty()) {
+        output.write(finalChunk)
+        totalOutputBytes += finalChunk.size
+      }
+      output.flush()
+
+      val actualTag = hmac.doFinal()
+      val expectedTagTrimmed = if (expectedTag.size == actualTag.size) expectedTag else expectedTag.copyOf(actualTag.size)
+      if (!MessageDigest.isEqual(actualTag, expectedTagTrimmed)) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+      privateTrace(
+        traceId,
+        "decrypt-v3(stream) done source=${source.name} inputBytes=$totalInputBytes outputBytes=$totalOutputBytes elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+      )
+    }
+    recordPrivateCryptoMetric(
+      encrypt = false,
+      inputBytes = source.length(),
+      elapsedMs = System.currentTimeMillis() - startedAtMs
+    )
+  }
+
+  private fun decryptPrivateVaultFileV1Legacy(source: File, output: File, traceId: String = "n/a") {
+    privateTrace(traceId, "decrypt-v1 start source=${source.name} size=${source.length()}")
+    val startedAtMs = System.currentTimeMillis()
+    FileInputStream(source).use { rawInput ->
+      val ivLength = rawInput.read()
+      if (ivLength <= 0 || ivLength > 64) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+      val iv = ByteArray(ivLength)
+      readFullyOrThrow(rawInput, iv)
+      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+      cipher.init(Cipher.DECRYPT_MODE, getOrCreatePrivateVaultLegacyKeyV1(), GCMParameterSpec(PRIVATE_GCM_TAG_BITS, iv))
+      output.parentFile?.mkdirs()
+      FileOutputStream(output).use { rawOutput ->
+        decryptStreamWithMetrics(rawInput, rawOutput, cipher, "decrypt-v1", source.name, traceId)
+      }
+    }
+    recordPrivateCryptoMetric(
+      encrypt = false,
+      inputBytes = source.length(),
+      elapsedMs = System.currentTimeMillis() - startedAtMs
+    )
+    privateTrace(
+      traceId,
+      "decrypt-v1 complete source=${source.name} outputBytes=${output.length()} elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+    )
+  }
+
+  private fun decryptPrivateVaultFileV2(source: File, output: File, traceId: String = "n/a") {
+    privateTrace(traceId, "decrypt-v2 start source=${source.name} size=${source.length()}")
+    val startedAtMs = System.currentTimeMillis()
+    FileInputStream(source).use { rawInput ->
+      val magic = ByteArray(PRIVATE_VAULT_V2_MAGIC.size)
+      if (rawInput.read(magic) != magic.size || !magic.contentEquals(PRIVATE_VAULT_V2_MAGIC)) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+      val version = rawInput.read()
+      val contentAlg = rawInput.read()
+      val wrapAlg = rawInput.read()
+      if (
+        version != PRIVATE_VAULT_FORMAT_VERSION_V2.toInt() ||
+        contentAlg != PRIVATE_VAULT_ALG_AES_GCM.toInt() ||
+        wrapAlg != PRIVATE_VAULT_ALG_AES_GCM.toInt()
+      ) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+
+      val wrapIvLen = rawInput.read()
+      val contentIvLen = rawInput.read()
+      if (wrapIvLen <= 0 || contentIvLen <= 0 || wrapIvLen > 64 || contentIvLen > 64) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+      val wrappedLen = (
+        (rawInput.read() shl 24) or
+          (rawInput.read() shl 16) or
+          (rawInput.read() shl 8) or
+          rawInput.read()
+        )
+      if (wrappedLen <= 0 || wrappedLen > PRIVATE_MAX_WRAPPED_DEK_BYTES) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+
+      val wrapIv = ByteArray(wrapIvLen)
+      val contentIv = ByteArray(contentIvLen)
+      val wrappedDek = ByteArray(wrappedLen)
+      readFullyOrThrow(rawInput, wrapIv)
+      readFullyOrThrow(rawInput, contentIv)
+      readFullyOrThrow(rawInput, wrappedDek)
+      privateTrace(
+        traceId,
+        "decrypt-v2 header parsed source=${source.name} wrapIvLen=$wrapIvLen contentIvLen=$contentIvLen wrappedLen=$wrappedLen"
+      )
+
+      val unwrapCipher = Cipher.getInstance("AES/GCM/NoPadding")
+      unwrapCipher.init(Cipher.DECRYPT_MODE, getOrCreatePrivateVaultMasterKeyV2(), GCMParameterSpec(PRIVATE_GCM_TAG_BITS, wrapIv))
+      val dekBytes = unwrapCipher.doFinal(wrappedDek)
+      if (dekBytes.size != PRIVATE_DEK_BYTES) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+      val dek = SecretKeySpec(dekBytes, "AES")
+      val contentCipher = Cipher.getInstance("AES/GCM/NoPadding")
+      contentCipher.init(Cipher.DECRYPT_MODE, dek, GCMParameterSpec(PRIVATE_GCM_TAG_BITS, contentIv))
+
+      output.parentFile?.mkdirs()
+      FileOutputStream(output).use { rawOutput ->
+        decryptStreamWithMetrics(rawInput, rawOutput, contentCipher, "decrypt-v2", source.name, traceId)
+      }
+    }
+    recordPrivateCryptoMetric(
+      encrypt = false,
+      inputBytes = source.length(),
+      elapsedMs = System.currentTimeMillis() - startedAtMs
+    )
+    privateTrace(
+      traceId,
+      "decrypt-v2 complete source=${source.name} outputBytes=${output.length()} elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+    )
+  }
+
+  private fun decryptPrivateVaultFileV3(source: File, output: File, traceId: String = "n/a") {
+    privateTrace(traceId, "decrypt-v3 start source=${source.name} size=${source.length()}")
+    val startedAtMs = System.currentTimeMillis()
+    FileInputStream(source).use { rawInput ->
+      val magic = ByteArray(PRIVATE_VAULT_V3_MAGIC.size)
+      if (rawInput.read(magic) != magic.size || !magic.contentEquals(PRIVATE_VAULT_V3_MAGIC)) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+
+      val version = rawInput.read()
+      val contentAlg = rawInput.read()
+      val wrapAlg = rawInput.read()
+      val macAlg = rawInput.read()
+      if (
+        version != PRIVATE_VAULT_FORMAT_VERSION_V3.toInt() ||
+        contentAlg != PRIVATE_VAULT_ALG_AES_CTR.toInt() ||
+        wrapAlg != PRIVATE_VAULT_ALG_AES_GCM.toInt() ||
+        macAlg != PRIVATE_VAULT_ALG_HMAC_SHA256.toInt()
+      ) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+
+      val wrapIvLen = rawInput.read()
+      val contentIvLen = rawInput.read()
+      if (wrapIvLen <= 0 || contentIvLen <= 0 || wrapIvLen > 64 || contentIvLen > 64) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+      val wrappedLen = (
+        (rawInput.read() shl 24) or
+          (rawInput.read() shl 16) or
+          (rawInput.read() shl 8) or
+          rawInput.read()
+        )
+      val macLen = rawInput.read()
+      if (wrappedLen <= 0 || wrappedLen > PRIVATE_MAX_WRAPPED_DEK_BYTES || macLen != PRIVATE_HMAC_TAG_BYTES) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+
+      val wrapIv = ByteArray(wrapIvLen)
+      val contentIv = ByteArray(contentIvLen)
+      val wrappedKeyMaterial = ByteArray(wrappedLen)
+      readFullyOrThrow(rawInput, wrapIv)
+      readFullyOrThrow(rawInput, contentIv)
+      readFullyOrThrow(rawInput, wrappedKeyMaterial)
+      privateTrace(
+        traceId,
+        "decrypt-v3 header parsed source=${source.name} wrapIvLen=$wrapIvLen contentIvLen=$contentIvLen wrappedLen=$wrappedLen macLen=$macLen"
+      )
+
+      val header = ByteArrayOutputStream().apply {
+        write(PRIVATE_VAULT_V3_MAGIC)
+        write(version)
+        write(contentAlg)
+        write(wrapAlg)
+        write(macAlg)
+        write(wrapIvLen)
+        write(contentIvLen)
+        write((wrappedLen ushr 24) and 0xFF)
+        write((wrappedLen ushr 16) and 0xFF)
+        write((wrappedLen ushr 8) and 0xFF)
+        write(wrappedLen and 0xFF)
+        write(macLen)
+        write(wrapIv)
+        write(contentIv)
+        write(wrappedKeyMaterial)
+      }.toByteArray()
+
+      val unwrapCipher = Cipher.getInstance("AES/GCM/NoPadding")
+      unwrapCipher.init(Cipher.DECRYPT_MODE, getOrCreatePrivateVaultMasterKeyV2(), GCMParameterSpec(PRIVATE_GCM_TAG_BITS, wrapIv))
+      val keyMaterial = unwrapCipher.doFinal(wrappedKeyMaterial)
+      if (keyMaterial.size != PRIVATE_KEY_MATERIAL_BYTES) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+      val encKey = SecretKeySpec(keyMaterial.copyOfRange(0, PRIVATE_DEK_BYTES), "AES")
+      val macKey = SecretKeySpec(keyMaterial.copyOfRange(PRIVATE_DEK_BYTES, PRIVATE_KEY_MATERIAL_BYTES), "HmacSHA256")
+
+      val contentCipher = Cipher.getInstance("AES/CTR/NoPadding")
+      contentCipher.init(Cipher.DECRYPT_MODE, encKey, javax.crypto.spec.IvParameterSpec(contentIv))
+      val hmac = Mac.getInstance("HmacSHA256").apply {
+        init(macKey)
+        update(header)
+      }
+
+      val ciphertextBytes = source.length() - header.size - macLen
+      if (ciphertextBytes < 0) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+
+      output.parentFile?.mkdirs()
+      FileOutputStream(output).use { rawOutput ->
+        val inBuffer = ByteArray(PRIVATE_STREAM_BUFFER_BYTES)
+        var remaining = ciphertextBytes
+        var totalInputBytes = 0L
+        var totalOutputBytes = 0L
+        var nextLogAtBytes = PRIVATE_LOG_PROGRESS_STEP_BYTES
+        while (remaining > 0) {
+          val request = minOf(inBuffer.size.toLong(), remaining).toInt()
+          val read = rawInput.read(inBuffer, 0, request)
+          if (read <= 0) {
+            throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+          }
+          remaining -= read
+          totalInputBytes += read
+          hmac.update(inBuffer, 0, read)
+          val outChunk = contentCipher.update(inBuffer, 0, read)
+          if (outChunk != null && outChunk.isNotEmpty()) {
+            rawOutput.write(outChunk)
+            totalOutputBytes += outChunk.size
+          }
+          if (debugLoggingEnabled && totalInputBytes >= nextLogAtBytes) {
+            privateTrace(
+              traceId,
+              "decrypt-v3 progress source=${source.name} inputBytes=$totalInputBytes outputBytes=$totalOutputBytes"
+            )
+            nextLogAtBytes += PRIVATE_LOG_PROGRESS_STEP_BYTES
+          }
+        }
+
+        val expectedTag = ByteArray(macLen)
+        readFullyOrThrow(rawInput, expectedTag)
+        val finalChunk = contentCipher.doFinal()
+        if (finalChunk != null && finalChunk.isNotEmpty()) {
+          rawOutput.write(finalChunk)
+          totalOutputBytes += finalChunk.size
+        }
+        rawOutput.flush()
+
+        val actualTag = hmac.doFinal()
+        val expectedTagTrimmed = if (expectedTag.size == actualTag.size) expectedTag else expectedTag.copyOf(actualTag.size)
+        if (!MessageDigest.isEqual(actualTag, expectedTagTrimmed)) {
+          throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+        }
+        privateTrace(
+          traceId,
+          "decrypt-v3 stream-decrypt done source=${source.name} inputBytes=$totalInputBytes outputBytes=$totalOutputBytes elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+        )
+      }
+    }
+    recordPrivateCryptoMetric(
+      encrypt = false,
+      inputBytes = source.length(),
+      elapsedMs = System.currentTimeMillis() - startedAtMs
+    )
+    privateTrace(
+      traceId,
+      "decrypt-v3 complete source=${source.name} outputBytes=${output.length()} elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+    )
+  }
+
+  private fun detectPrivateCipherVersion(source: File, entryCipherVersion: String): String {
+    if (!source.exists() || !source.isFile) {
+      return entryCipherVersion.ifBlank { PRIVATE_STORE_VERSION_V1 }
+    }
+    return runCatching {
+      FileInputStream(source).use { input ->
+        val magic = ByteArray(PRIVATE_VAULT_V2_MAGIC.size)
+        val read = input.read(magic)
+        if (read == magic.size && magic.contentEquals(PRIVATE_VAULT_V3_MAGIC)) {
+          PRIVATE_STORE_VERSION_V3
+        } else if (read == magic.size && magic.contentEquals(PRIVATE_VAULT_V2_MAGIC)) {
+          PRIVATE_STORE_VERSION_V2
+        } else {
+          PRIVATE_STORE_VERSION_V1
+        }
+      }
+    }.getOrElse {
+      entryCipherVersion.ifBlank { PRIVATE_STORE_VERSION_V1 }
+    }
+  }
+
+  private fun migratePrivateVaultEntryToV2(entry: PrivateVideoEntry, decryptedSource: File) {
+    if (entry.cipherVersion == PRIVATE_STORE_VERSION_V2) {
+      return
+    }
+    val objectsDir = privateVaultObjectsDir(create = true)
+    val target = File(objectsDir, entry.encFileName)
+    val temp = File(objectsDir, ".${entry.encFileName}.v2.partial")
+    val now = System.currentTimeMillis()
+    encryptFileForPrivateVaultV2(decryptedSource, temp)
+    if (!temp.renameTo(target)) {
+      temp.copyTo(target, overwrite = true)
+      temp.delete()
+    }
+    synchronized(privateVaultLock) {
+      val index = readPrivateVaultIndex()
+      val items = index.optJSONArray("items") ?: JSONArray()
+      for (i in 0 until items.length()) {
+        val obj = items.optJSONObject(i) ?: continue
+        if (obj.optString("id") == entry.id) {
+          obj.put("cipherVersion", PRIVATE_STORE_VERSION_V2)
+          obj.put("updatedAt", now)
+          obj.put("sizeBytesEncrypted", target.length())
+          break
+        }
+      }
+      writePrivateVaultIndex(index)
+    }
+    debug("[PRIVATE] lazy migration completed id=${entry.id} version=$PRIVATE_STORE_VERSION_V2")
+  }
+
+  private fun copyStreamWithMetrics(
+    input: java.io.InputStream,
+    output: java.io.OutputStream,
+    phase: String,
+    sourceName: String,
+    traceId: String = "n/a"
+  ): Long {
+    val startedAt = System.currentTimeMillis()
+    privateTrace(traceId, "$phase stream-copy start source=$sourceName bufferBytes=$PRIVATE_STREAM_BUFFER_BYTES")
+    val buffer = ByteArray(PRIVATE_STREAM_BUFFER_BYTES)
+    var totalBytes = 0L
+    var nextLogAtBytes = PRIVATE_LOG_PROGRESS_STEP_BYTES
+    while (true) {
+      val read = input.read(buffer)
+      if (read < 0) break
+      output.write(buffer, 0, read)
+      totalBytes += read
+      if (debugLoggingEnabled && totalBytes >= nextLogAtBytes) {
+        privateTrace(traceId, "$phase progress source=$sourceName bytes=$totalBytes")
+        nextLogAtBytes += PRIVATE_LOG_PROGRESS_STEP_BYTES
+      }
+    }
+    privateTrace(
+      traceId,
+      "$phase stream-copy done source=$sourceName bytes=$totalBytes elapsedMs=${System.currentTimeMillis() - startedAt}"
+    )
+    return totalBytes
+  }
+
+  private fun encryptStreamWithMetrics(
+    input: java.io.InputStream,
+    output: java.io.OutputStream,
+    cipher: Cipher,
+    phase: String,
+    sourceName: String
+  ): Long {
+    val startedAt = System.currentTimeMillis()
+    debug("[PRIVATE] $phase stream-encrypt start source=$sourceName bufferBytes=$PRIVATE_STREAM_BUFFER_BYTES")
+    val inBuffer = ByteArray(PRIVATE_STREAM_BUFFER_BYTES)
+    var totalInputBytes = 0L
+    var totalOutputBytes = 0L
+    var nextLogAtBytes = PRIVATE_LOG_PROGRESS_STEP_BYTES
+    while (true) {
+      val read = input.read(inBuffer)
+      if (read < 0) break
+      totalInputBytes += read
+      val outChunk = cipher.update(inBuffer, 0, read)
+      if (outChunk != null && outChunk.isNotEmpty()) {
+        output.write(outChunk)
+        totalOutputBytes += outChunk.size
+      }
+      if (debugLoggingEnabled && totalInputBytes >= nextLogAtBytes) {
+        debug(
+          "[PRIVATE] $phase progress source=$sourceName inputBytes=$totalInputBytes outputBytes=$totalOutputBytes"
+        )
+        nextLogAtBytes += PRIVATE_LOG_PROGRESS_STEP_BYTES
+      }
+    }
+    val finalChunk = cipher.doFinal()
+    if (finalChunk != null && finalChunk.isNotEmpty()) {
+      output.write(finalChunk)
+      totalOutputBytes += finalChunk.size
+    }
+    output.flush()
+    debug(
+      "[PRIVATE] $phase stream-encrypt done source=$sourceName inputBytes=$totalInputBytes outputBytes=$totalOutputBytes elapsedMs=${System.currentTimeMillis() - startedAt}"
+    )
+    return totalOutputBytes
+  }
+
+  private fun decryptStreamWithMetrics(
+    input: java.io.InputStream,
+    output: java.io.OutputStream,
+    cipher: Cipher,
+    phase: String,
+    sourceName: String,
+    traceId: String = "n/a"
+  ): Long {
+    val startedAt = System.currentTimeMillis()
+    privateTrace(traceId, "$phase stream-decrypt start source=$sourceName bufferBytes=$PRIVATE_STREAM_BUFFER_BYTES")
+    val inBuffer = ByteArray(PRIVATE_STREAM_BUFFER_BYTES)
+    var totalInputBytes = 0L
+    var totalOutputBytes = 0L
+    var nextLogAtBytes = PRIVATE_LOG_PROGRESS_STEP_BYTES
+    while (true) {
+      val read = input.read(inBuffer)
+      if (read < 0) break
+      totalInputBytes += read
+      val outChunk = cipher.update(inBuffer, 0, read)
+      if (outChunk != null && outChunk.isNotEmpty()) {
+        output.write(outChunk)
+        totalOutputBytes += outChunk.size
+      }
+      if (debugLoggingEnabled && totalInputBytes >= nextLogAtBytes) {
+        privateTrace(
+          traceId,
+          "$phase progress source=$sourceName inputBytes=$totalInputBytes outputBytes=$totalOutputBytes"
+        )
+        nextLogAtBytes += PRIVATE_LOG_PROGRESS_STEP_BYTES
+      }
+    }
+    val finalChunk = cipher.doFinal()
+    if (finalChunk != null && finalChunk.isNotEmpty()) {
+      output.write(finalChunk)
+      totalOutputBytes += finalChunk.size
+    }
+    output.flush()
+    privateTrace(
+      traceId,
+      "$phase stream-decrypt done source=$sourceName inputBytes=$totalInputBytes outputBytes=$totalOutputBytes elapsedMs=${System.currentTimeMillis() - startedAt}"
+    )
+    return totalOutputBytes
+  }
+
+  private fun readFullyOrThrow(input: java.io.InputStream, buffer: ByteArray) {
+    var offset = 0
+    while (offset < buffer.size) {
+      val read = input.read(buffer, offset, buffer.size - offset)
+      if (read < 0) {
+        throw IllegalStateException("PRIVATE_VIDEO_NOT_FOUND")
+      }
+      offset += read
+    }
+  }
+
+  private fun recordPrivateCryptoMetric(encrypt: Boolean, inputBytes: Long, elapsedMs: Long) {
+    val normalizedMs = max(1L, elapsedMs)
+    val throughputMbps = (inputBytes.toDouble() * 8.0 / (1024.0 * 1024.0)) / (normalizedMs / 1000.0)
+    privateLastThroughputMbps = throughputMbps
+    if (encrypt) {
+      privateLastEncryptMs = normalizedMs
+    } else {
+      privateLastDecryptMs = normalizedMs
+    }
+    if (debugLoggingEnabled) {
+      debug(
+        "[PRIVATE] crypto metric mode=${if (encrypt) "encrypt" else "decrypt"} " +
+          "bytes=$inputBytes elapsedMs=$normalizedMs throughputMbps=${"%.2f".format(throughputMbps)}"
+      )
+    }
+  }
+
+  private fun getOrCreatePrivateVaultLegacyKeyV1(): SecretKey {
+    val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+    val existing = keyStore.getKey(PRIVATE_VAULT_KEY_ALIAS_V1, null) as? SecretKey
+    if (existing != null) {
+      return existing
+    }
+    val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+    val spec = KeyGenParameterSpec.Builder(
+      PRIVATE_VAULT_KEY_ALIAS_V1,
+      KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+    )
+      .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+      .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+      .setRandomizedEncryptionRequired(true)
+      .build()
+    keyGenerator.init(spec)
+    return keyGenerator.generateKey()
+  }
+
+  private fun getOrCreatePrivateVaultMasterKeyV2(): SecretKey {
+    val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+    val existing = keyStore.getKey(PRIVATE_VAULT_MASTER_KEY_ALIAS_V2, null) as? SecretKey
+    if (existing != null) {
+      return existing
+    }
+    val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+    val spec = KeyGenParameterSpec.Builder(
+      PRIVATE_VAULT_MASTER_KEY_ALIAS_V2,
+      KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+    )
+      .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+      .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+      .setRandomizedEncryptionRequired(true)
+      .build()
+    keyGenerator.init(spec)
+    return keyGenerator.generateKey()
+  }
+
+  private fun authenticatePrivateAccessInternal(purpose: String): Pair<Boolean, String?> {
+    debug("[PRIVATE] auth start purpose=$purpose thread=${Thread.currentThread().name}")
+    val context = appContext.reactContext ?: return false to "PRIVATE_AUTH_REQUIRED"
+    if (!PRIVATE_VAULT_FEATURE_FLAG) {
+      debug("[PRIVATE] auth unavailable feature-flag disabled")
+      return false to "PRIVATE_MODE_UNAVAILABLE"
+    }
+    if (!isPrivateAuthAvailable(context)) {
+      debug("[PRIVATE] auth unavailable device not secure/biometric unavailable")
+      return false to "PRIVATE_MODE_UNAVAILABLE"
+    }
+    val activity = appContext.currentActivity as? FragmentActivity
+      ?: run {
+        debug("[PRIVATE] auth failed no current FragmentActivity")
+        return false to "PRIVATE_AUTH_REQUIRED"
+      }
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+      debug("[PRIVATE] auth failed called on main thread")
+      return false to "PRIVATE_AUTH_FAILED"
+    }
+
+    val result = java.util.concurrent.atomic.AtomicBoolean(false)
+    val reason = arrayOfNulls<String>(1)
+    val latch = CountDownLatch(1)
+    activity.runOnUiThread {
+      val executor = ContextCompat.getMainExecutor(activity)
+      val prompt = BiometricPrompt(
+        activity,
+        executor,
+        object : BiometricPrompt.AuthenticationCallback() {
+          override fun onAuthenticationSucceeded(authResult: BiometricPrompt.AuthenticationResult) {
+            debug("[PRIVATE] auth callback success purpose=$purpose")
+            result.set(true)
+            reason[0] = null
+            latch.countDown()
+          }
+
+          override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+            debug("[PRIVATE] auth callback error purpose=$purpose code=$errorCode msg=$errString")
+            result.set(false)
+            reason[0] = "PRIVATE_AUTH_FAILED"
+            latch.countDown()
+          }
+
+          override fun onAuthenticationFailed() {
+            debug("[PRIVATE] auth callback failed (non-terminal) purpose=$purpose")
+          }
+        }
+      )
+      val promptBuilder = BiometricPrompt.PromptInfo.Builder()
+        .setTitle(
+          when (purpose) {
+            "delete" -> "Confirm delete"
+            "import" -> "Confirm import"
+            "export" -> "Confirm copy"
+            "unprivate" -> "Confirm export"
+            else -> "Unlock private vault"
+          }
+        )
+        .setSubtitle("Verify identity to continue")
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        promptBuilder.setAllowedAuthenticators(
+          BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        )
+      } else {
+        promptBuilder.setDeviceCredentialAllowed(true)
+      }
+      prompt.authenticate(promptBuilder.build())
+    }
+
+    val completed = runCatching { latch.await(15, TimeUnit.SECONDS) }.getOrDefault(false)
+    if (!completed) {
+      debug("[PRIVATE] auth timeout purpose=$purpose")
+      return false to "PRIVATE_AUTH_FAILED"
+    }
+    if (!result.get()) {
+      debug("[PRIVATE] auth denied purpose=$purpose reason=${reason[0] ?: "PRIVATE_AUTH_FAILED"}")
+      return false to (reason[0] ?: "PRIVATE_AUTH_FAILED")
+    }
+    debug("[PRIVATE] auth success purpose=$purpose")
+    return true to null
+  }
+
+  private fun isPrivateAuthAvailable(context: Context): Boolean {
+    return isPrivateAuthAvailableStatic(context)
+  }
+
+  private fun prepareRuntimeCookiePath(
+    taskId: String,
+    url: String,
+    requestedProfile: String?,
+    preferredPlatform: String?
+  ): String? {
+    val builtInPlatform = preferredPlatform ?: detectCookiePlatform(url)
+    val selectedFile = if (builtInPlatform != null) {
+      lastCustomDomainMatch = null
+      val platformFile = selectSecureCookieFile(builtInPlatform, requestedProfile)
+      if (requestedProfile != null && platformFile == null) {
+        throw IllegalStateException("COOKIE_PROFILE_NOT_FOUND")
+      }
+      platformFile
+    } else {
+      selectCustomCookieFileForUrl(url, requestedProfile)
+    } ?: return null
+
+    val runtimeDir = runtimeCookieTaskDir(taskId).apply { mkdirs() }
+    val runtimeFile = File(runtimeDir, "cookie.txt")
+    val plaintext = readEncryptedCookieFile(selectedFile)
+    atomicWriteBytes(runtimeFile, plaintext)
+    debug("Task[$taskId] prepared runtime cookie file from profile=${selectedFile.nameWithoutExtension} platform=${builtInPlatform ?: "custom"}")
+    return runtimeFile.absolutePath
+  }
+
+  private fun shouldRetryWithoutCookies(result: JSONObject, usedCookiePath: String?, platform: String?): Boolean {
+    if (usedCookiePath.isNullOrBlank()) {
+      debug("Retry-without-cookies=false reason=no-cookie")
+      return false
+    }
+    if (platform != null && STRICT_COOKIE_PLATFORMS.contains(platform)) {
+      debug("Retry-without-cookies=false reason=strict-platform platform=$platform")
+      return false
+    }
+
+    val code = result.optString("code", "")
+    if (code == "DOWNLOAD_CANCELLED" || code == "FILE_TOO_LARGE") {
+      debug("Retry-without-cookies=false reason=terminal-code code=$code")
+      return false
+    }
+
+    if (code == "COOKIE_STALE_OR_INVALID") {
+      debug("Retry-without-cookies=false reason=cookie-invalid")
+      return false
+    }
+
+    if (code in RETRYABLE_COOKIE_FAILURE_CODES) {
+      debug("Retry-without-cookies=true reason=retryable-code code=$code")
+      return true
+    }
+
+    val message = result.optString("message", "").lowercase()
+    val decision = message.contains("cookie") || message.contains("sign in") || message.contains("login")
+    debug("Retry-without-cookies=$decision reason=message-match")
+    return decision
+  }
+
+  private fun detectCookiePlatform(url: String): String? {
+    val host = extractCanonicalHostFromUrl(url) ?: return null
+
+    for ((platform, hosts) in PLATFORM_HOSTS) {
+      if (hosts.any { host == it || host.endsWith(".$it") }) {
+        return platform
+      }
+    }
+    return null
+  }
+
+  private fun selectSecureCookieFile(platform: String, requestedProfile: String?): File? {
+    val platformDir = secureCookiePlatformDir(platform, create = false)
+    if (!platformDir.exists()) {
+      return null
+    }
+
+    val files = platformDir.listFiles()
+      ?.filter { it.isFile && it.extension == "enc" }
+      ?.sortedByDescending { it.lastModified() }
+      ?: emptyList()
+    if (files.isEmpty()) {
+      return null
+    }
+
+    if (!requestedProfile.isNullOrBlank()) {
+      val normalized = sanitizeProfileName(requestedProfile)
+      return files.firstOrNull { it.nameWithoutExtension == normalized }
+    }
+
+    val defaultProfile = readDefaultProfile(platformDir)
+    if (!defaultProfile.isNullOrBlank()) {
+      val defaultMatch = files.firstOrNull { it.nameWithoutExtension == defaultProfile }
+      if (defaultMatch != null) {
+        return defaultMatch
+      }
+    }
+
+    return files.firstOrNull()
+  }
+
+  private fun selectCustomCookieFileForUrl(url: String, requestedProfile: String?): File? {
+    val host = extractCanonicalHostFromUrl(url)
+    if (host == null) {
+      lastCustomDomainMatch = null
+      return null
+    }
+
+    return synchronized(customCookieIndexLock) {
+      val index = readCustomCookieIndex()
+      val domainsObj = index.getJSONObject("domains")
+      val profilesObj = index.getJSONObject("profiles")
+      var matchedDomain: String? = null
+      val keys = domainsObj.keys()
+      while (keys.hasNext()) {
+        val rawDomain = keys.next()
+        val candidate = canonicalizeDomain(rawDomain) ?: continue
+        if (host != candidate && !host.endsWith(".$candidate")) {
+          continue
+        }
+        if (matchedDomain == null || candidate.length > (matchedDomain?.length ?: -1)) {
+          matchedDomain = candidate
+        }
+      }
+
+      if (matchedDomain == null) {
+        lastCustomDomainMatch = CustomDomainMatch(urlHost = host)
+        return@synchronized null
+      }
+
+      val selectedProfile = resolveCustomProfileForDomain(
+        index = index,
+        domain = matchedDomain,
+        requestedProfile = requestedProfile
+      )
+
+      if (selectedProfile == null) {
+        lastCustomDomainMatch = CustomDomainMatch(urlHost = host, matchedDomain = matchedDomain)
+        return@synchronized null
+      }
+
+      val profileObj = profilesObj.optJSONObject(selectedProfile.first)
+      val profileName = sanitizeProfileName(profileObj?.optString("profileName").orEmpty())
+      lastCustomDomainMatch = CustomDomainMatch(
+        urlHost = host,
+        matchedDomain = matchedDomain,
+        profileName = profileName
+      )
+      selectedProfile.second
+    }
+  }
+
+  private fun resolveCustomProfileForDomain(
+    index: JSONObject,
+    domain: String,
+    requestedProfile: String?
+  ): Pair<String, File>? {
+    val domainsObj = index.getJSONObject("domains")
+    val profilesObj = index.getJSONObject("profiles")
+    val domainEntry = domainsObj.optJSONObject(domain) ?: return null
+    val profileIds = jsonArrayToStringList(domainEntry.optJSONArray("profileIds"))
+    if (profileIds.isEmpty()) {
+      return null
+    }
+
+    val candidates = profileIds.mapNotNull { profileId ->
+      val profileObj = profilesObj.optJSONObject(profileId) ?: return@mapNotNull null
+      val profileName = sanitizeProfileName(profileObj.optString("profileName"))
+      if (profileName.isBlank()) {
+        return@mapNotNull null
+      }
+      val profileFile = customProfileFile(profileId)
+      if (!profileFile.exists()) {
+        return@mapNotNull null
+      }
+      Triple(profileId, profileName, profileObj.optLong("updatedAt", 0L))
+    }
+    if (candidates.isEmpty()) {
+      return null
+    }
+
+    if (!requestedProfile.isNullOrBlank()) {
+      val normalizedRequested = sanitizeProfileName(requestedProfile)
+      val matched = candidates.firstOrNull { it.second == normalizedRequested }
+        ?: throw IllegalStateException("CUSTOM_COOKIE_PROFILE_NOT_FOUND")
+      return matched.first to customProfileFile(matched.first)
+    }
+
+    val defaultProfileName = readDefaultProfile(customDomainDir(domain, create = false))
+    val defaultCandidate = defaultProfileName?.let { defaultName ->
+      candidates.firstOrNull { it.second == defaultName }
+    }
+    val chosen = defaultCandidate ?: candidates.maxByOrNull { it.third }
+    return chosen?.let { it.first to customProfileFile(it.first) }
+  }
+
+  private fun secureCookiesRoot(create: Boolean): File {
+    val root = File(requireNotNull(appContext.reactContext).filesDir, "$SECURE_COOKIES_DIRNAME/$COOKIE_STORE_VERSION")
+    if (create) {
+      root.mkdirs()
+    }
+    return root
+  }
+
+  private fun customCookiesRoot(create: Boolean): File {
+    val root = File(secureCookiesRoot(create = create), CUSTOM_COOKIES_DIRNAME)
+    if (create) {
+      root.mkdirs()
+    }
+    return root
+  }
+
+  private fun customProfilesDir(create: Boolean): File {
+    val dir = File(customCookiesRoot(create = create), CUSTOM_PROFILES_DIRNAME)
+    if (create) {
+      dir.mkdirs()
+    }
+    return dir
+  }
+
+  private fun customDomainsRoot(create: Boolean): File {
+    val dir = File(customCookiesRoot(create = create), CUSTOM_DOMAINS_DIRNAME)
+    if (create) {
+      dir.mkdirs()
+    }
+    return dir
+  }
+
+  private fun customDomainDir(domain: String, create: Boolean): File {
+    val canonical = canonicalizeDomain(domain) ?: domain
+    val dir = File(customDomainsRoot(create = create), canonical)
+    if (create) {
+      dir.mkdirs()
+    }
+    return dir
+  }
+
+  private fun customProfileFile(profileId: String): File {
+    return File(customProfilesDir(create = true), "$profileId.enc")
+  }
+
+  private fun customCookieIndexFile(createParent: Boolean): File {
+    val root = customCookiesRoot(create = createParent)
+    return File(root, CUSTOM_INDEX_FILENAME)
+  }
+
+  private fun readCustomCookieIndex(): JSONObject {
+    val file = customCookieIndexFile(createParent = true)
+    val emptyIndex = JSONObject().apply {
+      put("profiles", JSONObject())
+      put("domains", JSONObject())
+    }
+    if (!file.exists()) {
+      writeCustomCookieIndex(emptyIndex)
+      return emptyIndex
+    }
+
+    return runCatching { JSONObject(file.readText(Charsets.UTF_8)) }
+      .map { parsed ->
+        if (!parsed.has("profiles") || parsed.optJSONObject("profiles") == null) {
+          parsed.put("profiles", JSONObject())
+        }
+        if (!parsed.has("domains") || parsed.optJSONObject("domains") == null) {
+          parsed.put("domains", JSONObject())
+        }
+        parsed
+      }
+      .getOrElse {
+        addError("CUSTOM_COOKIE_INDEX_READ_FAILED: ${it.message}")
+        emptyIndex
+      }
+  }
+
+  private fun writeCustomCookieIndex(index: JSONObject) {
+    val file = customCookieIndexFile(createParent = true)
+    atomicWriteBytes(file, index.toString().toByteArray(Charsets.UTF_8))
+  }
+
+  private fun ensureUniqueCustomProfileName(index: JSONObject, domains: List<String>, baseName: String): String {
+    val profilesObj = index.getJSONObject("profiles")
+    val domainsObj = index.getJSONObject("domains")
+    var candidate = baseName
+    var suffix = 2
+    while (true) {
+      val conflict = domains.any { domain ->
+        val domainEntry = domainsObj.optJSONObject(domain) ?: return@any false
+        val ids = jsonArrayToStringList(domainEntry.optJSONArray("profileIds"))
+        ids.any { profileId ->
+          sanitizeProfileName(profilesObj.optJSONObject(profileId)?.optString("profileName").orEmpty()) == candidate
+        }
+      }
+      if (!conflict) {
+        return candidate
+      }
+      candidate = "${baseName}_${suffix++}"
+    }
+  }
+
+  private fun ensureCustomDomainDefault(domain: String, index: JSONObject) {
+    val canonicalDomain = canonicalizeDomain(domain) ?: return
+    val currentDefault = readDefaultProfile(customDomainDir(canonicalDomain, create = true))
+    val domainsObj = index.getJSONObject("domains")
+    val profilesObj = index.getJSONObject("profiles")
+    val domainEntry = domainsObj.optJSONObject(canonicalDomain)
+    val candidates = jsonArrayToStringList(domainEntry?.optJSONArray("profileIds"))
+      .mapNotNull { profileId ->
+        val profileObj = profilesObj.optJSONObject(profileId) ?: return@mapNotNull null
+        val name = sanitizeProfileName(profileObj.optString("profileName"))
+        val updatedAt = profileObj.optLong("updatedAt", 0L)
+        if (name.isBlank()) null else name to updatedAt
+      }
+    if (candidates.isEmpty()) {
+      customDomainDir(canonicalDomain, create = false).deleteRecursively()
+      return
+    }
+    if (currentDefault != null && candidates.any { it.first == currentDefault }) {
+      return
+    }
+    val nextDefault = candidates.maxByOrNull { it.second }?.first ?: return
+    writeDefaultProfile(customDomainDir(canonicalDomain, create = true), nextDefault)
+  }
+
+  private fun jsonArrayToStringList(array: JSONArray?): List<String> {
+    if (array == null) {
+      return emptyList()
+    }
+    val result = mutableListOf<String>()
+    for (i in 0 until array.length()) {
+      val value = array.optString(i).trim()
+      if (value.isNotBlank()) {
+        result.add(value)
+      }
+    }
+    return result
+  }
+
+  private fun jsonArrayContains(array: JSONArray, value: String): Boolean {
+    for (i in 0 until array.length()) {
+      if (array.optString(i) == value) {
+        return true
+      }
+    }
+    return false
+  }
+
+  private fun extractCanonicalHostFromUrl(url: String): String? {
+    val trimmed = url.trim()
+    if (trimmed.isBlank()) {
+      return null
+    }
+
+    val candidates = if (trimmed.contains("://")) {
+      listOf(trimmed)
+    } else {
+      listOf(trimmed, "https://$trimmed")
+    }
+
+    val rawHost = candidates.asSequence()
+      .mapNotNull { candidate ->
+        runCatching { URI(candidate).host?.lowercase() }.getOrNull()
+      }
+      .firstOrNull()
+      ?: return null
+
+    return canonicalizeDomain(rawHost)
+  }
+
+  private fun canonicalizeDomain(value: String): String? {
+    val trimmed = value.trim().lowercase().removePrefix(".")
+    if (trimmed.isBlank()) {
+      return null
+    }
+    if (trimmed.contains("://") || trimmed.contains('/') || trimmed.contains('?') || trimmed.contains('#')) {
+      return null
+    }
+
+    val host = runCatching {
+      URI("https://$trimmed").host?.lowercase()
+    }.getOrNull() ?: return null
+    val normalized = host.removePrefix("www.").trim('.')
+    if (normalized.isBlank() || normalized.contains("..")) {
+      return null
+    }
+    if (!normalized.matches(Regex("^[a-z0-9.-]+$"))) {
+      return null
+    }
+    return normalized
+  }
+
+  private fun extractDomainsFromCookieText(cookieText: String): Set<String> {
+    val domains = mutableSetOf<String>()
+    cookieText.lineSequence().forEach { line ->
+      val trimmed = line.trim()
+      if (trimmed.isBlank() || trimmed.startsWith("#")) {
+        return@forEach
+      }
+      val columns = line.split('\t')
+      if (columns.size < 7) {
+        return@forEach
+      }
+      canonicalizeDomain(columns[0])?.let { domains.add(it) }
+    }
+    return domains
+  }
+
+  private fun secureCookiePlatformDir(platform: String, create: Boolean): File {
+    val dir = File(secureCookiesRoot(create = create), platform)
+    if (create) {
+      dir.mkdirs()
+    }
+    return dir
+  }
+
+  private fun legacyCookiesRoot(): File {
+    return File(requireNotNull(appContext.reactContext).filesDir, LEGACY_COOKIES_DIRNAME)
+  }
+
+  private fun runtimeCookieRoot(): File {
+    return File(requireNotNull(appContext.reactContext).cacheDir, RUNTIME_COOKIE_DIRNAME)
+  }
+
+  private fun runtimeCookieTaskDir(taskId: String): File {
+    return File(runtimeCookieRoot(), taskId)
+  }
+
+  private fun cleanupRuntimeCookieTemp(taskId: String? = null) {
+    if (taskId == null) {
+      runCatching {
+        runtimeCookieRoot().deleteRecursively()
+      }
+      return
+    }
+
+    runCatching {
+      runtimeCookieTaskDir(taskId).deleteRecursively()
+    }
+  }
+
+  private fun writeEncryptedCookieFile(target: File, plaintext: ByteArray) {
+    val encrypted = encryptCookieBytes(plaintext)
+    atomicWriteBytes(target, encrypted)
+  }
+
+  private fun readEncryptedCookieFile(source: File): ByteArray {
+    val payload = runCatching { source.readBytes() }.getOrElse {
+      throw IllegalStateException("COOKIE_STORE_DECRYPT_FAILED")
+    }
+    return decryptCookieBytes(payload)
+  }
+
+  private fun encryptCookieBytes(plaintext: ByteArray): ByteArray {
+    return runCatching {
+      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+      cipher.init(Cipher.ENCRYPT_MODE, getOrCreateCookieKey())
+      val iv = cipher.iv
+      val encrypted = cipher.doFinal(plaintext)
+      if (iv.isEmpty() || iv.size > 255) {
+        throw IllegalStateException("Invalid IV length")
+      }
+
+      ByteArray(1 + iv.size + encrypted.size).also { out ->
+        out[0] = iv.size.toByte()
+        System.arraycopy(iv, 0, out, 1, iv.size)
+        System.arraycopy(encrypted, 0, out, 1 + iv.size, encrypted.size)
+      }
+    }.getOrElse {
+      throw IllegalStateException("COOKIE_STORE_ENCRYPT_FAILED")
+    }
+  }
+
+  private fun decryptCookieBytes(payload: ByteArray): ByteArray {
+    try {
+      if (payload.size < 2) {
+        throw IllegalStateException("Invalid encrypted payload")
+      }
+
+      val ivLength = payload[0].toInt() and 0xff
+      if (ivLength <= 0 || payload.size <= 1 + ivLength) {
+        throw IllegalStateException("Invalid encrypted payload")
+      }
+
+      val iv = payload.copyOfRange(1, 1 + ivLength)
+      val ciphertext = payload.copyOfRange(1 + ivLength, payload.size)
+
+      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+      cipher.init(Cipher.DECRYPT_MODE, getOrCreateCookieKey(), GCMParameterSpec(128, iv))
+      return cipher.doFinal(ciphertext)
+    } catch (_: AEADBadTagException) {
+      throw IllegalStateException("COOKIE_STORE_DECRYPT_FAILED")
+    } catch (_: Exception) {
+      throw IllegalStateException("COOKIE_STORE_DECRYPT_FAILED")
+    }
+  }
+
+  private fun getOrCreateCookieKey(): SecretKey {
+    val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+    val existing = keyStore.getKey(COOKIE_KEY_ALIAS, null) as? SecretKey
+    if (existing != null) {
+      return existing
+    }
+
+    val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+    val spec = KeyGenParameterSpec.Builder(
+      COOKIE_KEY_ALIAS,
+      KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+    )
+      .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+      .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+      .setRandomizedEncryptionRequired(true)
+      .build()
+
+    keyGenerator.init(spec)
+    return keyGenerator.generateKey()
+  }
+
+  private fun atomicWriteBytes(target: File, data: ByteArray) {
+    target.parentFile?.mkdirs()
+    val temp = File(target.parentFile, ".${target.name}.${UUID.randomUUID()}.tmp")
+    temp.outputStream().use { it.write(data) }
+    if (!temp.renameTo(target)) {
+      target.outputStream().use { it.write(data) }
+      temp.delete()
+    }
+  }
+
+  private fun migrateLegacyCookieStoreIfNeeded() {
+    val legacyRoot = legacyCookiesRoot()
+    val secureRoot = secureCookiesRoot(create = true)
+    val marker = File(secureRoot, COOKIE_MIGRATION_MARKER_FILENAME)
+
+    val legacyCount = countLegacyCookieProfiles()
+    if (marker.exists()) {
+      cookieMigrationStatus = if (legacyCount > 0) "partial" else "migrated"
+      return
+    }
+    if (legacyCount == 0) {
+      cookieMigrationStatus = "not_needed"
+      return
+    }
+
+    var hadFailures = false
+    var migratedAny = false
+
+    SUPPORTED_PLATFORMS.forEach { platform ->
+      val legacyPlatformDir = File(legacyRoot, platform)
+      if (!legacyPlatformDir.exists()) {
+        return@forEach
+      }
+
+      val securePlatformDir = secureCookiePlatformDir(platform, create = true)
+      val legacyFiles = legacyPlatformDir.listFiles()
+        ?.filter { it.isFile && (it.extension == "txt" || it.extension == "json") }
+        ?: emptyList()
+
+      legacyFiles.forEach { file ->
+        val profileName = sanitizeProfileName(file.nameWithoutExtension)
+        val secureFile = File(securePlatformDir, "$profileName.enc")
+        val migrated = runCatching {
+          val normalized = normalizeCookieContent(file.readText(Charsets.UTF_8))
+          writeEncryptedCookieFile(secureFile, normalized.toByteArray(Charsets.UTF_8))
+          val roundTrip = readEncryptedCookieFile(secureFile).toString(Charsets.UTF_8)
+          if (roundTrip.isBlank()) {
+            throw IllegalStateException("Round-trip validation failed")
+          }
+          file.delete()
+        }.onFailure {
+          hadFailures = true
+          addError("COOKIE_MIGRATION_FAILED: platform=$platform profile=${file.nameWithoutExtension}")
+        }.isSuccess
+
+        if (migrated) {
+          migratedAny = true
+        }
+      }
+
+      val legacyDefault = readDefaultProfileLegacy(legacyPlatformDir)
+      if (!legacyDefault.isNullOrBlank()) {
+        val normalizedDefault = sanitizeProfileName(legacyDefault)
+        val existsInSecure = File(securePlatformDir, "$normalizedDefault.enc").exists()
+        if (existsInSecure) {
+          writeDefaultProfile(securePlatformDir, normalizedDefault)
+        }
+      }
+      File(legacyPlatformDir, DEFAULT_COOKIE_PROFILE_FILENAME).delete()
+      if (legacyPlatformDir.listFiles().isNullOrEmpty()) {
+        legacyPlatformDir.delete()
+      }
+    }
+
+    cookieMigrationStatus = when {
+      hadFailures && migratedAny -> "partial"
+      hadFailures -> "failed"
+      migratedAny -> "migrated"
+      else -> "failed"
+    }
+
+    if (!hadFailures) {
+      marker.writeText("ok")
+    }
+  }
+
+  private fun readDefaultProfileLegacy(platformDir: File): String? {
+    val file = File(platformDir, DEFAULT_COOKIE_PROFILE_FILENAME)
+    if (!file.exists()) {
+      return null
+    }
+
+    val value = sanitizeProfileName(file.readText().trim())
+    if (value.isBlank()) {
+      return null
+    }
+
+    val profileExists = platformDir.listFiles()
+      ?.any { it.isFile && it.nameWithoutExtension == value && (it.extension == "txt" || it.extension == "json") }
+      ?: false
+    return if (profileExists) value else null
+  }
+
+  private fun countSecureCookieProfiles(): Int {
+    val root = secureCookiesRoot(create = false)
+    if (!root.exists()) {
+      return 0
+    }
+
+    val builtInCount = SUPPORTED_PLATFORMS.sumOf { platform ->
+      File(root, platform).listFiles()?.count { it.isFile && it.extension == "enc" } ?: 0
+    }
+    return builtInCount + countCustomProfiles()
+  }
+
+  private fun countCustomProfiles(): Int {
+    val dir = customProfilesDir(create = false)
+    if (!dir.exists()) {
+      return 0
+    }
+    return dir.listFiles()?.count { it.isFile && it.extension == "enc" } ?: 0
+  }
+
+  private fun countCustomDomains(): Int {
+    synchronized(customCookieIndexLock) {
+      val index = readCustomCookieIndex()
+      return index.getJSONObject("domains").length()
+    }
+  }
+
+  private fun countLegacyCookieProfiles(): Int {
+    val root = legacyCookiesRoot()
+    if (!root.exists()) {
+      return 0
+    }
+
+    return SUPPORTED_PLATFORMS.sumOf { platform ->
+      File(root, platform).listFiles()?.count { it.isFile && (it.extension == "txt" || it.extension == "json") } ?: 0
+    }
+  }
+
+  private fun isSecureCookieStoreEnabled(): Boolean {
+    return runCatching {
+      getOrCreateCookieKey()
+      true
+    }.getOrDefault(false)
+  }
+
+  private fun extractKnownErrorCode(message: String?): String? {
+    if (message.isNullOrBlank()) {
+      return null
+    }
+
+    val knownCodes = listOf(
+      "COOKIE_STORE_ENCRYPT_FAILED",
+      "COOKIE_STORE_DECRYPT_FAILED",
+      "COOKIE_MIGRATION_FAILED",
+      "COOKIE_PROFILE_NOT_FOUND",
+      "INVALID_CUSTOM_DOMAIN",
+      "CUSTOM_COOKIE_NO_DOMAIN_DETECTED",
+      "CUSTOM_COOKIE_DOMAIN_NOT_FOUND",
+      "CUSTOM_COOKIE_PROFILE_NOT_FOUND",
+      "REDDIT_COOKIE_REQUIRED",
+      "FFMPEG_NATIVE_RUNTIME_UNAVAILABLE",
+      "FFMPEG_MISSING",
+      "FFPROBE_MISSING",
+      "MERGE_DEPENDENCY_MISSING",
+      "SITE_BLOCKED_403",
+      "COOKIE_STALE_OR_INVALID",
+      "REDDIT_SHARE_URL_RESOLUTION_FAILED",
+      "REDDIT_EXTRACTOR_ROUTE_FAILED",
+      "TIKTOK_API_STATUS_ZERO",
+      "TIKTOK_EXTRACTOR_UNSTABLE",
+      "IMPERSONATION_BOOTSTRAP_FAILED",
+      "IMPERSONATION_TARGET_REQUIRED_UNAVAILABLE",
+      "IMPERSONATION_DEPENDENCY_MISSING",
+      "IMPERSONATION_RUNTIME_UNAVAILABLE",
+      "BACKGROUND_PERMISSION_REQUIRED",
+      "NO_CLIPBOARD_URL",
+      "DOWNLOAD_QUEUE_FULL",
+      "BACKGROUND_SERVICE_START_FAILED",
+      "QUICK_DOWNLOAD_REJECTED",
+      "PRIVATE_AUTH_REQUIRED",
+      "PRIVATE_AUTH_FAILED",
+      "PRIVATE_STORAGE_WRITE_FAILED",
+      "PRIVATE_VIDEO_NOT_FOUND",
+      "PRIVATE_EXPORT_FAILED",
+      "PRIVATE_EXPORT_DISABLED",
+      "PRIVATE_MODE_UNAVAILABLE",
+      "COOKIE_DOMAIN_MISMATCH",
+      "COOKIE_EMPTY_OR_EXPIRED",
+      "TIMESTAMP_POSTPROCESS_FAILED",
+      "INVALID_URL",
+      "UNSUPPORTED_PLATFORM",
+      "DOWNLOAD_ALREADY_IN_PROGRESS",
+      "FILE_TOO_LARGE",
+      "DOWNLOAD_CANCELLED",
+      "TASK_CANCEL_TIMEOUT",
+      "PROCESS_RESTARTED",
+      "PREFLIGHT_FAILED",
+      "INTERNAL_ERROR",
+      "FILE_NOT_FOUND"
+    )
+
+    return knownCodes.firstOrNull { code -> message.contains(code) }
+  }
+
+  private fun sanitizeProfileName(value: String): String {
+    return value
+      .trim()
+      .lowercase()
+      .replace(Regex("[^a-z0-9._-]"), "_")
+      .removeSuffix(".txt")
+      .ifBlank { "default" }
+  }
+
+  private fun normalizeCookieContent(rawContent: String): String {
+    val trimmed = rawContent.trim()
+    if (trimmed.isBlank()) {
+      throw IllegalArgumentException("Cookie file is empty")
+    }
+
+    return if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      convertJsonCookiesToNetscape(trimmed)
+    } else {
+      validateNetscapeCookieText(rawContent)
+    }
+  }
+
+  private fun validateNetscapeCookieText(rawContent: String): String {
+    var cookieLines = 0
+    rawContent.lineSequence().forEach { line ->
+      val trimmed = line.trim()
+      if (trimmed.isBlank() || trimmed.startsWith("#")) {
+        return@forEach
+      }
+
+      val columns = line.split('\t')
+      if (columns.size < 7) {
+        throw IllegalArgumentException("Unsupported cookie format. Expected Netscape cookie file.")
+      }
+      cookieLines += 1
+    }
+
+    if (cookieLines == 0) {
+      throw IllegalArgumentException("No valid cookie entries found")
+    }
+
+    return if (rawContent.endsWith("\n")) rawContent else "$rawContent\n"
+  }
+
+  private fun convertJsonCookiesToNetscape(jsonText: String): String {
+    val cookies = extractCookieArray(jsonText)
+    val output = StringBuilder()
+    output.append("# Netscape HTTP Cookie File\n")
+    output.append("# Generated by Arsivinyo Local\n")
+    output.append("# This file is used by yt-dlp\n\n")
+
+    var written = 0
+    for (i in 0 until cookies.length()) {
+      val cookie = cookies.optJSONObject(i) ?: continue
+      val name = cookie.optString("name").sanitizeCookieField()
+      val value = cookie.optString("value").sanitizeCookieField()
+      if (name.isBlank()) continue
+
+      val rawDomain = (
+        cookie.optString("domain")
+          .ifBlank { cookie.optString("host") }
+      ).sanitizeCookieField()
+      if (rawDomain.isBlank()) continue
+
+      val hostOnly = cookie.optBoolean("hostOnly", false)
+      val includeSubdomains = if (hostOnly) "FALSE" else "TRUE"
+      val domain = when {
+        hostOnly -> rawDomain.removePrefix(".")
+        rawDomain.startsWith(".") -> rawDomain
+        else -> ".$rawDomain"
+      }
+
+      val path = cookie.optString("path", "/").ifBlank { "/" }.sanitizeCookieField()
+      val secure = if (cookie.optBoolean("secure", false)) "TRUE" else "FALSE"
+      val expiry = parseCookieExpiry(cookie).coerceAtLeast(0L)
+
+      output
+        .append(domain)
+        .append('\t')
+        .append(includeSubdomains)
+        .append('\t')
+        .append(path)
+        .append('\t')
+        .append(secure)
+        .append('\t')
+        .append(expiry)
+        .append('\t')
+        .append(name)
+        .append('\t')
+        .append(value)
+        .append('\n')
+
+      written += 1
+    }
+
+    if (written == 0) {
+      throw IllegalArgumentException("No valid cookies found in JSON file")
+    }
+
+    return output.toString()
+  }
+
+  private fun extractCookieArray(jsonText: String): JSONArray {
+    if (jsonText.trimStart().startsWith("[")) {
+      return JSONArray(jsonText)
+    }
+
+    val root = JSONObject(jsonText)
+    if (root.has("cookies") && root.optJSONArray("cookies") != null) {
+      return root.getJSONArray("cookies")
+    }
+    if (root.has("items") && root.optJSONArray("items") != null) {
+      return root.getJSONArray("items")
+    }
+    if (root.has("data") && root.optJSONArray("data") != null) {
+      return root.getJSONArray("data")
+    }
+
+    return JSONArray().put(root)
+  }
+
+  private fun parseCookieExpiry(cookie: JSONObject): Long {
+    val candidate = when {
+      cookie.has("expirationDate") -> cookie.opt("expirationDate")
+      cookie.has("expires") -> cookie.opt("expires")
+      cookie.has("expiry") -> cookie.opt("expiry")
+      else -> null
+    } ?: return 0L
+
+    return when (candidate) {
+      is Number -> normalizeEpoch(candidate.toLong())
+      is String -> {
+        candidate.toLongOrNull()?.let { normalizeEpoch(it) }
+          ?: runCatching { Instant.parse(candidate).epochSecond }.getOrDefault(0L)
+      }
+      else -> 0L
+    }
+  }
+
+  private fun normalizeEpoch(value: Long): Long {
+    return if (value > 9_999_999_999L) value / 1000L else value
+  }
+
+  private fun String.sanitizeCookieField(): String {
+    return this.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').trim()
+  }
+
+  private fun getOrResolveFfmpegInfo(forceRefresh: Boolean = false): FfmpegInfo {
+    if (!forceRefresh) {
+      val cached = cachedFfmpegInfo
+      if (cached != null) {
+        debug("Using cached ffmpeg info: ${summarizeFfmpegInfo(cached)}")
+        return cached
+      }
+    }
+
+    val resolved = resolveBundledFfmpegPath()
+    debug("Resolved ffmpeg info: ${summarizeFfmpegInfo(resolved)}")
+    cachedFfmpegInfo = resolved
+    return resolved
+  }
+
+  private fun resolveBundledFfmpegPath(): FfmpegInfo {
+    val context = requireNotNull(appContext.reactContext)
+    debug("Resolving ffmpeg runtime (native libs first)")
+    val nativeSnapshot = readNativeLibrarySnapshot(context)
+    resolveNativeLibraryFfmpeg(nativeSnapshot)?.let { nativeInfo ->
+      debug("Using native lib dir ffmpeg runtime: ${summarizeFfmpegInfo(nativeInfo)}")
+      return nativeInfo
+    }
+
+    val fallback = inspectAssetRuntimeFallback(context, nativeSnapshot)
+    addError(
+      "FFMPEG_NATIVE_RUNTIME_UNAVAILABLE: nativeDir=${fallback.nativeLibraryDir ?: "n/a"} " +
+        "entries=${fallback.nativeLibraryEntries.joinToString()} " +
+        "ffmpeg=${fallback.ffmpegProbeError ?: "n/a"} ffprobe=${fallback.ffprobeProbeError ?: "n/a"}"
+    )
+    return fallback
+  }
+
+  private fun readNativeLibrarySnapshot(context: android.content.Context): Pair<String?, List<String>> {
+    val nativeDirPath = context.applicationInfo.nativeLibraryDir
+    if (nativeDirPath.isNullOrBlank()) {
+      return null to emptyList()
+    }
+
+    val nativeDir = File(nativeDirPath)
+    if (!nativeDir.exists() || !nativeDir.isDirectory) {
+      return nativeDirPath to emptyList()
+    }
+
+    val entries = nativeDir.listFiles()
+      ?.map { it.name }
+      ?.sorted()
+      ?: emptyList()
+    return nativeDirPath to entries
+  }
+
+  private fun resolveNativeLibraryFfmpeg(nativeSnapshot: Pair<String?, List<String>>): FfmpegInfo? {
+    val nativeDirPath = nativeSnapshot.first ?: return null
+    val nativeDir = File(nativeDirPath)
+    if (!nativeDir.exists() || !nativeDir.isDirectory) {
+      debug("Native library dir unavailable: $nativeDirPath")
+      return null
+    }
+    debug("Checking native library dir for ffmpeg: ${nativeDir.absolutePath}")
+    debug("Native library dir entries: ${nativeSnapshot.second.joinToString()}")
+
+    val binaryNamePairs = listOf(
+      "ffmpeg" to "ffprobe",
+      "libffmpeg.so" to "libffprobe.so",
+    )
+
+    for ((ffmpegName, ffprobeName) in binaryNamePairs) {
+      val ffmpegFile = File(nativeDir, ffmpegName)
+      val ffprobeFile = File(nativeDir, ffprobeName)
+      if (!ffmpegFile.exists() || !ffprobeFile.exists()) {
+        debug("Native pair missing ffmpeg=${ffmpegFile.exists()} ffprobe=${ffprobeFile.exists()} names=$ffmpegName/$ffprobeName")
+        continue
+      }
+
+      val ffmpegProbe = probeBinary(ffmpegFile.absolutePath, "ffmpeg")
+      val ffprobeProbe = probeBinary(ffprobeFile.absolutePath, "ffprobe")
+
+      val ffmpegRunnable = ffmpegProbe.runnable
+      val ffprobeRunnable = ffprobeProbe.runnable
+      val mergeCapable = ffmpegRunnable && ffprobeRunnable
+      debug(
+        "Native pair probe names=$ffmpegName/$ffprobeName runnable=$mergeCapable " +
+          "ffmpeg=${ffmpegProbe.version ?: ffmpegProbe.error} ffprobe=${ffprobeProbe.version ?: ffprobeProbe.error}"
+      )
+      if (!mergeCapable) {
+        addError(
+          "FFMPEG_NATIVE_RUNTIME_NOT_READY: ffmpeg=${ffmpegProbe.error ?: "not runnable"} " +
+            "ffprobe=${ffprobeProbe.error ?: "not runnable"} dir=${nativeDir.absolutePath}"
+        )
+      }
+
+      return FfmpegInfo(
+        path = ffmpegFile.absolutePath,
+        ffprobePath = ffprobeFile.absolutePath,
+        location = nativeDir.absolutePath,
+        abi = Build.SUPPORTED_ABIS?.firstOrNull(),
+        runtimeSource = "native_library",
+        nativeLibraryDir = nativeDir.absolutePath,
+        nativeLibraryEntries = nativeSnapshot.second,
+        exists = true,
+        ffprobeExists = true,
+        executable = ffmpegRunnable,
+        ffprobeExecutable = ffprobeRunnable,
+        version = ffmpegProbe.version,
+        ffprobeVersion = ffprobeProbe.version,
+        ffmpegProbeError = ffmpegProbe.error,
+        ffprobeProbeError = ffprobeProbe.error,
+        mergeCapable = mergeCapable,
+      )
+    }
+
+    return null
+  }
+
+  private fun inspectAssetRuntimeFallback(
+    context: android.content.Context,
+    nativeSnapshot: Pair<String?, List<String>>
+  ): FfmpegInfo {
+    val candidateAbis = Build.SUPPORTED_ABIS?.toList()?.ifEmpty { SUPPORTED_FFMPEG_ABIS } ?: SUPPORTED_FFMPEG_ABIS
+    debug("Inspecting ffmpeg assets ABIs: ${candidateAbis.joinToString()}")
+    for (abi in candidateAbis) {
+      if (!SUPPORTED_FFMPEG_ABIS.contains(abi)) {
+        continue
+      }
+
+      val ffmpegAssetExists = assetExists(context, "ffmpeg/$abi/ffmpeg")
+      val ffprobeAssetExists = assetExists(context, "ffmpeg/$abi/ffprobe")
+      if (!ffmpegAssetExists && !ffprobeAssetExists) {
+        continue
+      }
+
+      return FfmpegInfo(
+        abi = abi,
+        runtimeSource = "asset_fallback",
+        nativeLibraryDir = nativeSnapshot.first,
+        nativeLibraryEntries = nativeSnapshot.second,
+        exists = ffmpegAssetExists,
+        ffprobeExists = ffprobeAssetExists,
+        executable = false,
+        ffprobeExecutable = false,
+        ffmpegProbeError = if (ffmpegAssetExists) {
+          "Asset fallback binaries are non-executable on this device; enable native library runtime extraction."
+        } else {
+          "ffmpeg asset missing"
+        },
+        ffprobeProbeError = if (ffprobeAssetExists) {
+          "Asset fallback binaries are non-executable on this device; enable native library runtime extraction."
+        } else {
+          "ffprobe asset missing"
+        },
+        mergeCapable = false,
+      )
+    }
+
+    return FfmpegInfo(
+      runtimeSource = "none",
+      nativeLibraryDir = nativeSnapshot.first,
+      nativeLibraryEntries = nativeSnapshot.second,
+      exists = false,
+      ffprobeExists = false,
+      executable = false,
+      ffprobeExecutable = false,
+      ffmpegProbeError = "No compatible native runtime or bundled ffmpeg assets found for device ABI.",
+      ffprobeProbeError = "No compatible native runtime or bundled ffprobe assets found for device ABI.",
+      mergeCapable = false,
+    )
+  }
+
+  private fun assetExists(context: android.content.Context, assetPath: String): Boolean {
+    return runCatching {
+      context.assets.open(assetPath).use { _ -> }
+      true
+    }.getOrDefault(false)
+  }
+
+  private fun probeBinary(binaryPath: String, label: String): BinaryProbeResult {
+    debug("Probing $label binary at $binaryPath")
+    return runCatching {
+      val process = ProcessBuilder(binaryPath, "-version")
+        .redirectErrorStream(true)
+        .start()
+
+      val finished = process.waitFor(2, TimeUnit.SECONDS)
+      if (!finished) {
+        process.destroyForcibly()
+        return@runCatching BinaryProbeResult(
+          runnable = false,
+          error = "$label probe timed out"
+        )
+      }
+
+      val output = process.inputStream.bufferedReader().use { reader ->
+        reader.readText()
+      }
+      val firstLine = output.lineSequence().firstOrNull()?.trim()
+      val exitCode = process.exitValue()
+      if (exitCode == 0 && !firstLine.isNullOrBlank()) {
+        debug("$label probe success version=$firstLine")
+        BinaryProbeResult(
+          runnable = true,
+          version = firstLine
+        )
+      } else {
+        val snippet = output
+          .lineSequence()
+          .take(2)
+          .joinToString(" | ")
+          .ifBlank { "no output" }
+        debug("$label probe failure exit=$exitCode snippet=$snippet")
+        BinaryProbeResult(
+          runnable = false,
+          error = "$label exited $exitCode: $snippet"
+        )
+      }
+    }.getOrElse {
+      debug("$label probe exception: ${it.message ?: it::class.java.simpleName}")
+      BinaryProbeResult(
+        runnable = false,
+        error = "$label probe failed: ${it.message ?: it::class.java.simpleName}"
+      )
+    }
+  }
+
+  private fun createCancelFlag(taskId: String): File {
+    val context = requireNotNull(appContext.reactContext)
+    val cancelDir = File(context.cacheDir, "local_download_cancel_flags").apply { mkdirs() }
+    val flagFile = File(cancelDir, "$taskId.cancel")
+    if (flagFile.exists()) {
+      flagFile.delete()
+    }
+    cancelFlags[taskId] = flagFile
+    return flagFile
+  }
+
+  private fun createProgressFile(taskId: String): File {
+    val context = requireNotNull(appContext.reactContext)
+    val progressDir = File(context.cacheDir, DOWNLOAD_PROGRESS_DIRNAME).apply { mkdirs() }
+    val progressFile = File(progressDir, "$taskId.json")
+    clearProgressFile(progressFile)
+    return progressFile
+  }
+
+  private fun clearProgressFile(progressFile: File?) {
+    if (progressFile == null) return
+    runCatching {
+      if (progressFile.exists()) {
+        progressFile.delete()
+      }
+      val tmp = File("${progressFile.absolutePath}.tmp")
+      if (tmp.exists()) {
+        tmp.delete()
+      }
+    }
+  }
+
+  private suspend fun observeProgressFile(taskId: String, progressFile: File) {
+    var lastProgressBucket = -1
+    var lastProgressState: String? = null
+    var lastSpeedBucket = -1
+    while (currentCoroutineContext().isActive) {
+      if (activeTaskId != taskId || shouldIgnoreTaskResult(taskId) || isTerminalStatus(tasks[taskId]?.status)) {
+        return
+      }
+
+      runCatching {
+        if (!progressFile.exists()) {
+          return@runCatching
+        }
+        val raw = progressFile.readText()
+        if (raw.isBlank()) {
+          return@runCatching
+        }
+        val json = JSONObject(raw)
+        val percent = json.optDouble("progressPercent", Double.NaN)
+          .takeIf { !it.isNaN() }
+          ?.coerceIn(0.0, 100.0)
+          ?: return@runCatching
+        val speedBytesPerSec = json.optDouble("speedBytesPerSec", Double.NaN)
+          .takeIf { !it.isNaN() && it > 0.0 }
+        val progressState = normalizeProgressEventState(json.optString("status").ifBlank { "downloading" })
+        val bucket = percent.toInt()
+        val speedBucket = speedBytesPerSec?.let { (it / 1024.0).toInt() } ?: -1
+        if (bucket == lastProgressBucket && progressState == lastProgressState && speedBucket == lastSpeedBucket) {
+          return@runCatching
+        }
+
+        lastProgressBucket = bucket
+        lastProgressState = progressState
+        lastSpeedBucket = speedBucket
+        tasks[taskId]?.progressPercent = percent
+        tasks[taskId]?.speedBytesPerSec = speedBytesPerSec
+        val message = json.optString("message").ifBlank { "Downloading media" }
+        emitProgress(taskId, "PROGRESS", progressState, message, percent, speedBytesPerSec)
+      }.onFailure {
+        debug("Task[$taskId] progress file parse failed: ${it.message}")
+      }
+
+      delay(DOWNLOAD_PROGRESS_POLL_MS)
+    }
+  }
+
+  private fun markCancelRequested(taskId: String) {
+    val flag = cancelFlags[taskId] ?: return
+    runCatching {
+      if (!flag.exists()) {
+        flag.writeText("cancel")
+      }
+    }.onFailure {
+      addError("CANCEL_FLAG_WRITE_FAILED: ${it.message}")
+    }
+  }
+
+  private fun isCancelRequested(taskId: String): Boolean {
+    return cancelFlags[taskId]?.exists() == true
+  }
+
+  private fun clearCancelFlag(taskId: String) {
+    val flag = cancelFlags.remove(taskId) ?: return
+    runCatching {
+      if (flag.exists()) {
+        flag.delete()
+      }
+    }
+  }
+
+  private fun markCancelled(taskId: String, message: String) {
+    updateStatus(taskId, "CANCELLED", null, null, null, "TASK_CANCELLED", message)
+    emitProgress(taskId, "CANCELLED", "error", message)
+  }
+
+  private fun isTerminalStatus(status: String?): Boolean {
+    return status == "SUCCESS" || status == "FAILURE" || status == "CANCELLED"
+  }
+
+  private fun shouldIgnoreTaskResult(taskId: String): Boolean {
+    return ignoredTaskResults.contains(taskId)
+  }
+
+  private fun readDefaultProfile(platformDir: File): String? {
+    val file = File(platformDir, DEFAULT_COOKIE_PROFILE_FILENAME)
+    if (!file.exists()) {
+      return null
+    }
+
+    val value = file.readText().trim()
+    if (value.isBlank()) {
+      return null
+    }
+
+    val profileExists = platformDir.listFiles()
+      ?.any { it.isFile && it.nameWithoutExtension == value && it.extension == "enc" }
+      ?: false
+
+    return if (profileExists) value else null
+  }
+
+  private fun writeDefaultProfile(platformDir: File, profileName: String) {
+    val file = File(platformDir, DEFAULT_COOKIE_PROFILE_FILENAME)
+    file.writeText(profileName)
+  }
+
+  private fun clearDefaultProfile(platformDir: File) {
+    val file = File(platformDir, DEFAULT_COOKIE_PROFILE_FILENAME)
+    if (file.exists()) {
+      file.delete()
+    }
+  }
+
+  private fun addError(message: String) {
+    val timestamped = "${Instant.now()}: $message"
+    if (debugLoggingEnabled) {
+      Log.e(tag, message)
+    }
+    lastErrors.addFirst(timestamped)
+    while (lastErrors.size > MAX_ERROR_LOGS) {
+      lastErrors.removeLast()
+    }
+  }
+
+  private fun debug(message: String) {
+    if (debugLoggingEnabled) {
+      Log.d(tag, message)
+    }
+  }
+
+  private fun privateTrace(traceId: String, message: String) {
+    debug("[PRIVATE][trace=$traceId] $message")
+  }
+
+  private fun summarizeFfmpegInfo(info: FfmpegInfo): String {
+    return "source=${info.runtimeSource} abi=${info.abi} exists=${info.exists} ffmpeg=${info.path} ffprobe=${info.ffprobePath} " +
+      "ffmpegExec=${info.executable} ffprobeExec=${info.ffprobeExecutable} mergeCapable=${info.mergeCapable} " +
+      "ffmpegVersion=${info.version ?: "n/a"} ffprobeVersion=${info.ffprobeVersion ?: "n/a"} " +
+      "ffmpegProbeError=${info.ffmpegProbeError ?: "n/a"} ffprobeProbeError=${info.ffprobeProbeError ?: "n/a"}"
+  }
+
+  private fun persistTaskSnapshot() {
+    runCatching {
+      val context = requireNotNull(appContext.reactContext)
+      val file = File(context.filesDir, TASK_SNAPSHOT_FILENAME)
+      val array = JSONArray()
+      tasks.values.forEach { task ->
+        array.put(JSONObject(task.toMap()))
+      }
+      file.writeText(array.toString())
+    }.onFailure {
+      Log.w(tag, "Failed to persist task snapshot", it)
+    }
+  }
+
+  private fun loadTaskSnapshot() {
+    runCatching {
+      val context = requireNotNull(appContext.reactContext)
+      val file = File(context.filesDir, TASK_SNAPSHOT_FILENAME)
+      if (!file.exists()) return
+
+      var hadRestartedInFlightTask = false
+      val array = JSONArray(file.readText())
+      for (i in 0 until array.length()) {
+        val obj = array.getJSONObject(i)
+        val taskId = obj.optString("taskId")
+        if (taskId.isBlank()) continue
+
+        val originalStatus = obj.optString("status", "PENDING")
+        val wasInFlight = originalStatus in IN_FLIGHT_STATUSES
+
+        tasks[taskId] = TaskState(
+          taskId = taskId,
+          status = if (wasInFlight) "FAILURE" else originalStatus,
+          state = obj.optString("state").ifBlank { if (wasInFlight) "error" else null },
+          filename = obj.optString("filename").ifBlank { null },
+          filePath = obj.optString("filePath").ifBlank { null },
+          isPrivate = if (obj.has("isPrivate")) obj.optBoolean("isPrivate") else null,
+          privateVideoId = obj.optString("privateVideoId").ifBlank { null },
+          sizeMb = obj.optDouble("sizeMb", Double.NaN).takeIf { !it.isNaN() },
+          progressPercent = obj.optDouble("progressPercent", Double.NaN).takeIf { !it.isNaN() },
+          speedBytesPerSec = obj.optDouble("speedBytesPerSec", Double.NaN).takeIf { !it.isNaN() && it > 0.0 },
+          errorCode = if (wasInFlight) "PROCESS_RESTARTED" else obj.optString("errorCode").ifBlank { null },
+          errorMessage = if (wasInFlight) {
+            "Download was interrupted because app process restarted."
+          } else {
+            obj.optString("errorMessage").ifBlank { null }
+          },
+          estimatedSizeMb = obj.optDouble("estimatedSizeMb", Double.NaN).takeIf { !it.isNaN() },
+          timestampNormalized = if (obj.has("timestampNormalized")) obj.optBoolean("timestampNormalized") else null,
+          warningCode = obj.optString("warningCode").ifBlank { null }
+        )
+
+        if (wasInFlight) {
+          hadRestartedInFlightTask = true
+        }
+      }
+
+      if (hadRestartedInFlightTask) {
+        persistTaskSnapshot()
+      }
+    }.onFailure {
+      Log.w(tag, "Failed to load task snapshot", it)
+    }
+  }
+
+  private fun TaskState.toMap(): Map<String, Any?> {
+    return mapOf(
+      "taskId" to taskId,
+      "status" to status,
+      "state" to state,
+      "filename" to filename,
+      "filePath" to filePath,
+      "isPrivate" to isPrivate,
+      "privateVideoId" to privateVideoId,
+      "sizeMb" to sizeMb,
+      "progressPercent" to progressPercent,
+      "speedBytesPerSec" to speedBytesPerSec,
+      "errorCode" to errorCode,
+      "errorMessage" to errorMessage,
+      "estimatedSizeMb" to estimatedSizeMb,
+      "timestampNormalized" to timestampNormalized,
+      "warningCode" to warningCode
+    )
+  }
+
+  companion object {
+    @Volatile
+    private var activeModule: LocalDownloaderModule? = null
+
+    @Volatile
+    private var lastBackgroundServiceError: String? = null
+
+    @Volatile
+    private var lastQuickReasonFallback: String? = null
+
+    private val pendingQuickRequests: ArrayDeque<PendingQuickRequest> = ArrayDeque()
+
+    private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+    private const val COOKIE_KEY_ALIAS = "arsivinyo.local.cookies.v1"
+    private const val PRIVATE_VAULT_KEY_ALIAS_V1 = "arsivinyo.local.private.v1"
+    private const val PRIVATE_VAULT_MASTER_KEY_ALIAS_V2 = "arsivinyo.local.private.master.v2"
+    private const val COOKIE_STORE_VERSION = "v1"
+    private const val PRIVATE_STORE_VERSION_V1 = "v1"
+    private const val PRIVATE_STORE_VERSION_V2 = "v2"
+    private const val PRIVATE_STORE_VERSION_V3 = "v3"
+    private const val COOKIE_MIGRATION_MARKER_FILENAME = ".migration_complete"
+    private const val SECURE_COOKIES_DIRNAME = "cookies_secure"
+    private const val PREFS_NAME = "local_downloader_prefs"
+    private const val PREF_PRIVATE_MODE_ENABLED = "private_mode_enabled"
+    private const val PRIVATE_VAULT_DIRNAME = "private_vault"
+    private const val PRIVATE_VAULT_OBJECTS_DIRNAME = "objects"
+    private const val PRIVATE_VAULT_INDEX_FILENAME = "index.json"
+    private const val PRIVATE_PLAYBACK_CACHE_DIRNAME = "private_playback"
+    private const val PRIVATE_EXPORT_CACHE_DIRNAME = "private_export"
+    private const val PRIVATE_IMPORT_CACHE_DIRNAME = "private_import"
+    private const val PRIVATE_VAULT_FEATURE_FLAG = true
+    private const val PRIVATE_STREAM_BUFFER_BYTES = 1024 * 1024
+    private const val PRIVATE_LOG_PROGRESS_STEP_BYTES = 25L * 1024L * 1024L
+    private const val PRIVATE_MIN_FREE_SPACE_MARGIN_BYTES = 32L * 1024L * 1024L
+    private const val PRIVATE_DEK_BYTES = 32
+    private const val PRIVATE_MAC_KEY_BYTES = 32
+    private const val PRIVATE_KEY_MATERIAL_BYTES = PRIVATE_DEK_BYTES + PRIVATE_MAC_KEY_BYTES
+    private const val PRIVATE_HMAC_TAG_BYTES = 32
+    private const val PRIVATE_CTR_IV_BYTES = 16
+    private const val PRIVATE_GCM_IV_BYTES = 12
+    private const val PRIVATE_GCM_TAG_BITS = 128
+    private const val PRIVATE_MAX_WRAPPED_DEK_BYTES = 4096
+    private val PRIVATE_VAULT_V3_MAGIC = byteArrayOf('P'.code.toByte(), 'V'.code.toByte(), 'L'.code.toByte(), '3'.code.toByte())
+    private val PRIVATE_VAULT_V2_MAGIC = byteArrayOf('P'.code.toByte(), 'V'.code.toByte(), 'L'.code.toByte(), 'T'.code.toByte())
+    private const val PRIVATE_VAULT_FORMAT_VERSION_V3: Byte = 3
+    private const val PRIVATE_VAULT_FORMAT_VERSION_V2: Byte = 2
+    private const val PRIVATE_VAULT_ALG_AES_CTR: Byte = 2
+    private const val PRIVATE_VAULT_ALG_AES_GCM: Byte = 1
+    private const val PRIVATE_VAULT_ALG_HMAC_SHA256: Byte = 3
+    private const val CUSTOM_COOKIES_DIRNAME = "custom"
+    private const val CUSTOM_PROFILES_DIRNAME = "profiles"
+    private const val CUSTOM_DOMAINS_DIRNAME = "domains"
+    private const val CUSTOM_INDEX_FILENAME = "index.json"
+    private const val LEGACY_COOKIES_DIRNAME = "cookies"
+    private const val RUNTIME_COOKIE_DIRNAME = "cookie_runtime"
+    private const val DISABLED_COOKIES_DIRNAME = "cookies_disabled"
+    private const val DEFAULT_HTTP_USER_AGENT =
+      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36"
+    private const val DEFAULT_MAX_FILE_SIZE_MB = 0
+    private const val TASK_SNAPSHOT_FILENAME = "local_downloader_tasks.json"
+    private const val DOWNLOAD_PROGRESS_DIRNAME = "local_download_progress"
+    private const val DOWNLOAD_PROGRESS_POLL_MS = 400L
+    private const val DEFAULT_COOKIE_PROFILE_FILENAME = ".default_profile"
+    private const val REQUEST_CODE_NOTIFICATIONS = 4491
+    private const val MAX_QUEUED_DOWNLOADS = 3
+    private const val MAX_PENDING_QUICK_REQUESTS = MAX_QUEUED_DOWNLOADS
+    private const val MAX_ERROR_LOGS = 20
+    private const val STICKY_NOTIFICATION_ENABLED = true
+    private const val QUICK_DEDUP_WINDOW_MS = 20_000L
+    private const val PRIVATE_IMPORT_PICK_TIMEOUT_SECONDS = 180L
+    private const val PRIVATE_PUBLIC_COPY_RELATIVE_PATH = "DCIM/Arsivinyo"
+    private const val MB_IN_BYTES = 1024.0 * 1024.0
+    private val SUPPORTED_PLATFORMS = setOf("youtube", "instagram", "facebook", "twitter", "reddit", "tiktok")
+    private val PLATFORM_HOSTS = mapOf(
+      "youtube" to listOf("youtube.com", "youtu.be"),
+      "instagram" to listOf("instagram.com"),
+      "facebook" to listOf("facebook.com", "fb.watch"),
+      "twitter" to listOf("twitter.com", "x.com"),
+      "reddit" to listOf("reddit.com", "v.redd.it"),
+      "tiktok" to listOf("tiktok.com", "vm.tiktok.com")
+    )
+    private val RETRYABLE_COOKIE_FAILURE_CODES = setOf("PREFLIGHT_FAILED", "DOWNLOAD_FAILED", "INTERNAL_ERROR")
+    private val STRICT_COOKIE_PLATFORMS = setOf("instagram", "facebook", "tiktok", "reddit")
+    private val IN_FLIGHT_STATUSES = setOf("PENDING", "STARTED", "PROGRESS")
+    private val SUPPORTED_FFMPEG_ABIS = listOf("arm64-v8a", "x86_64")
+
+    fun onNotificationCancelAction(context: Context) {
+      activeModule?.cancelFromNotificationAction() ?: run {
+        DownloadNotificationController.stop(context)
+      }
+    }
+
+    fun onNotificationQuickAction(context: Context) {
+      launchQuickCaptureActivity(context)
+    }
+
+    fun onNotificationTogglePrivateMode(context: Context) {
+      val module = activeModule
+      if (module != null) {
+        runCatching {
+          module.setPrivateModeEnabledInternal(!module.privateModeEnabled)
+        }.onFailure {
+          reportQuickActionReason("PRIVATE_MODE_UNAVAILABLE")
+        }
+        return
+      }
+
+      if (!PRIVATE_VAULT_FEATURE_FLAG) {
+        reportQuickActionReason("PRIVATE_MODE_UNAVAILABLE")
+        return
+      }
+
+      val current = isPrivateModeEnabledPersisted(context)
+      val next = !current
+      if (next && !isPrivateAuthAvailableStatic(context)) {
+        reportQuickActionReason("PRIVATE_MODE_UNAVAILABLE")
+        return
+      }
+      persistPrivateModeEnabled(context, next)
+      DownloadNotificationController.startOrUpdate(
+        context,
+        BackgroundNotificationState(
+          activeTaskId = null,
+          phase = "idle",
+          message = if (next) "Private mode enabled" else "Private mode disabled",
+          progressPercent = null,
+          queueSize = pendingQuickRequestsSnapshot().size,
+          privateModeEnabled = next,
+          pinned = true
+        )
+      )
+    }
+
+    fun launchQuickCaptureActivity(context: Context) {
+      val intent = Intent(context, QuickDownloadCaptureActivity::class.java).apply {
+        putExtra(QuickDownloadCaptureActivity.EXTRA_AUTOSTART, true)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+      }
+      runCatching {
+        context.startActivity(intent)
+      }.onFailure {
+        reportQuickActionReason("QUICK_DOWNLOAD_REJECTED")
+      }
+    }
+
+    fun onQuickUrlCaptured(context: Context, rawUrl: String, captureMode: String): Map<String, Any?> {
+      if (!hasNotificationPermission(context)) {
+        reportQuickActionReason("PERMISSION_REQUIRED")
+        return mapOf("accepted" to false, "reason" to "PERMISSION_REQUIRED", "captureMode" to captureMode)
+      }
+
+      val selectedVisibility = if (isPrivateModeEnabledPersisted(context)) "private" else "public"
+      val module = activeModule
+      if (module != null) {
+        return runCatching {
+          module.startQuickDownloadWithUrl(rawUrl, captureMode, selectedVisibility)
+        }.getOrElse {
+          reportQuickActionReason("QUICK_DOWNLOAD_REJECTED")
+          mapOf("accepted" to false, "reason" to "QUICK_DOWNLOAD_REJECTED", "captureMode" to captureMode)
+        }
+      }
+
+      val normalized = normalizeQuickUrl(rawUrl)
+        ?: return mapOf("accepted" to false, "reason" to "INVALID_QUICK_URL", "captureMode" to captureMode)
+
+      val queueState = synchronized(pendingQuickRequests) {
+        val duplicate = pendingQuickRequests.any { it.url == normalized }
+        if (duplicate) {
+          return@synchronized Pair(false, pendingQuickRequests.size)
+        }
+        if (pendingQuickRequests.size >= MAX_PENDING_QUICK_REQUESTS) {
+          return@synchronized Pair(false, pendingQuickRequests.size)
+        }
+
+        pendingQuickRequests.addLast(PendingQuickRequest(normalized, captureMode, selectedVisibility, System.currentTimeMillis()))
+        Pair(true, pendingQuickRequests.size)
+      }
+
+      val accepted = queueState.first
+      val queueSize = queueState.second
+      if (!accepted) {
+        val reason = if (queueSize >= MAX_PENDING_QUICK_REQUESTS) "QUEUE_FULL" else "QUICK_DOWNLOAD_REJECTED"
+        reportQuickActionReason(reason)
+        return mapOf(
+          "accepted" to false,
+          "reason" to reason,
+          "captureMode" to captureMode,
+          "visibility" to selectedVisibility,
+          "queueSize" to queueSize,
+          "queueMax" to MAX_PENDING_QUICK_REQUESTS
+        )
+      }
+
+      reportQuickActionReason(null)
+      DownloadNotificationController.startOrUpdate(
+        context,
+        BackgroundNotificationState(
+          activeTaskId = null,
+          phase = "starting",
+          message = if (queueSize > 1) "Queued ($queueSize/$MAX_PENDING_QUICK_REQUESTS)" else "Preparing quick download",
+          progressPercent = null,
+          queueSize = queueSize,
+          privateModeEnabled = selectedVisibility == "private",
+          pinned = true
+        )
+      )
+      return mapOf(
+        "accepted" to true,
+        "queueSize" to queueSize,
+        "queueMax" to MAX_PENDING_QUICK_REQUESTS,
+        "resolvedUrl" to normalized,
+        "visibility" to selectedVisibility,
+        "captureMode" to captureMode
+      )
+    }
+
+    fun reportQuickActionReason(reason: String?) {
+      lastQuickReasonFallback = reason
+      activeModule?.reportQuickActionReason(reason)
+    }
+
+    fun quickReasonToMessage(reason: String?): String {
+      return when (reason) {
+        "PERMISSION_REQUIRED" -> "Notification permission required"
+        "NO_CLIPBOARD_URL" -> "Clipboard URL not found"
+        "INVALID_QUICK_URL" -> "URL is invalid"
+        "QUEUE_FULL" -> "Queue full"
+        "QUICK_CAPTURE_CANCELLED" -> "Quick capture cancelled"
+        "QUICK_DOWNLOAD_REJECTED" -> "Quick download rejected"
+        "PRIVATE_MODE_UNAVAILABLE" -> "Private mode unavailable on this device"
+        else -> "Try another URL"
+      }
+    }
+
+    fun peekClipboardUrl(context: Context): String? {
+      return activeModule?.readUrlFromClipboard(context) ?: run {
+        val manager = context.getSystemService(ClipboardManager::class.java) ?: return null
+        val item = manager.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0) ?: return null
+        val uriValue = item.uri?.toString()?.trim()?.takeIf { it.isNotBlank() }
+        if (!uriValue.isNullOrBlank()) {
+          normalizeQuickUrl(uriValue)?.let { return it }
+        }
+        val htmlText = item.htmlText?.toString()?.trim()?.takeIf { it.isNotBlank() }
+        if (!htmlText.isNullOrBlank()) {
+          normalizeQuickUrl(htmlText)?.let { return it }
+        }
+        val text = item.coerceToText(context)?.toString()?.trim() ?: return null
+        normalizeQuickUrl(text)
+      }
+    }
+
+    private val explicitHttpUrlRegex = Regex("""(?i)\bhttps?://[^\s<>"']+""")
+    private val domainLikeUrlRegex = Regex(
+      """(?i)\b(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:/[^\s<>"']*)?"""
+    )
+    private val invisibleCharsRegex = Regex("""[\u200B\u200C\u200D\u2060\uFEFF\u00A0]""")
+
+    private fun trimUrlCandidate(raw: String): String {
+      var value = raw.trim()
+      if (value.isEmpty()) return value
+      value = value.trim('"', '\'', '`', '(', ')', '[', ']', '{', '}', '<', '>')
+      while (value.isNotEmpty() && value.last() in listOf('.', ',', ';', ':', '!', '?', ')', ']', '}', '>')) {
+        value = value.dropLast(1)
+      }
+      return value.trim()
+    }
+
+    private fun cleanClipboardText(raw: String?): String? {
+      val value = raw ?: return null
+      val cleaned = value
+        .replace(invisibleCharsRegex, "")
+        .replace("\u0000", "")
+        .trim()
+      return cleaned.ifBlank { null }
+    }
+
+    private fun parseHttpCandidate(candidate: String): String? {
+      val cleaned = trimUrlCandidate(candidate)
+      if (cleaned.isBlank()) return null
+      val withScheme = if (cleaned.contains("://")) cleaned else "https://$cleaned"
+      return runCatching {
+        val parsed = URI(withScheme)
+        val scheme = parsed.scheme?.lowercase() ?: return@runCatching null
+        if (scheme != "http" && scheme != "https") {
+          return@runCatching null
+        }
+        val host = parsed.host?.trim()
+        if (host.isNullOrBlank()) {
+          return@runCatching null
+        }
+        parsed.toString()
+      }.getOrNull()
+    }
+
+    private fun normalizeQuickUrl(raw: String?): String? {
+      val value = cleanClipboardText(raw) ?: return null
+
+      parseHttpCandidate(value)?.let { return it }
+
+      explicitHttpUrlRegex.find(value)?.value?.let { found ->
+        parseHttpCandidate(found)?.let { return it }
+      }
+
+      domainLikeUrlRegex.find(value)?.value?.let { found ->
+        parseHttpCandidate(found)?.let { return it }
+      }
+
+      return null
+    }
+
+    private fun hasNotificationPermission(context: Context): Boolean {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        return true
+      }
+      return ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun isPrivateModeEnabledPersisted(context: Context): Boolean {
+      if (!PRIVATE_VAULT_FEATURE_FLAG) {
+        return false
+      }
+      return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getBoolean(PREF_PRIVATE_MODE_ENABLED, false)
+    }
+
+    private fun persistPrivateModeEnabled(context: Context, enabled: Boolean) {
+      context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(PREF_PRIVATE_MODE_ENABLED, enabled && PRIVATE_VAULT_FEATURE_FLAG)
+        .apply()
+    }
+
+    private fun isPrivateAuthAvailableStatic(context: Context): Boolean {
+      val keyguard = context.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+      if (keyguard?.isDeviceSecure != true) {
+        return false
+      }
+      val manager = BiometricManager.from(context)
+      val canAuth = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+      } else {
+        manager.canAuthenticate()
+      }
+      return canAuth == BiometricManager.BIOMETRIC_SUCCESS || Build.VERSION.SDK_INT < Build.VERSION_CODES.R
+    }
+
+    fun pendingQuickRequestsSnapshot(): List<PendingQuickRequest> {
+      return synchronized(pendingQuickRequests) { pendingQuickRequests.toList() }
+    }
+
+    fun clearPendingQuickRequests() {
+      synchronized(pendingQuickRequests) {
+        pendingQuickRequests.clear()
+      }
+    }
+
+    fun dequeuePendingQuickRequest(): PendingQuickRequest? {
+      return synchronized(pendingQuickRequests) {
+        if (pendingQuickRequests.isEmpty()) null else pendingQuickRequests.removeFirst()
+      }
+    }
+
+    fun queuePendingQuickRequest(url: String, captureMode: String, visibility: String): Boolean {
+      return synchronized(pendingQuickRequests) {
+        if (pendingQuickRequests.size >= MAX_PENDING_QUICK_REQUESTS) {
+          false
+        } else {
+          pendingQuickRequests.addLast(PendingQuickRequest(url, captureMode, visibility, System.currentTimeMillis()))
+          true
+        }
+      }
+    }
+
+    fun onNotificationRemoteUrl(context: Context, rawUrl: String): Map<String, Any?> {
+      return onQuickUrlCaptured(context, rawUrl, "manual")
+    }
+
+    fun onNotificationQuickActionFallback(context: Context) {
+      activeModule?.quickFromNotificationAction() ?: run {
+        DownloadNotificationController.startOrUpdate(
+          context,
+          BackgroundNotificationState(
+            activeTaskId = null,
+            phase = "error",
+            message = "App is not ready",
+            progressPercent = null,
+            queueSize = 0,
+            privateModeEnabled = isPrivateModeEnabledPersisted(context),
+            pinned = true
+          )
+        )
+      }
+    }
+
+    fun reportBackgroundServiceStartFailure(message: String) {
+      lastBackgroundServiceError = message
+      activeModule?.addError("BACKGROUND_SERVICE_START_FAILED: $message")
+      activeModule?.emitBackgroundStateChanged()
+    }
+  }
+}

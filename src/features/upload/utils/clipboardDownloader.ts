@@ -1,5 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
 
+import { isSupportedDownloaderUrl } from '@/src/features/upload/utils/downloaderPlatforms';
+
 export type ClipboardUrlErrorCode =
   | 'CLIPBOARD_UNAVAILABLE'
   | 'CLIPBOARD_EMPTY'
@@ -12,9 +14,6 @@ export class ClipboardUrlError extends Error {
     this.name = 'ClipboardUrlError';
   }
 }
-
-const SUPPORTED_PLATFORMS_REGEX =
-  /^https?:\/\/(www\.)?(twitter\.com|x\.com|instagram\.com|facebook\.com|fb\.watch|reddit\.com|v\.redd\.it|youtube\.com|youtu\.be|tiktok\.com)/i;
 
 export function normalizeClipboardUrl(text: string): string {
   const trimmed = text.trim();
@@ -40,7 +39,7 @@ export function normalizeClipboardUrl(text: string): string {
 }
 
 export function isSupportedClipboardDownloaderUrl(url: string): boolean {
-  return SUPPORTED_PLATFORMS_REGEX.test(url);
+  return isSupportedDownloaderUrl(url);
 }
 
 export async function getClipboardUrlForDownloader(): Promise<string> {

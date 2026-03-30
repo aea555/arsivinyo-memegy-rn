@@ -71,7 +71,8 @@
       "expo-video",
       "expo-media-library",
       "expo-localization",
-      "expo-secure-store"
+      "expo-secure-store",
+      "./modules/local-downloader/app.plugin.js"
     ],
     "experiments": {
       "typedRoutes": true,

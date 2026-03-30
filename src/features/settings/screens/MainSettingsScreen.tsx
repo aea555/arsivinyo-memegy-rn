@@ -9,11 +9,13 @@ import { Card } from '@/src/shared/components/ui/Card';
 import { SettingsRow } from '@/src/shared/components/ui/SettingsRow';
 import { spacing } from '@/src/shared/theme/spacing';
 import { useTheme } from '@/src/shared/theme/ThemeProvider';
+import { isLocalDownloaderRuntimeAvailable } from '@/src/native/localDownloader';
 
 export function MainSettingsScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const { palette } = useTheme();
+  const showDownloaderCookies = isLocalDownloaderRuntimeAvailable;
 
   return (
     <Screen contentStyle={styles.container}>
@@ -59,8 +61,17 @@ export function MainSettingsScreen() {
           subtitle={t('settings.themeStudioSubtitle')}
           icon={<Ionicons name="sparkles" size={18} color={palette.accent} />}
           onPress={() => router.push('/settings/theme-studio' as never)}
-          isLast
+          isLast={!showDownloaderCookies}
         />
+        {showDownloaderCookies ? (
+          <SettingsRow
+            title={t('settings.downloaderCookies')}
+            subtitle={t('settings.downloaderCookiesSubtitle')}
+            icon={<Ionicons name="download-outline" size={18} color={palette.text.primary} />}
+            onPress={() => router.push('/settings/downloader-cookies' as never)}
+            isLast
+          />
+        ) : null}
         {/*
         <SettingsRow
           title={t('settings.advancedSettings')}

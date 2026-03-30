@@ -17,14 +17,3 @@ export const MOBILE_SCHEME = requireEnv(
   'EXPO_PUBLIC_MOBILE_SCHEME',
   process.env.EXPO_PUBLIC_MOBILE_SCHEME
 );
-
-export const DOWNLOADER_API_BASE_URL =
-  process.env.EXPO_PUBLIC_DOWNLOADER_API_BASE_URL?.trim() ?? '';
-export const DOWNLOADER_APP_SECRET =
-  process.env.EXPO_PUBLIC_DOWNLOADER_APP_SECRET?.trim() ?? '';
-export const DOWNLOADER_ACCESS_HEADER_NAME =
-  process.env.EXPO_PUBLIC_DOWNLOADER_ACCESS_HEADER_NAME?.trim() || 'X-Download-Access';
-export const DOWNLOADER_ACCESS_KEY =
-  process.env.EXPO_PUBLIC_DOWNLOADER_ACCESS_KEY?.trim() ?? '';
-
-export const isDownloaderConfigured = Boolean(DOWNLOADER_API_BASE_URL);
